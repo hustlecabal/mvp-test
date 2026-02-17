@@ -1,0 +1,24 @@
+{
+  "name": "mvp-test",
+  "version": "1.0.0",
+  "description": "Faceless YouTube template - Remotion + Vercel",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/player": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/web": "^0.0.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion render src/index.tsx HelloWorld out/video.mp4",
+    "build:vercel": "remotion render src/index.tsx HelloWorld out/video.mp4",
+    "preview": "remotion preview"
+  }
+}
