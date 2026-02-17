@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Faceless YouTube template - Remotion + Vercel",
   "license": "UNLICENSED",
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@remotion/cli": "^4.0.0",
     "@remotion/player": "^4.0.0",
