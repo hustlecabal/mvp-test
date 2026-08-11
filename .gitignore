@@ -9,3 +9,8 @@ out/
 # per-project JSON files are ignored.
 server/data/projects/*.json
 server/data/generation-jobs/*.json
+
+# Downloaded/archived asset files (Stage 9A) — never committed. The folder
+# itself is kept in git via .gitkeep.
+server/data/assets/*
+!server/data/assets/.gitkeep

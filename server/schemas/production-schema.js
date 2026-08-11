@@ -131,6 +131,23 @@ function createGenerationRequest(overrides = {}) {
   return withDefaults(base, overrides);
 }
 
+// Stage 9A — see docs/architecture/asset-storage.md. `url` (above/below)
+// stays the PROVIDER's result URL exactly as it always was — it is
+// temporary (EvoLink's URLs expire after 24 hours) and is never replaced.
+// `storage` is separate, additive information about whether/where we've
+// downloaded that URL into our own permanent local storage.
+function defaultAssetStorage() {
+  return {
+    provider: null, // 'local' once archived — reserved for a future cloud provider
+    path: null, // a FILENAME within server/data/assets/, never a full filesystem path
+    status: 'NOT_ARCHIVED', // NOT_ARCHIVED -> STORED, or FAILED (retryable) on a download error
+    contentType: null,
+    sizeBytes: null,
+    archivedAt: null,
+    error: null,
+  };
+}
+
 // An asset record traces one generated (or referenced) piece of media back
 // to the project, scene, shot, whatever it was derived from, and what made
 // it. Every asset is version 1 the first time it's created.
@@ -151,6 +168,7 @@ function createAsset(overrides = {}) {
     url: null, // the provider's result URL — see docs/architecture/generation-lifecycle.md
     approvalStatus: 'NONE',
     createdAt: new Date().toISOString(),
+    storage: defaultAssetStorage(),
   };
   return withDefaults(base, overrides);
 }
@@ -277,4 +295,5 @@ module.exports = {
   createNextAssetVersion,
   createGenerationJob,
   createBlankProject,
+  defaultAssetStorage,
 };

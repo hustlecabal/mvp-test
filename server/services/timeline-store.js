@@ -95,6 +95,37 @@ function addAsset(projectId, overrides = {}) {
   return asset;
 }
 
+// Stage 9A — finds an asset by id WITHOUT already knowing its project
+// (needed by the archive_asset/get_asset_download MCP tools and the
+// download/preview HTTP endpoints, which only take an assetId). Scans
+// every project's assets array; fine at this project's scale, and avoids
+// introducing any kind of separate assets index/database.
+function findAssetById(assetId) {
+  for (const project of projectStore.listProjects()) {
+    const asset = (project.assets || []).find((a) => a.assetId === assetId);
+    if (asset) return { project, asset };
+  }
+  return null;
+}
+
+// Merges storageUpdates into an existing asset's `storage` sub-object
+// in place (never touches any other asset field, so lineage — projectId,
+// sceneId, shotId, generationId, provider, model, prompt, references — is
+// always left exactly as it was). Backfills any storage field an older
+// asset might be missing before applying updates. Returns the updated
+// asset, or null if the project/asset doesn't exist.
+function updateAssetStorage(projectId, assetId, storageUpdates = {}) {
+  const project = projectStore.getProject(projectId);
+  if (!project) return null;
+
+  const asset = project.assets.find((a) => a.assetId === assetId);
+  if (!asset) return null;
+
+  asset.storage = { ...productionSchema.defaultAssetStorage(), ...(asset.storage || {}), ...storageUpdates };
+  projectStore.touch(project);
+  return asset;
+}
+
 module.exports = {
   addScene,
   listScenes,
@@ -104,4 +135,6 @@ module.exports = {
   listAssets,
   getAsset,
   addAsset,
+  findAssetById,
+  updateAssetStorage,
 };

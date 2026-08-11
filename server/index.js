@@ -1,6 +1,10 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const projectStore = require('./services/project-store');
 const gate = require('./services/approval-gate');
+const timelineStore = require('./services/timeline-store');
+const assetStorage = require('./services/asset-storage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -145,6 +149,98 @@ app.get('/projects/:id/approval', (req, res) => {
     approvals: project.approvals,
     creditLedger: project.creditLedger,
     canProceed: gate.canProceed(project),
+  });
+});
+
+// Stage 9A — permanent asset storage download/preview. See
+// docs/architecture/asset-storage.md. Neither endpoint ever exposes the
+// internal filesystem path to the client; both only stream file bytes.
+
+// Shared by /download and /preview: looks up the asset and confirms it has
+// actually been archived to local storage, or responds with a clear error
+// and returns null. Never touches the filesystem path if this fails.
+function requireStoredAsset(req, res) {
+  const found = timelineStore.findAssetById(req.params.assetId);
+  if (!found) {
+    res.status(404).json({ error: 'Asset not found' });
+    return null;
+  }
+  const { asset } = found;
+  if (!asset.storage || asset.storage.status !== 'STORED' || !asset.storage.path) {
+    res.status(409).json({ error: 'Asset has not been archived to local storage yet. Call archive_asset first.' });
+    return null;
+  }
+
+  let fullPath;
+  try {
+    fullPath = assetStorage.resolveStoredPath(asset.storage.path);
+  } catch {
+    res.status(500).json({ error: 'Stored asset path is invalid.' });
+    return null;
+  }
+  if (!fs.existsSync(fullPath)) {
+    res.status(500).json({ error: 'Archived file is missing from storage. Try archiving again.' });
+    return null;
+  }
+
+  return { asset, fullPath };
+}
+
+// Streams a file to the response, with basic single-range support (Part 8:
+// "support range requests if practical" — this covers the common single
+// `bytes=start-end` case a <video> element sends; it does not support
+// multi-range requests, which is a documented limitation, not an oversight).
+function streamFile(req, res, fullPath, { contentType, disposition }) {
+  const stat = fs.statSync(fullPath);
+  res.setHeader('Content-Type', contentType || 'application/octet-stream');
+  res.setHeader('Accept-Ranges', 'bytes');
+  if (disposition) res.setHeader('Content-Disposition', disposition);
+
+  const range = req.headers.range;
+  if (!range) {
+    res.setHeader('Content-Length', stat.size);
+    fs.createReadStream(fullPath).pipe(res);
+    return;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  const start = match && match[1] ? parseInt(match[1], 10) : 0;
+  const end = match && match[2] ? parseInt(match[2], 10) : stat.size - 1;
+  if (!match || Number.isNaN(start) || Number.isNaN(end) || start > end || end >= stat.size) {
+    res.status(416).setHeader('Content-Range', `bytes */${stat.size}`).end();
+    return;
+  }
+
+  res.status(206);
+  res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+  res.setHeader('Content-Length', end - start + 1);
+  fs.createReadStream(fullPath, { start, end }).pipe(res);
+}
+
+// Download: forces the browser to save the file, using a filename built
+// only from the asset id and its (already-whitelisted) extension — never
+// from user input or the internal filesystem path.
+app.get('/assets/:assetId/download', (req, res) => {
+  const found = requireStoredAsset(req, res);
+  if (!found) return;
+  const { asset, fullPath } = found;
+
+  const ext = path.extname(asset.storage.path);
+  streamFile(req, res, fullPath, {
+    contentType: asset.storage.contentType || 'application/octet-stream',
+    disposition: `attachment; filename="${asset.assetId}${ext}"`,
+  });
+});
+
+// Preview: same stream, but without Content-Disposition, so a browser
+// <video>/<img> tag can play/render it inline.
+app.get('/assets/:assetId/preview', (req, res) => {
+  const found = requireStoredAsset(req, res);
+  if (!found) return;
+  const { asset, fullPath } = found;
+
+  streamFile(req, res, fullPath, {
+    contentType: asset.storage.contentType || 'video/mp4',
   });
 });
 

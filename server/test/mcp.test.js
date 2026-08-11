@@ -49,20 +49,23 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 21 tools', async () => {
+test('a real MCP client can discover all 23 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
-  // Stage 8.1 added one new read-only tool, get_project_budget — see
-  // docs/architecture/budget-safety.md. Everything else is unchanged.
-  assert.equal(names.length, 21);
+  // Stage 8.1 added get_project_budget. Stage 9A added archive_asset and
+  // get_asset_download (see docs/architecture/asset-storage.md). Everything
+  // else is unchanged.
+  assert.equal(names.length, 23);
   assert.deepEqual(names, [
+    'archive_asset',
     'create_project',
     'create_scene',
     'create_shot',
     'estimate_generation',
     'get_approval_status',
     'get_asset',
+    'get_asset_download',
     'get_generation_status',
     'get_project',
     'get_project_budget',
