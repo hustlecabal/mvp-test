@@ -1,0 +1,14 @@
+{
+  "name": "evolink-video-factory-server",
+  "version": "0.1.0",
+  "description": "Local backend for the EvoLink Video Factory MVP",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
