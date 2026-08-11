@@ -49,11 +49,13 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 20 tools', async () => {
+test('a real MCP client can discover all 21 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
-  assert.equal(names.length, 20);
+  // Stage 8.1 added one new read-only tool, get_project_budget — see
+  // docs/architecture/budget-safety.md. Everything else is unchanged.
+  assert.equal(names.length, 21);
   assert.deepEqual(names, [
     'create_project',
     'create_scene',
@@ -63,6 +65,7 @@ test('a real MCP client can discover all 20 tools', async () => {
     'get_asset',
     'get_generation_status',
     'get_project',
+    'get_project_budget',
     'get_project_status',
     'get_shot',
     'list_assets',
@@ -273,6 +276,22 @@ test('record_approval_decision reports a clear failure when nothing is pending',
   const created = await createTestProject();
   const decision = textOf(await call('record_approval_decision', { projectId: created.id, approve: true }));
   assert.equal(decision.ok, false);
+});
+
+test('get_project_budget (Stage 8.1) reports the full ledger without submitting anything', async () => {
+  const created = await createTestProject();
+  await call('request_generation_approval', { projectId: created.id, estimatedCost: 30 });
+  await call('record_approval_decision', { projectId: created.id, approve: true });
+
+  const budget = textOf(await call('get_project_budget', { projectId: created.id }));
+
+  assert.equal(budget.budgetLimit, null, 'no budget was set for this project');
+  assert.equal(budget.estimatedAllocations, 30);
+  assert.equal(budget.reservedCredits, 0);
+  assert.equal(budget.spentCredits, null, 'unknown actual cost must stay null, never 0');
+  assert.equal(budget.overageAmount, null);
+  assert.equal(budget.blocked, false);
+  assert.equal(budget.generationAllowed, true);
 });
 
 test('a full MCP-driven walk reaches CALIBRATION only after approval', async () => {

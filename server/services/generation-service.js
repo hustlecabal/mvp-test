@@ -85,7 +85,9 @@ function estimateGeneration(input) {
     approvalStatus: checks.project.approvals.status,
     estimatedCost: checks.project.approvals.estimatedCost,
     budgetLimit: checks.project.creditLedger.limit,
-    budgetSpent: checks.project.creditLedger.spent,
+    reservedCredits: checks.project.creditLedger.reserved,
+    actualSpent: checks.project.creditLedger.actualSpent,
+    remainingBudget: gate.getRemainingBudget(checks.project),
   };
 }
 
@@ -166,6 +168,14 @@ async function requestGeneration(input, { providers = PROVIDERS } = {}) {
     submittedAt: new Date().toISOString(),
   });
 
+  // Fold the provider's reserved cost into the project's ledger the moment
+  // it's known (Part 3/6 of docs/architecture/budget-safety.md) — this is
+  // also the earliest point an overage can be detected, even though it's
+  // already too late to stop THIS submission (EvoLink gave no
+  // pre-submission quote to check against).
+  gate.reconcileGenerationCost(checks.project, job);
+  projectStore.touch(checks.project);
+
   return { ok: true, job };
 }
 
@@ -214,6 +224,17 @@ async function checkGenerationOnce(jobId, { providers = PROVIDERS } = {}) {
   }
 
   let updatedJob = generationStore.updateGenerationJob(jobId, updates);
+
+  // Re-reconcile in case anything changed (e.g. a provider that DID return
+  // an actualCost on completion — EvoLink currently never does, but this
+  // stays correct if that ever changes). reconcileGenerationCost is
+  // delta-based, so this never double-counts the reservedCost already
+  // folded in at submission time.
+  const project = projectStore.getProject(updatedJob.projectId);
+  if (project) {
+    gate.reconcileGenerationCost(project, updatedJob);
+    projectStore.touch(project);
+  }
 
   if (updatedJob.status === 'COMPLETED' && !updatedJob.assetId) {
     updatedJob = createAssetForCompletedJob(updatedJob);

@@ -37,8 +37,44 @@ function register(server) {
         approvalStatus: project.approvals.status,
         estimatedCost: project.approvals.estimatedCost,
         budgetLimit: project.creditLedger.limit,
-        spent: project.creditLedger.spent,
+        reservedCredits: project.creditLedger.reserved,
+        actualSpent: project.creditLedger.actualSpent,
+        remainingBudget: gate.getRemainingBudget(project),
         generationAllowed: allowed,
+        reason,
+      });
+    }
+  );
+
+  server.registerTool(
+    'get_project_budget',
+    {
+      title: "Get a project's full budget/ledger state (read-only)",
+      description:
+        'Returns the complete budget picture for a project: budget limit, reserved credits, actual spent (if the ' +
+        'provider ever reports one), remaining budget, any overage event, and whether further generation is ' +
+        'currently allowed. Read-only — never submits or changes anything. Uses the existing Stage 3/8.1 ' +
+        'approval-gate service (services/approval-gate.js).',
+      inputSchema: {
+        projectId: z.string(),
+      },
+    },
+    async ({ projectId }) => {
+      const project = requireProject(projectId);
+      gate.ensureShape(project);
+      const { allowed, reason } = gate.canProceed(project);
+      const { limit, reserved, actualSpent, overage, blocked } = project.creditLedger;
+
+      return jsonResult({
+        budgetLimit: limit,
+        estimatedAllocations: project.approvals.estimatedCost,
+        reservedCredits: reserved,
+        spentCredits: actualSpent, // null = provider has never reported an actual/final cost
+        remainingBudget: gate.getRemainingBudget(project),
+        overageAmount: overage ? overage.amount : null,
+        overage,
+        generationAllowed: allowed,
+        blocked,
         reason,
       });
     }
