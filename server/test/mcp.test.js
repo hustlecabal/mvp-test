@@ -49,30 +49,37 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 25 tools', async () => {
+test('a real MCP client can discover all 35 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
   // Stage 8.1 added get_project_budget. Stage 9A added archive_asset and
   // get_asset_download. Stage 9B added list_generation_history and
-  // get_shot_history (see docs/architecture/generation-history.md).
-  // Everything else is unchanged.
-  assert.equal(names.length, 25);
+  // get_shot_history. Stage 11A added the 10 creative-planning tools (see
+  // docs/architecture/creative-intelligence.md). Everything else is
+  // unchanged.
+  assert.equal(names.length, 35);
   assert.deepEqual(names, [
     'archive_asset',
     'create_project',
     'create_scene',
     'create_shot',
+    'create_storyboard_scene',
+    'create_storyboard_shot',
     'estimate_generation',
     'get_approval_status',
     'get_asset',
     'get_asset_download',
+    'get_creative_brief',
     'get_generation_status',
+    'get_master_creative_spec',
     'get_project',
     'get_project_budget',
     'get_project_status',
     'get_shot',
     'get_shot_history',
+    'get_storyboard',
+    'get_visual_bible',
     'list_assets',
     'list_generation_history',
     'list_projects',
@@ -83,7 +90,11 @@ test('a real MCP client can discover all 25 tools', async () => {
     'request_generation',
     'request_generation_approval',
     'transition_project',
+    'update_creative_brief',
+    'update_master_creative_spec',
     'update_project',
+    'update_storyboard',
+    'update_visual_bible',
   ]);
 });
 
