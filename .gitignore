@@ -3,3 +3,8 @@ node_modules/
 dist/
 out/
 *.log
+
+# Real project data created while running the server locally.
+# The folder itself is kept in git via .gitkeep; only the generated
+# per-project JSON files are ignored.
+server/data/projects/*.json
