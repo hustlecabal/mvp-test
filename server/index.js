@@ -8,6 +8,8 @@ const assetStorage = require('./services/asset-storage');
 const historyService = require('./services/generation-history-service');
 const creativeStore = require('./services/creative-store');
 const skillOrchestrator = require('./services/skill-orchestrator');
+const keyframeStore = require('./services/keyframe-store');
+const keyframePlanner = require('./services/keyframe-planner');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -321,6 +323,70 @@ app.get('/skills/recommendation', (req, res) => {
       needsReferenceImage: needsReferenceImage === 'true',
     })
   );
+});
+
+// Stage 12 — the Keyframe Intelligence layer. See
+// docs/architecture/keyframe-intelligence.md. Every route below is thin:
+// it validates the project exists, then delegates to
+// services/keyframe-store.js or services/keyframe-planner.js. Nothing here
+// can generate an image/video, call EvoLink, or spend a credit.
+
+app.get('/projects/:id/keyframes', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(keyframeStore.getKeyframePlan(req.params.id));
+});
+
+app.put('/projects/:id/keyframes', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  res.json(keyframeStore.updateKeyframePlan(req.params.id, updates, { updatedBy, changeNote }));
+});
+
+app.get('/keyframes/:keyframeId', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(found.keyframe);
+});
+
+app.put('/keyframes/:keyframeId', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  const updated = keyframeStore.updateKeyframe(found.project.id, req.params.keyframeId, updates, { updatedBy, changeNote });
+  if (!updated) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(updated);
+});
+
+app.post('/projects/:id/keyframes', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const { updatedBy, changeNote, ...fields } = req.body || {};
+  const keyframe = keyframeStore.createKeyframe(req.params.id, fields, { updatedBy, changeNote });
+  res.status(201).json(keyframe);
+});
+
+// Read-only requirement analysis for one storyboard shot (Part 6-10). Never
+// creates a keyframe, generation job, or spends a credit — see
+// POST /projects/:id/keyframes to actually record a recommendation.
+app.post('/projects/:id/keyframes/analyze', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const { shotId } = req.body || {};
+  const result = keyframePlanner.analyzeShotKeyframes(req.params.id, shotId);
+  if (!result) return res.status(404).json({ error: 'Storyboard shot not found' });
+  res.json(result);
 });
 
 // Stage 9A — permanent asset storage download/preview. See

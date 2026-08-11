@@ -10,6 +10,7 @@ out/
 server/data/projects/*.json
 server/data/generation-jobs/*.json
 server/data/creative/*.json
+server/data/keyframes/*.json
 
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.

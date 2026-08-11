@@ -1,0 +1,208 @@
+// keyframe-store.js
+//
+// Stage 12 — reads and writes a project's Keyframe Plan (see
+// schemas/keyframe-schema.js). One JSON file per project, following the
+// exact "one file per project id" convention services/creative-store.js
+// already uses for the Creative IR.
+//
+// IMPORTANT: nothing in this file ever touches services/approval-gate.js,
+// services/generation-service.js, or the EvoLink provider. This file only
+// reads/writes planning data about WHICH keyframes might be worth
+// generating later — it never creates a generation job, spends a credit,
+// or calls a provider, because it has no way to reach any of that code.
+// The one cross-reference it does make — to services/creative-store.js,
+// to read the current Storyboard version for stale detection (Part 17) —
+// is read-only and stays within the creative-planning layer.
+
+const fs = require('fs');
+const path = require('path');
+const projectStore = require('./project-store');
+const creativeStore = require('./creative-store');
+const keyframeSchema = require('../schemas/keyframe-schema');
+
+// Overridable for tests, same pattern as CREATIVE_DATA_DIR/PROJECT_DATA_DIR.
+const KEYFRAME_DATA_DIR = process.env.KEYFRAME_DATA_DIR
+  ? path.resolve(process.env.KEYFRAME_DATA_DIR)
+  : path.join(__dirname, '..', 'data', 'keyframes');
+
+fs.mkdirSync(KEYFRAME_DATA_DIR, { recursive: true });
+
+const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidId(id) {
+  return typeof id === 'string' && ID_PATTERN.test(id);
+}
+
+function planFilePath(projectId) {
+  return path.join(KEYFRAME_DATA_DIR, `${projectId}.json`);
+}
+
+function loadPlan(projectId) {
+  if (!isValidId(projectId)) return null;
+  const filePath = planFilePath(projectId);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function savePlan(plan) {
+  fs.writeFileSync(planFilePath(plan.projectId), JSON.stringify(plan, null, 2));
+}
+
+// Loads a project's keyframe plan, creating an empty one on disk the first
+// time it's touched. Returns null if the project itself doesn't exist —
+// same rule creative-store.js's ensureRecord follows.
+function ensurePlan(projectId) {
+  if (!projectStore.getProject(projectId)) return null;
+  let plan = loadPlan(projectId);
+  if (!plan) {
+    plan = keyframeSchema.createKeyframePlan({ projectId });
+    savePlan(plan);
+  }
+  return plan;
+}
+
+// Part 9/17 — lightweight versioning, identical shape to
+// creative-store.js's applyVersionedUpdate: push the plan's own current
+// version metadata onto history, then bump version/updatedAt/updatedBy/
+// changeNote. `keyframes` is a normal field here (like `scenes`/`shots` on
+// a storyboard) — updates to it go through this same path.
+const PROTECTED_FIELDS = new Set(['projectId', 'version', 'history']);
+
+function applyVersionedUpdate(plan, updates = {}, { updatedBy, changeNote } = {}) {
+  plan.history = plan.history || [];
+  plan.history.push({
+    version: plan.version,
+    updatedAt: plan.updatedAt,
+    updatedBy: plan.updatedBy,
+    changeNote: plan.changeNote,
+  });
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && !PROTECTED_FIELDS.has(key)) {
+      plan[key] = value;
+    }
+  }
+
+  plan.version += 1;
+  plan.updatedAt = new Date().toISOString();
+  plan.updatedBy = updatedBy || null;
+  plan.changeNote = changeNote || null;
+  return plan;
+}
+
+function getKeyframePlan(projectId) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+  return { ...plan, keyframes: plan.keyframes.map((k) => attachStale(projectId, k)) };
+}
+
+function updateKeyframePlan(projectId, updates = {}, { updatedBy, changeNote } = {}) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+
+  applyVersionedUpdate(plan, updates, { updatedBy, changeNote });
+  savePlan(plan);
+  return getKeyframePlan(projectId);
+}
+
+// Part 17 — stale detection. Compute-on-read, never persisted: compares
+// the keyframe's recorded sourceShotVersion against the storyboard's
+// CURRENT version. A keyframe with no sourceShotVersion recorded yet, or
+// belonging to a project with no storyboard at all, is never marked stale
+// — there is nothing to have drifted from.
+function attachStale(projectId, keyframe) {
+  const storyboard = creativeStore.getStoryboard(projectId);
+  const currentStoryboardVersion = storyboard ? storyboard.version : null;
+  const stale = Boolean(
+    keyframe.sourceShotVersion != null && currentStoryboardVersion != null && keyframe.sourceShotVersion !== currentStoryboardVersion
+  );
+  return { ...keyframe, stale, currentStoryboardVersion };
+}
+
+// Part 14 — optionally filtered by shotId/sceneId/frameType/status. Same
+// simple array-filter approach as timelineStore.listAssets.
+function listKeyframes(projectId, { shotId, sceneId, frameType, status } = {}) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+
+  let keyframes = plan.keyframes;
+  if (shotId) keyframes = keyframes.filter((k) => k.shotId === shotId);
+  if (sceneId) keyframes = keyframes.filter((k) => k.sceneId === sceneId);
+  if (frameType) keyframes = keyframes.filter((k) => k.frameType === frameType);
+  if (status) keyframes = keyframes.filter((k) => k.status === status);
+  return keyframes.map((k) => attachStale(projectId, k));
+}
+
+function getKeyframe(projectId, keyframeId) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+  const keyframe = plan.keyframes.find((k) => k.keyframeId === keyframeId);
+  if (!keyframe) return null;
+  return attachStale(projectId, keyframe);
+}
+
+// Adds one new keyframe to the plan. Counts as a plan update (Part 9): the
+// plan's version bumps and a history entry is recorded, exactly like
+// creative-store.js's addStoryboardShot bumping the storyboard.
+function createKeyframe(projectId, overrides = {}, { updatedBy, changeNote } = {}) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+
+  const keyframe = keyframeSchema.createKeyframe({ ...overrides, projectId });
+  applyVersionedUpdate(
+    plan,
+    { keyframes: [...plan.keyframes, keyframe] },
+    { updatedBy, changeNote: changeNote || `Added ${keyframe.frameType || 'keyframe'} for shot ${keyframe.shotId || 'unknown'}` }
+  );
+  savePlan(plan);
+  return attachStale(projectId, keyframe);
+}
+
+// Updates one existing keyframe's fields in place. Never touches
+// keyframeId/projectId even if present in `updates`. Returns the updated
+// keyframe, or null if the project/plan/keyframe doesn't exist.
+function updateKeyframe(projectId, keyframeId, updates = {}, { updatedBy, changeNote } = {}) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+
+  const index = plan.keyframes.findIndex((k) => k.keyframeId === keyframeId);
+  if (index === -1) return null;
+
+  const updatedKeyframe = { ...plan.keyframes[index] };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && key !== 'keyframeId' && key !== 'projectId') {
+      updatedKeyframe[key] = value;
+    }
+  }
+
+  const newKeyframes = [...plan.keyframes];
+  newKeyframes[index] = updatedKeyframe;
+
+  applyVersionedUpdate(plan, { keyframes: newKeyframes }, { updatedBy, changeNote });
+  savePlan(plan);
+  return attachStale(projectId, updatedKeyframe);
+}
+
+// Stage 12 REST route /keyframes/:keyframeId — finds a keyframe by id
+// WITHOUT already knowing its project. Same reasoning and scale tradeoff
+// as timelineStore.findAssetById/findShotById.
+function findKeyframeById(keyframeId) {
+  for (const project of projectStore.listProjects()) {
+    const plan = loadPlan(project.id);
+    if (!plan) continue;
+    const keyframe = plan.keyframes.find((k) => k.keyframeId === keyframeId);
+    if (keyframe) return { project, keyframe: attachStale(project.id, keyframe) };
+  }
+  return null;
+}
+
+module.exports = {
+  KEYFRAME_DATA_DIR,
+  getKeyframePlan,
+  updateKeyframePlan,
+  listKeyframes,
+  getKeyframe,
+  createKeyframe,
+  updateKeyframe,
+  findKeyframeById,
+};

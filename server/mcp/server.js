@@ -22,6 +22,7 @@ const registerGenerationTools = require('./tools/generation-tools');
 const registerHistoryTools = require('./tools/history-tools');
 const registerCreativeTools = require('./tools/creative-tools');
 const registerSkillOrchestrationTools = require('./tools/skill-orchestration-tools');
+const registerKeyframeTools = require('./tools/keyframe-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -38,6 +39,7 @@ function createServer() {
   registerHistoryTools(server);
   registerCreativeTools(server);
   registerSkillOrchestrationTools(server);
+  registerKeyframeTools(server);
 
   return server;
 }

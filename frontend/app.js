@@ -30,6 +30,12 @@ const state = {
     selectedLocationIndex: null,
     selectedPropIndex: null,
     selectedShotId: null,
+
+    // Stage 12 — Keyframe Intelligence. Read-only display state; nothing
+    // here is ever sent to a provider or turned into a generation job.
+    keyframePlan: null,
+    keyframeWorkload: null, // { totalRequired, reusable, newRecommended, alreadyPlanned } aggregated client-side
+    shotAnalysis: null, // last analyze_shot_keyframes result shown in the Shot Editor
   },
 };
 
@@ -615,6 +621,8 @@ function selectCreativeArtifact(key) {
   } else if (key === 'storyboard') {
     state.creative.selectedShotId = null;
     renderStoryboardView();
+  } else if (key === 'keyframes') {
+    renderKeyframePlanView();
   }
 }
 
@@ -1301,6 +1309,7 @@ function renderShotCard(shot, number) {
   card.className = 'shot-card';
   card.addEventListener('click', () => {
     state.creative.selectedShotId = shot.shotId;
+    state.creative.shotAnalysis = null;
     renderStoryboardView();
   });
 
@@ -1379,6 +1388,7 @@ function renderShotEditor(container) {
   backBtn.textContent = '← Back to Storyboard';
   backBtn.addEventListener('click', () => {
     state.creative.selectedShotId = null;
+    state.creative.shotAnalysis = null;
     renderStoryboardView();
   });
   container.appendChild(backBtn);
@@ -1419,8 +1429,228 @@ function renderShotEditor(container) {
   );
   container.appendChild(saveBar);
 
+  renderKeyframeAnalysisSection(container, shot);
+
   renderCreativeVersionPanel(storyboard);
   renderSkillPanel(shot);
+}
+
+// --- Keyframe analysis (Stage 12, Part 15) — READ-ONLY. Running an
+// analysis never creates a keyframe, generation job, or spends a credit —
+// there is deliberately no "accept" or "generate" button here, matching
+// the Creative Skills panel's own "display only" rule.
+
+function renderKeyframeAnalysisSection(container, shot) {
+  const section = document.createElement('div');
+  section.className = 'keyframe-analysis-section';
+
+  const heading = document.createElement('h4');
+  heading.textContent = 'Keyframe Analysis';
+  section.appendChild(heading);
+
+  const analyzeBtn = document.createElement('button');
+  analyzeBtn.type = 'button';
+  analyzeBtn.className = 'btn btn-secondary';
+  analyzeBtn.textContent = 'ANALYZE KEYFRAMES';
+  analyzeBtn.addEventListener('click', async () => {
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing…';
+    try {
+      const projectId = state.selectedProjectId;
+      const result = await fetchJson(`/projects/${projectId}/keyframes/analyze`, { method: 'POST', body: { shotId: shot.shotId } });
+      state.creative.shotAnalysis = result;
+      renderShotEditor(document.getElementById('creative-editor'));
+    } catch {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = 'ANALYZE KEYFRAMES';
+    }
+  });
+  section.appendChild(analyzeBtn);
+
+  const analysis = state.creative.shotAnalysis;
+  if (analysis && analysis.shotId === shot.shotId) {
+    section.appendChild(renderKeyframeAnalysisResults(analysis));
+  }
+
+  container.appendChild(section);
+}
+
+function renderKeyframeAnalysisResults(analysis) {
+  const wrap = document.createElement('div');
+  wrap.className = 'keyframe-analysis-results';
+
+  const summary = document.createElement('div');
+  summary.className = 'keyframe-analysis-summary';
+  summary.textContent =
+    `${analysis.summary.totalRequired} frame(s) considered — ` +
+    `${analysis.summary.newRecommended} recommended, ` +
+    `${analysis.summary.reusable} reusable from approved assets, ` +
+    `${analysis.summary.alreadyPlanned} already planned.`;
+  wrap.appendChild(summary);
+
+  function group(title, items, describe) {
+    if (items.length === 0) return;
+    const groupBox = document.createElement('div');
+    groupBox.className = 'keyframe-analysis-group';
+    const h5 = document.createElement('h5');
+    h5.textContent = title;
+    groupBox.appendChild(h5);
+
+    const list = document.createElement('ol');
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = describe(item);
+      list.appendChild(li);
+    });
+    groupBox.appendChild(list);
+    wrap.appendChild(groupBox);
+  }
+
+  group('Recommended (new)', analysis.recommendations, (r) => {
+    const skill = r.recommendedSkill ? ` — recommended skill: ${SKILL_DISPLAY_NAMES[r.recommendedSkill] || r.recommendedSkill}` : '';
+    return `${r.frameType}: ${displayValue(r.purpose)}${skill}`;
+  });
+  group('Reusable (already have an approved asset)', analysis.reused, (r) => `${r.frameType}: ${r.reason}`);
+  group('Already planned', analysis.existing, (r) => `${r.frameType}: ${r.reason} (status: ${displayValue(r.status)})`);
+
+  return wrap;
+}
+
+// --- Keyframe Plan view (Stage 12, Part 15/16) — READ-ONLY -------------------------
+
+async function renderKeyframePlanView() {
+  const container = document.getElementById('creative-editor');
+  showLoading(container);
+
+  const projectId = state.selectedProjectId;
+  try {
+    const plan = await fetchJson(`/projects/${projectId}/keyframes`);
+    state.creative.keyframePlan = plan;
+
+    container.innerHTML = '';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Keyframe Plan';
+    container.appendChild(heading);
+
+    await renderKeyframeWorkloadSummary(container);
+    renderKeyframeList(container, plan);
+
+    renderCreativeVersionPanel(plan);
+    renderSkillPanel(null);
+  } catch {
+    showError(container, renderKeyframePlanView);
+  }
+}
+
+// Part 16 — "Estimated visual workload": computed CLIENT-SIDE by calling
+// the existing per-shot analyze endpoint in parallel for every shot in the
+// storyboard, then aggregating. No new backend aggregate endpoint exists —
+// this stays within the exact REST surface defined for this stage.
+async function renderKeyframeWorkloadSummary(container) {
+  const box = document.createElement('div');
+  box.className = 'keyframe-workload-summary';
+
+  const storyboard = state.creative.storyboard;
+  const shots = (storyboard && storyboard.shots) || [];
+  if (shots.length === 0) {
+    box.textContent = 'No storyboard shots yet — nothing to estimate.';
+    container.appendChild(box);
+    return;
+  }
+
+  box.textContent = 'Estimating visual workload…';
+  container.appendChild(box);
+
+  try {
+    const projectId = state.selectedProjectId;
+    const analyses = await Promise.all(
+      shots.map((shot) => fetchJson(`/projects/${projectId}/keyframes/analyze`, { method: 'POST', body: { shotId: shot.shotId } }))
+    );
+    const totals = analyses.reduce(
+      (acc, a) => {
+        acc.totalRequired += a.summary.totalRequired;
+        acc.reusable += a.summary.reusable;
+        acc.newRecommended += a.summary.newRecommended;
+        acc.alreadyPlanned += a.summary.alreadyPlanned;
+        return acc;
+      },
+      { totalRequired: 0, reusable: 0, newRecommended: 0, alreadyPlanned: 0 }
+    );
+    state.creative.keyframeWorkload = totals;
+
+    box.innerHTML = '';
+    const h4 = document.createElement('h4');
+    h4.textContent = 'Estimated Visual Workload';
+    box.appendChild(h4);
+    const list = document.createElement('div');
+    list.className = 'info-list';
+    list.appendChild(infoRow('Frames considered across all shots', totals.totalRequired));
+    list.appendChild(infoRow('Reusable from approved assets', totals.reusable));
+    list.appendChild(infoRow('Net-new recommended', totals.newRecommended));
+    list.appendChild(infoRow('Already planned', totals.alreadyPlanned));
+    box.appendChild(list);
+  } catch {
+    box.textContent = 'Could not estimate visual workload.';
+  }
+}
+
+function renderKeyframeList(container, plan) {
+  const heading = document.createElement('h4');
+  heading.textContent = 'Planned Keyframes';
+  container.appendChild(heading);
+
+  const keyframes = (plan && plan.keyframes) || [];
+  if (keyframes.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'No keyframes planned yet.';
+    container.appendChild(empty);
+    return;
+  }
+
+  const byShot = new Map();
+  for (const kf of keyframes) {
+    const list = byShot.get(kf.shotId) || [];
+    list.push(kf);
+    byShot.set(kf.shotId, list);
+  }
+
+  const storyboard = state.creative.storyboard;
+  for (const [shotId, kfs] of byShot.entries()) {
+    const shot = (storyboard && storyboard.shots || []).find((s) => s.shotId === shotId);
+    const shotBox = document.createElement('div');
+    shotBox.className = 'keyframe-shot-group';
+
+    const title = document.createElement('div');
+    title.className = 'keyframe-shot-title';
+    title.textContent = shot ? shot.purpose || shot.shotId : shotId;
+    shotBox.appendChild(title);
+
+    const list = document.createElement('div');
+    list.className = 'card-list';
+    kfs.forEach((kf) => {
+      const card = document.createElement('div');
+      card.className = 'entity-card';
+
+      const name = document.createElement('div');
+      name.className = 'entity-name';
+      name.textContent = `${displayValue(kf.frameType)} — ${displayValue(kf.subject)}`;
+      card.appendChild(name);
+
+      card.appendChild(statusBadge(kf.status));
+
+      if (kf.stale) {
+        const staleBadge = document.createElement('span');
+        staleBadge.className = 'badge badge-rejected';
+        staleBadge.textContent = 'Stale — storyboard changed since planned';
+        card.appendChild(staleBadge);
+      }
+
+      list.appendChild(card);
+    });
+    shotBox.appendChild(list);
+    container.appendChild(shotBox);
+  }
 }
 
 // --- Creative Skills panel (Part 11) — display only, never executes anything ------
