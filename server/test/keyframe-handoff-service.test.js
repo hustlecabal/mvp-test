@@ -350,6 +350,77 @@ test('getHandoff/findHandoffById/listHandoffs enrich an INGESTED handoff with it
   assert.equal(handoffService.listHandoffs(project.id, { keyframeId: keyframe.keyframeId })[0].asset.approvalStatus, 'NONE');
 });
 
+// --- Stage 13E, Part 2 — handoff concurrency (at most one ACTIVE handoff per keyframe) ----
+
+test('7. a second handoff is blocked while the first is READY', () => {
+  const { project, keyframe } = fullyApprovedFixture();
+  const first = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  assert.equal(first.ok, true);
+  assert.equal(first.handoff.status, 'READY');
+
+  const second = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  assert.equal(second.ok, false);
+  assert.match(second.reason, /active handoff/i);
+});
+
+test('8. a second handoff is blocked while the first is IN_PROGRESS', () => {
+  const { project, keyframe } = fullyApprovedFixture();
+  const first = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  handoffService.updateHandoff(project.id, first.handoff.handoffId, { status: 'IN_PROGRESS' }, { updatedBy: 'tester' });
+
+  const second = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  assert.equal(second.ok, false);
+  assert.match(second.reason, /active handoff/i);
+});
+
+test('9. a new handoff IS permitted once the active one is INGESTED', () => {
+  const { project, keyframe } = fullyApprovedFixture();
+  const first = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  handoffService.ingestHandoffAsset(first.handoff.handoffId, PNG_BYTES, { completedBy: 'tester' });
+
+  // A fresh approval + a fresh (still-CURRENT) package are required for a
+  // second handoff regardless of concurrency — re-approve for the same
+  // current package version to isolate the concurrency behavior itself.
+  approvalStore.requestApproval(project.id, keyframe.keyframeId, {
+    promptPackageId: first.handoff.promptPackageId,
+    promptPackageVersion: first.handoff.promptPackageVersion,
+    estimatedCost: 2,
+  });
+  approvalStore.decideApproval(project.id, keyframe.keyframeId, { approve: true, decidedBy: 'tester' });
+
+  const second = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  assert.equal(second.ok, true, second.reason);
+  assert.notEqual(second.handoff.handoffId, first.handoff.handoffId);
+});
+
+test('10. a new handoff IS permitted once the active one is CANCELLED', () => {
+  const { project, keyframe } = fullyApprovedFixture();
+  const first = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  handoffService.cancelHandoff(project.id, first.handoff.handoffId);
+
+  const second = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  assert.equal(second.ok, true, second.reason);
+  assert.notEqual(second.handoff.handoffId, first.handoff.handoffId);
+});
+
+test('11. historical (INGESTED/CANCELLED) handoffs remain fully queryable, never deleted', () => {
+  const { project, keyframe } = fullyApprovedFixture();
+  const first = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  handoffService.cancelHandoff(project.id, first.handoff.handoffId, { decidedBy: 'tester', reason: 'no longer needed' });
+
+  const second = handoffService.createHandoff(project.id, keyframe.keyframeId);
+  handoffService.ingestHandoffAsset(second.handoff.handoffId, PNG_BYTES, { completedBy: 'tester' });
+
+  const all = handoffService.listHandoffs(project.id, { keyframeId: keyframe.keyframeId });
+  assert.equal(all.length, 2);
+  const statuses = all.map((h) => h.status).sort();
+  assert.deepEqual(statuses, ['CANCELLED', 'INGESTED']);
+
+  // Each one is still individually fetchable with its own full record.
+  assert.equal(handoffService.getHandoff(project.id, first.handoff.handoffId).status, 'CANCELLED');
+  assert.equal(handoffService.getHandoff(project.id, second.handoff.handoffId).status, 'INGESTED');
+});
+
 // --- listHandoffs filtering ------------------------------------------------------------
 
 test('listHandoffs filters by status', () => {

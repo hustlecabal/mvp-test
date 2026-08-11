@@ -66,11 +66,20 @@ test('updateProject changes allowed fields and updates updatedAt', async () => {
   const created = store.createProject({ title: 'Old title', topic: 'x' });
   await new Promise((resolve) => setTimeout(resolve, 5));
 
+  const updated = store.updateProject(created.id, { title: 'New title' });
+
+  assert.equal(updated.title, 'New title');
+  assert.notEqual(updated.updatedAt, created.updatedAt);
+});
+
+// Stage 13E, Part 4 — "status" was removed from UPDATABLE_FIELDS entirely:
+// it must only ever change through schemas/state-machine.js's transition().
+test('updateProject silently ignores a status field — status only ever changes through the state machine', () => {
+  const created = store.createProject({ title: 'x', topic: 'y' });
   const updated = store.updateProject(created.id, { title: 'New title', status: 'RESEARCH' });
 
   assert.equal(updated.title, 'New title');
-  assert.equal(updated.status, 'RESEARCH');
-  assert.notEqual(updated.updatedAt, created.updatedAt);
+  assert.equal(updated.status, 'PLANNING', 'status must be untouched');
 });
 
 test('updateProject returns null when the project does not exist', () => {

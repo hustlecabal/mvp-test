@@ -1,5 +1,15 @@
 # Keyframe Execution Bridge — Investigation (Stage 13C)
 
+> **Stage 13E classification: INTERNAL TEST/DEVELOPMENT ONLY.** Stage 13D's
+> [Human Keyframe Execution Handoff](../../server/services/keyframe-handoff-service.js)
+> is the real production path for getting a keyframe image. The
+> `prepare_keyframe_execution`/`run_fixture_keyframe_execution` tools
+> described below have zero consumers outside their own module and test
+> suite (verified by repo-wide grep in Stage 13E) — they are never wired
+> to the Creative Director UI and must never be presented to a user as a
+> real generation option. They remain in the codebase only because the
+> existing automated tests depend on them.
+
 Stage 13C. This is an **investigation**, not a generation stage: it
 determines the correct architecture for eventually turning a
 `KeyframePromptPackage` (Stage 13A) into a real image via the installed

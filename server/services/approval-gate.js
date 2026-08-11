@@ -261,17 +261,37 @@ function reconcileGenerationCost(project, job) {
 
 // A human acknowledging a detected overage — the only way to unblock
 // further generation for a project after Part 6's overage policy has
-// tripped. Deliberately NOT exposed as an MCP tool yet (Part 7 only adds a
-// read-only budget tool) — this exists so the policy is real and testable
-// now, with an MCP acknowledgement tool left for a later stage.
-function acknowledgeOverage(project, { acknowledgedBy } = {}) {
+// tripped. Originally left with no MCP/REST tool for Stage 8.1 to expose
+// later; Stage 13E, Part 5 is that later stage — see
+// mcp/tools/approval-tools.js's acknowledge_budget_overage and index.js's
+// POST /projects/:id/budget/overage/acknowledge, both thin wrappers over
+// this exact function.
+//
+// Returns null (a no-op, mutates nothing) if there is no overage at all,
+// OR if the overage is already acknowledged — callers that need to tell
+// those two cases apart (e.g. to report a distinct "already acknowledged"
+// response rather than a bare error) should check
+// project.creditLedger.overage / .overage.acknowledged themselves BEFORE
+// calling this, exactly like decideApproval()'s "no pending request"
+// convention.
+//
+// Never increases the budget limit, never touches approvals.status, and
+// never modifies any generation job — it only records the acknowledgement
+// and lifts the hard stop (blocked/blockedReason). If some OTHER blocking
+// condition existed independently of this overage, clearing `blocked`
+// here would not silently paper over it: canProceed() re-derives its
+// verdict from approvals.status and the remaining-budget math on every
+// call, so any other real gate keeps being enforced on the next check
+// regardless of what this function did.
+function acknowledgeOverage(project, { acknowledgedBy, note } = {}) {
   ensureShape(project);
   const { overage } = project.creditLedger;
-  if (!overage) return null;
+  if (!overage || overage.acknowledged) return null;
 
   overage.acknowledged = true;
   overage.acknowledgedBy = acknowledgedBy || null;
   overage.acknowledgedAt = new Date().toISOString();
+  overage.note = note || null;
   project.creditLedger.blocked = false;
   project.creditLedger.blockedReason = null;
   return project;

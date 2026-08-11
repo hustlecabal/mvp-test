@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 63 tools', async () => {
+test('a real MCP client can discover all 66 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -68,9 +68,12 @@ test('a real MCP client can discover all 63 tools', async () => {
   // docs/architecture/keyframe-execution-bridge.md). Stage 13D added the 4
   // Human Keyframe Execution Handoff tools — create/get/list/cancel only;
   // there is deliberately no execute/run/generate tool for a handoff.
-  // Everything else is unchanged.
-  assert.equal(names.length, 63);
+  // Stage 13E added select_canonical_keyframe_asset/
+  // get_canonical_keyframe_asset (Part 1) and acknowledge_budget_overage
+  // (Part 5). Everything else is unchanged.
+  assert.equal(names.length, 66);
   assert.deepEqual(names, [
+    'acknowledge_budget_overage',
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
     'approve_keyframe_generation',
@@ -89,6 +92,7 @@ test('a real MCP client can discover all 63 tools', async () => {
     'get_approval_status',
     'get_asset',
     'get_asset_download',
+    'get_canonical_keyframe_asset',
     'get_creative_brief',
     'get_creative_skill',
     'get_generation_status',
@@ -126,6 +130,7 @@ test('a real MCP client can discover all 63 tools', async () => {
     'request_generation_approval',
     'request_keyframe_generation_approval',
     'run_fixture_keyframe_execution',
+    'select_canonical_keyframe_asset',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',

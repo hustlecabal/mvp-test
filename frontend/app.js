@@ -61,6 +61,13 @@ const state = {
     // this section — those actions do not exist programmatically.
     viewedHandoffKeyframeId: null,
     viewedHandoffData: null, // { handoffs: [...], selectedHandoffId, executionPackage }
+
+    // Stage 13E, Part 1 — the canonical keyframe asset. Selection is
+    // ALWAYS an explicit click on SELECT AS CANONICAL below — nothing on
+    // this page ever picks one automatically (not the newest, not the
+    // first approved one).
+    viewedCanonicalKeyframeId: null,
+    viewedCanonicalData: null, // { canonical, candidates: [{asset, source, promptPackageVersion}] }
   },
 };
 
@@ -580,6 +587,40 @@ function renderBudgetPanel() {
     warning.className = 'budget-warning';
     warning.textContent = `Generation is blocked: ${b.reason || 'Unknown reason'}`;
     container.appendChild(warning);
+  }
+
+  // Stage 13E, Part 5 — the overage is NEVER hidden after acknowledgement;
+  // acknowledging only records who/when and lifts the hard stop
+  // (services/approval-gate.js's acknowledgeOverage) — it never raises the
+  // budget limit and never auto-unblocks any other condition.
+  if (b.overage) {
+    const overageHeading = document.createElement('div');
+    overageHeading.className = 'entity-sub';
+    overageHeading.textContent = 'Overage:';
+    container.appendChild(overageHeading);
+    container.appendChild(infoRow('Amount', b.overage.amount));
+    container.appendChild(infoRow('Detected', fmtDate(b.overage.detectedAt)));
+    container.appendChild(infoRow('OVERAGE ACKNOWLEDGED BY', b.overage.acknowledgedBy));
+    container.appendChild(infoRow('OVERAGE ACKNOWLEDGED AT', b.overage.acknowledgedAt ? fmtDate(b.overage.acknowledgedAt) : null));
+
+    if (!b.overage.acknowledged) {
+      const ackBtn = document.createElement('button');
+      ackBtn.type = 'button';
+      ackBtn.className = 'btn';
+      ackBtn.textContent = 'ACKNOWLEDGE OVERAGE';
+      ackBtn.addEventListener('click', async () => {
+        const acknowledgedBy = window.prompt('Your name:', '') || undefined;
+        ackBtn.disabled = true;
+        try {
+          await fetchJson(`/projects/${state.selectedProjectId}/budget/overage/acknowledge`, { method: 'POST', body: { acknowledgedBy } });
+          await loadBudget(state.selectedProjectId);
+        } catch (err) {
+          window.alert(err.message);
+          ackBtn.disabled = false;
+        }
+      });
+      container.appendChild(ackBtn);
+    }
   }
 }
 
@@ -1759,6 +1800,7 @@ function renderKeyframeList(container, plan) {
       card.appendChild(renderPromptPackageControls(kf));
       card.appendChild(renderKeyframeGenerationControls(kf));
       card.appendChild(renderKeyframeHandoffControls(kf));
+      card.appendChild(renderCanonicalAssetControls(kf));
 
       list.appendChild(card);
     });
@@ -2569,6 +2611,179 @@ function renderIngestedHandoffResult(kf, handoff) {
   }
 
   return box;
+}
+
+// --- Canonical Keyframe Asset (Stage 13E, Part 1) -----------------------------------
+//
+// A keyframe can accumulate many candidate assets (fake-image generations,
+// human handoffs, retries), but at most one is ever THE asset for it.
+// Selection here is always an explicit SELECT AS CANONICAL click — there
+// is deliberately no automatic selection anywhere in this section, not
+// even for the newest or only-approved candidate.
+
+function renderCanonicalAssetControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-secondary';
+  toggleBtn.textContent = state.creative.viewedCanonicalKeyframeId === kf.keyframeId ? 'HIDE CANONICAL KEYFRAME ASSET' : 'CANONICAL KEYFRAME ASSET';
+  toggleBtn.addEventListener('click', () => toggleCanonicalAsset(kf));
+  box.appendChild(toggleBtn);
+
+  if (state.creative.viewedCanonicalKeyframeId === kf.keyframeId) {
+    box.appendChild(renderCanonicalAssetPanel(kf, state.creative.viewedCanonicalData));
+  }
+
+  return box;
+}
+
+async function toggleCanonicalAsset(kf) {
+  if (state.creative.viewedCanonicalKeyframeId === kf.keyframeId) {
+    state.creative.viewedCanonicalKeyframeId = null;
+    state.creative.viewedCanonicalData = null;
+    renderKeyframePlanView();
+    return;
+  }
+  await loadCanonicalAssetData(kf);
+}
+
+// Candidates are gathered from BOTH generation paths (Stage 13B's fake-
+// image generations and Stage 13D's human handoffs) — whichever produced
+// a real, stored asset for this keyframe is eligible. This is a UI-side
+// convenience listing only; the server (keyframeStore.selectCanonicalKeyframeAsset)
+// is what actually validates that a chosen assetId belongs to this exact
+// project + keyframe.
+async function loadCanonicalAssetData(kf) {
+  try {
+    const [canonical, generations, handoffs] = await Promise.all([
+      fetchJson(`/keyframes/${kf.keyframeId}/canonical-asset`),
+      fetchJson(`/keyframes/${kf.keyframeId}/generations`),
+      fetchJson(`/keyframes/${kf.keyframeId}/handoffs`),
+    ]);
+
+    const candidates = [];
+    const seen = new Set();
+    for (const gen of generations || []) {
+      if (gen.asset && !seen.has(gen.asset.assetId)) {
+        seen.add(gen.asset.assetId);
+        candidates.push({ asset: gen.asset, promptPackageVersion: gen.keyframePromptPackageVersion });
+      }
+    }
+    for (const h of handoffs || []) {
+      if (h.asset && !seen.has(h.asset.assetId)) {
+        seen.add(h.asset.assetId);
+        candidates.push({ asset: h.asset, promptPackageVersion: h.promptPackageVersion });
+      }
+    }
+    // Part 1: "prefer APPROVED assets as eligible candidates" — a display-
+    // ordering nicety only; every candidate remains selectable regardless
+    // of its approvalStatus (see the service-layer comment for why).
+    candidates.sort((a, b) => (b.asset.approvalStatus === 'APPROVED') - (a.asset.approvalStatus === 'APPROVED'));
+
+    state.creative.viewedCanonicalKeyframeId = kf.keyframeId;
+    state.creative.viewedCanonicalData = { canonical, candidates };
+  } catch {
+    state.creative.viewedCanonicalKeyframeId = kf.keyframeId;
+    state.creative.viewedCanonicalData = null;
+  }
+  renderKeyframePlanView();
+}
+
+function renderCanonicalAssetPanel(kf, data) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!data) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'Could not load canonical asset data.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const { canonical, candidates } = data;
+
+  const heading = document.createElement('div');
+  heading.className = 'entity-sub';
+  heading.textContent = 'Canonical asset:';
+  panel.appendChild(heading);
+
+  if (!canonical || !canonical.canonicalAssetId || !canonical.asset) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No canonical asset selected yet.';
+    panel.appendChild(none);
+  } else {
+    const asset = canonical.asset;
+    if (asset.storage && asset.storage.status === 'STORED') {
+      const preview = document.createElement('img');
+      preview.className = 'derived-prompt-box';
+      preview.style.maxWidth = '200px';
+      preview.src = `/assets/${asset.assetId}/preview`;
+      preview.alt = 'Canonical keyframe asset preview';
+      panel.appendChild(preview);
+    }
+    panel.appendChild(infoRow('Asset ID', asset.assetId));
+    panel.appendChild(approvalBadge(asset.approvalStatus));
+    panel.appendChild(infoRow('Source', asset.provider));
+    panel.appendChild(infoRow('Package version', canonical.canonicalAssetId ? asset.promptPackageVersion : null));
+    panel.appendChild(infoRow('Selected by', canonical.canonicalAssetSelectedBy));
+    panel.appendChild(infoRow('Selected date', canonical.canonicalAssetSelectedAt ? fmtDate(canonical.canonicalAssetSelectedAt) : null));
+  }
+
+  const candidatesHeading = document.createElement('div');
+  candidatesHeading.className = 'entity-sub';
+  candidatesHeading.style.marginTop = '16px';
+  candidatesHeading.textContent = 'Candidates:';
+  panel.appendChild(candidatesHeading);
+
+  if (!candidates || candidates.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No candidate assets yet.';
+    panel.appendChild(none);
+    return panel;
+  }
+
+  for (const candidate of candidates) {
+    const asset = candidate.asset;
+    const card = document.createElement('div');
+    card.className = 'entity-card';
+
+    if (asset.storage && asset.storage.status === 'STORED') {
+      const preview = document.createElement('img');
+      preview.className = 'derived-prompt-box';
+      preview.style.maxWidth = '120px';
+      preview.src = `/assets/${asset.assetId}/preview`;
+      preview.alt = 'Candidate asset preview';
+      card.appendChild(preview);
+    }
+    card.appendChild(infoRow('Asset ID', asset.assetId));
+    card.appendChild(approvalBadge(asset.approvalStatus));
+    card.appendChild(infoRow('Source', asset.provider));
+    card.appendChild(infoRow('Package version', candidate.promptPackageVersion));
+
+    const isCanonical = canonical && canonical.canonicalAssetId === asset.assetId;
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'btn btn-secondary';
+    selectBtn.textContent = isCanonical ? 'CANONICAL' : 'SELECT AS CANONICAL';
+    selectBtn.disabled = isCanonical;
+    selectBtn.addEventListener('click', async () => {
+      await fetchJson(`/keyframes/${kf.keyframeId}/canonical-asset`, {
+        method: 'PUT',
+        body: { assetId: asset.assetId, selectedBy: 'Creative Director UI' },
+      });
+      await loadCanonicalAssetData(kf);
+    });
+    card.appendChild(selectBtn);
+
+    panel.appendChild(card);
+  }
+
+  return panel;
 }
 
 // --- Creative Skills panel (Part 11) — display only, never executes anything ------

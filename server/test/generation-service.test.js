@@ -157,15 +157,20 @@ test('7. generation blocked when project is in the wrong state', async () => {
 // state without approval at all. To prove requestGeneration's OWN direct
 // gate check (not just the state machine's) actually catches an
 // unapproved/over-budget project, these two tests force the project's
-// status directly via projectStore.updateProject — bypassing the state
-// machine entirely — simulating "somehow got into this state" and
+// status directly on the in-memory object (never through
+// projectStore.updateProject — Stage 13E, Part 4 removed "status" from
+// its whitelist entirely, exactly so this kind of direct assignment can
+// no longer happen through the public update path) — simulating "somehow
+// got into this state" (a bug elsewhere, a hand-edited file) and
 // confirming the gate still refuses regardless of how status got there.
 
 test('8. generation blocked without approval (gate check independent of the state machine)', async () => {
   const created = projectStore.createProject({ title: 'x', topic: 'y' });
   const scene = timelineStore.addScene(created.id, { title: 'S1', description: 'd' });
   const shot = timelineStore.addShot(created.id, { sceneId: scene.sceneId });
-  projectStore.updateProject(created.id, { status: 'KEYFRAME_GENERATION' }); // no approval at all
+  const project = projectStore.getProject(created.id);
+  project.status = 'KEYFRAME_GENERATION'; // no approval at all
+  projectStore.touch(project);
 
   const result = await generationService.requestGeneration({
     projectId: created.id,
@@ -184,8 +189,8 @@ test('9. generation blocked by budget (gate check independent of the state machi
   gate.setBudget(project, 10);
   gate.requestApproval(project, { estimatedCost: 999 });
   gate.decideApproval(project, { approve: true });
+  project.status = 'KEYFRAME_GENERATION';
   projectStore.touch(project);
-  projectStore.updateProject(created.id, { status: 'KEYFRAME_GENERATION' });
 
   const result = await generationService.requestGeneration({
     projectId: created.id,

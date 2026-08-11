@@ -15,6 +15,7 @@ const keyframeGenerationApprovalStore = require('./services/keyframe-generation-
 const keyframeGenerationService = require('./services/keyframe-generation-service');
 const generationStore = require('./services/generation-store');
 const keyframeHandoffService = require('./services/keyframe-handoff-service');
+const stateMachine = require('./schemas/state-machine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -65,25 +66,56 @@ app.get('/projects/:id', (req, res) => {
   res.json(project);
 });
 
-// Update a project's title, topic, and/or status.
+// Update a project's title and/or topic. Stage 13E, Part 4 — status is
+// deliberately NOT accepted here (see services/project-store.js's
+// UPDATABLE_FIELDS comment): it must only ever change through the state
+// machine's own transition() function, via POST /projects/:id/transition
+// below, so canTransition()'s legality check and (for a generation state)
+// the approval/budget gate are never silently skipped.
 app.patch('/projects/:id', (req, res) => {
   const { title, topic, status } = req.body || {};
 
+  if (status !== undefined) {
+    return res.status(400).json({
+      error: 'status cannot be changed through PATCH /projects/:id. Use POST /projects/:id/transition instead, so the change goes through the state machine.',
+    });
+  }
   if (title !== undefined && typeof title !== 'string') {
     return res.status(400).json({ error: 'title must be a string' });
   }
   if (topic !== undefined && typeof topic !== 'string') {
     return res.status(400).json({ error: 'topic must be a string' });
   }
-  if (status !== undefined && typeof status !== 'string') {
-    return res.status(400).json({ error: 'status must be a string' });
-  }
 
-  const updated = projectStore.updateProject(req.params.id, { title, topic, status });
+  const updated = projectStore.updateProject(req.params.id, { title, topic });
   if (!updated) {
     return res.status(404).json({ error: 'Project not found' });
   }
   res.json(updated);
+});
+
+// Stage 13E, Part 4 — the ONLY REST route that may change project.status,
+// and it does so exactly the way mcp/tools/project-tools.js's
+// transition_project does: through schemas/state-machine.js's transition()
+// (which itself calls the approval/budget gate before allowing entry into
+// a generation state), never a raw field assignment. See
+// docs/architecture/control-surfaces.md.
+app.post('/projects/:id/transition', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const { to } = req.body || {};
+  if (!to || typeof to !== 'string') {
+    return res.status(400).json({ error: '"to" (the target state) is required' });
+  }
+
+  const result = stateMachine.transition(project, to);
+  if (!result.ok) {
+    return res.status(409).json({ error: result.reason, currentState: project.status });
+  }
+
+  projectStore.touch(project);
+  res.json(result.project);
 });
 
 // Set (or change) how many credits a project is allowed to spend in total.
@@ -101,6 +133,38 @@ app.post('/projects/:id/budget', (req, res) => {
 
   gate.setBudget(project, limit);
   res.json(projectStore.touch(project));
+});
+
+// Stage 13E, Part 5 — expose the existing (previously unexposed)
+// acknowledgeOverage. Never raises the budget limit, never touches
+// approvals.status, never modifies a generation job. Idempotent-by-
+// response: acknowledging an already-acknowledged overage returns 200
+// with alreadyAcknowledged: true rather than silently re-stamping
+// who/when, and never hides the overage after acknowledgement.
+app.post('/projects/:id/budget/overage/acknowledge', (req, res) => {
+  const { acknowledgedBy, note } = req.body || {};
+  if (acknowledgedBy !== undefined && typeof acknowledgedBy !== 'string') {
+    return res.status(400).json({ error: 'acknowledgedBy must be a string' });
+  }
+  if (note !== undefined && typeof note !== 'string') {
+    return res.status(400).json({ error: 'note must be a string' });
+  }
+
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  gate.ensureShape(project);
+  const { overage } = project.creditLedger;
+  if (!overage) {
+    return res.status(409).json({ error: 'No active budget overage exists for this project.' });
+  }
+  if (overage.acknowledged) {
+    return res.json({ alreadyAcknowledged: true, overage, budget: gate.getBudgetView(project) });
+  }
+
+  gate.acknowledgeOverage(project, { acknowledgedBy, note });
+  projectStore.touch(project);
+  res.json({ alreadyAcknowledged: false, overage: project.creditLedger.overage, budget: gate.getBudgetView(project) });
 });
 
 // Ask for human approval before any generation is allowed to happen.
@@ -379,6 +443,26 @@ app.post('/projects/:id/keyframes', (req, res) => {
   const { updatedBy, changeNote, ...fields } = req.body || {};
   const keyframe = keyframeStore.createKeyframe(req.params.id, fields, { updatedBy, changeNote });
   res.status(201).json(keyframe);
+});
+
+// Stage 13E, Part 1 — the canonical keyframe asset. PUT always requires an
+// explicit assetId from the caller; nothing here ever auto-selects one.
+app.put('/keyframes/:keyframeId/canonical-asset', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { assetId, selectedBy, changeNote } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+  const result = keyframeStore.selectCanonicalKeyframeAsset(found.project.id, req.params.keyframeId, assetId, { selectedBy, changeNote });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result.keyframe);
+});
+
+app.get('/keyframes/:keyframeId/canonical-asset', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(keyframeStore.getCanonicalKeyframeAsset(found.project.id, req.params.keyframeId));
 });
 
 // Read-only requirement analysis for one storyboard shot (Part 6-10). Never

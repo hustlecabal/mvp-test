@@ -65,12 +65,21 @@ function listProjects() {
 // Only these fields can be changed through updateProject. Everything else
 // (like id, createdAt, or the arrays for shots/characters/etc.) is left
 // alone at this stage — later stages will add their own focused update
-// paths for those. Note: "status" is deliberately included here for the
-// existing HTTP PATCH endpoint (Stage 2), but Stage 5's MCP update_project
-// tool never passes status through — state changes go through
-// schemas/state-machine.js's transition() instead, so this whitelist
-// being permissive doesn't let MCP bypass the state machine.
-const UPDATABLE_FIELDS = ['title', 'topic', 'status', 'audience', 'tone', 'creativeMode'];
+// paths for those.
+//
+// Stage 13E, Part 4 — "status" was REMOVED from this list. From Stage 2
+// through Stage 13D, it was deliberately included here "for the existing
+// HTTP PATCH endpoint," while Stage 5's MCP update_project tool never
+// passed status through (state changes went through schemas/state-
+// machine.js's transition() instead). That asymmetry was a real bypass:
+// PATCH /projects/:id could set project.status directly, skipping
+// canTransition()'s legality check and, for a generation state, the
+// approval/budget gate transition() enforces — silently jumping past
+// every review checkpoint in between. Status now changes ONLY through
+// stateMachine.transition() — see index.js's POST /projects/:id/transition
+// and mcp/tools/project-tools.js's transition_project, which is the ONLY
+// code path that may set project.status.
+const UPDATABLE_FIELDS = ['title', 'topic', 'audience', 'tone', 'creativeMode'];
 
 function updateProject(id, updates = {}) {
   const project = getProject(id);

@@ -99,14 +99,39 @@ test('PATCH /projects/:id updates fields and updatedAt', async () => {
   const res = await fetch(`${baseUrl}/projects/${created.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: 'After', status: 'RESEARCH' }),
+    body: JSON.stringify({ title: 'After' }),
   });
 
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.title, 'After');
-  assert.equal(body.status, 'RESEARCH');
+  assert.equal(body.status, 'PLANNING', 'status must be untouched by a generic PATCH');
   assert.notEqual(body.updatedAt, created.updatedAt);
+});
+
+// Stage 13E, Part 4 — PATCH must never be able to move project.status
+// directly; see POST /projects/:id/transition instead.
+test('PATCH /projects/:id rejects a status field with a clear error, and leaves status unchanged', async () => {
+  const createRes = await fetch(`${baseUrl}/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Before', topic: 'x' }),
+  });
+  const created = await createRes.json();
+
+  const res = await fetch(`${baseUrl}/projects/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'After', status: 'RESEARCH' }),
+  });
+
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.match(body.error, /transition/i);
+
+  const reread = await (await fetch(`${baseUrl}/projects/${created.id}`)).json();
+  assert.equal(reread.status, 'PLANNING', 'the rejected PATCH must not have partially applied');
+  assert.equal(reread.title, 'Before', 'the whole request must be rejected, not just the status field');
 });
 
 test('PATCH /projects/:id returns 404 for a missing project', async () => {

@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const projectStore = require('./project-store');
 const creativeStore = require('./creative-store');
+const timelineStore = require('./timeline-store');
 const keyframeSchema = require('../schemas/keyframe-schema');
 
 // Overridable for tests, same pattern as CREATIVE_DATA_DIR/PROJECT_DATA_DIR.
@@ -208,6 +209,85 @@ function setKeyframeGenerationStatus(projectId, keyframeId, status) {
   return attachStale(projectId, plan.keyframes[index]);
 }
 
+// Stage 13E, Part 1 — canonical asset selection. Bookkeeping like
+// setKeyframeGenerationStatus above (does not bump the plan's own
+// version/history — see the schema comment for why), but keeps its OWN
+// complete history so no prior selection is ever lost.
+//
+// Eligibility: the asset must exist and belong to this exact project +
+// keyframe, and must NOT currently be REJECTED (Part 7 test 5 — a
+// rejected asset can never become canonical). Beyond that, approval
+// status is not a hard gate: an APPROVED or still-NONE (unreviewed) asset
+// can be selected — "prefer APPROVED assets as eligible candidates" (Part
+// 1) is a UI-ordering concern (see the Creative Director UI), not a
+// stricter service-layer requirement. A currently-canonical asset that
+// LATER becomes REJECTED is deliberately NOT auto-cleared here — this
+// function is never called by the approval flow, so a human must
+// explicitly call it again to pick a different one (Part 1: "canonical
+// selection must be explicitly changed"). Selecting an asset never
+// changes its approvalStatus.
+function selectCanonicalKeyframeAsset(projectId, keyframeId, assetId, { selectedBy, changeNote } = {}) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return { ok: false, reason: `No project found with id "${projectId}"` };
+
+  const index = plan.keyframes.findIndex((k) => k.keyframeId === keyframeId);
+  if (index === -1) return { ok: false, reason: `No keyframe found with id "${keyframeId}" in project "${projectId}"` };
+
+  const asset = timelineStore.getAsset(projectId, assetId);
+  if (!asset) return { ok: false, reason: `No asset found with id "${assetId}" in project "${projectId}"` };
+  if (asset.keyframeId !== keyframeId) {
+    return { ok: false, reason: `Asset "${assetId}" does not belong to keyframe "${keyframeId}".` };
+  }
+  if (asset.approvalStatus === 'REJECTED') {
+    return { ok: false, reason: `Asset "${assetId}" has been REJECTED and cannot be selected as canonical.` };
+  }
+
+  const keyframe = plan.keyframes[index];
+  const history = keyframe.canonicalAssetHistory ? [...keyframe.canonicalAssetHistory] : [];
+  // The PREVIOUS selection (if any) is archived, never discarded — even a
+  // re-selection of the very same asset records a new history entry, so
+  // "who chose this and when" is always fully reconstructable.
+  if (keyframe.canonicalAssetId) {
+    history.push({
+      assetId: keyframe.canonicalAssetId,
+      selectedAt: keyframe.canonicalAssetSelectedAt,
+      selectedBy: keyframe.canonicalAssetSelectedBy,
+      changeNote: keyframe.canonicalAssetChangeNote || null,
+      supersededAt: new Date().toISOString(),
+    });
+  }
+
+  plan.keyframes[index] = {
+    ...keyframe,
+    canonicalAssetId: assetId,
+    canonicalAssetSelectedAt: new Date().toISOString(),
+    canonicalAssetSelectedBy: selectedBy || null,
+    canonicalAssetChangeNote: changeNote || null,
+    canonicalAssetHistory: history,
+  };
+  savePlan(plan);
+  return { ok: true, keyframe: attachStale(projectId, plan.keyframes[index]) };
+}
+
+// Read-only. Returns null only if the project/keyframe doesn't exist —
+// a keyframe with no canonical selection yet still returns a real object
+// with canonicalAssetId: null and asset: null, never an error.
+function getCanonicalKeyframeAsset(projectId, keyframeId) {
+  const keyframe = getKeyframe(projectId, keyframeId);
+  if (!keyframe) return null;
+
+  const asset = keyframe.canonicalAssetId ? timelineStore.getAsset(projectId, keyframe.canonicalAssetId) : null;
+  return {
+    keyframeId,
+    canonicalAssetId: keyframe.canonicalAssetId,
+    canonicalAssetSelectedAt: keyframe.canonicalAssetSelectedAt,
+    canonicalAssetSelectedBy: keyframe.canonicalAssetSelectedBy,
+    canonicalAssetChangeNote: keyframe.canonicalAssetChangeNote,
+    canonicalAssetHistory: keyframe.canonicalAssetHistory || [],
+    asset,
+  };
+}
+
 // Stage 12 REST route /keyframes/:keyframeId — finds a keyframe by id
 // WITHOUT already knowing its project. Same reasoning and scale tradeoff
 // as timelineStore.findAssetById/findShotById.
@@ -231,4 +311,6 @@ module.exports = {
   createKeyframe,
   updateKeyframe,
   findKeyframeById,
+  selectCanonicalKeyframeAsset,
+  getCanonicalKeyframeAsset,
 };

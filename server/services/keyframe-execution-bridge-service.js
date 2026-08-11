@@ -27,6 +27,16 @@
 // NEITHER function calls a real provider, a real skill, or the network.
 // Both return BLOCKED (never execute) if the keyframe isn't eligible per
 // the exact same checks Stage 13B enforces — see Part 8 of the doc.
+//
+// Stage 13E, Part 3 — CLASSIFICATION: INTERNAL TEST/DEVELOPMENT ONLY.
+// services/keyframe-handoff-service.js (Stage 13D) is the real production
+// path for getting a keyframe image today. This file has zero consumers
+// outside its own MCP tools (mcp/tools/keyframe-execution-tools.js) and
+// its own test files — verified by repo-wide grep for this stage. It is
+// never called by frontend/app.js, index.js, or any other service, and
+// must never be presented to a user as a real generation option. Kept
+// because the existing automated tests (test/keyframe-execution-bridge-
+// service.test.js, test/keyframe-execution-mcp.test.js) depend on it.
 
 const projectStore = require('./project-store');
 const keyframeStore = require('./keyframe-store');

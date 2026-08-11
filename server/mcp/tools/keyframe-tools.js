@@ -169,6 +169,52 @@ function register(server) {
   );
 
   server.registerTool(
+    'select_canonical_keyframe_asset',
+    {
+      title: 'Select the canonical asset for a keyframe',
+      description:
+        'Explicitly marks ONE existing asset as THE asset for this keyframe (Stage 13E, Part 1). Always an ' +
+        'explicit human/agent decision — nothing in this codebase ever selects a canonical asset automatically ' +
+        '(not on generation, not on approval, not because it is newest). The asset must already exist, already ' +
+        'belong to this exact project + keyframe, and must not currently be REJECTED (a rejected asset can never ' +
+        'become canonical); this never approves, generates, or moves the asset. Every previous selection is ' +
+        'preserved in canonicalAssetHistory, never discarded. If the currently-canonical asset is later REJECTED, ' +
+        'this must be called again explicitly — nothing clears it automatically.',
+      inputSchema: {
+        projectId: z.string(),
+        keyframeId: z.string(),
+        assetId: z.string(),
+        selectedBy: z.string().optional(),
+        changeNote: z.string().optional(),
+      },
+    },
+    async ({ projectId, keyframeId, assetId, selectedBy, changeNote }) => {
+      requireProject(projectId);
+      const result = keyframeStore.selectCanonicalKeyframeAsset(projectId, keyframeId, assetId, { selectedBy, changeNote });
+      if (!result.ok) throw new Error(result.reason);
+      return jsonResult(result.keyframe);
+    }
+  );
+
+  server.registerTool(
+    'get_canonical_keyframe_asset',
+    {
+      title: 'Get the canonical asset for a keyframe',
+      description:
+        'Reads which asset (if any) is currently canonical for a keyframe, including the full asset record and ' +
+        'the complete selection history. Read-only. Returns canonicalAssetId: null (not an error) when nothing ' +
+        'has been selected yet.',
+      inputSchema: { projectId: z.string(), keyframeId: z.string() },
+    },
+    async ({ projectId, keyframeId }) => {
+      requireProject(projectId);
+      const result = keyframeStore.getCanonicalKeyframeAsset(projectId, keyframeId);
+      if (!result) throw new Error(`No keyframe found with id "${keyframeId}" in project "${projectId}"`);
+      return jsonResult(result);
+    }
+  );
+
+  server.registerTool(
     'analyze_shot_keyframes',
     {
       title: 'Analyze which keyframes a shot needs',

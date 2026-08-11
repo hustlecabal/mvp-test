@@ -45,6 +45,10 @@ fs.mkdirSync(KEYFRAME_HANDOFF_DATA_DIR, { recursive: true });
 
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Stage 13E, Part 2 — the only two statuses that count as "in-flight
+// human execution" for concurrency purposes (see createHandoff below).
+const ACTIVE_HANDOFF_STATUSES = ['READY', 'IN_PROGRESS'];
+
 function isValidId(id) {
   return typeof id === 'string' && ID_PATTERN.test(id);
 }
@@ -123,6 +127,20 @@ function createHandoff(projectId, keyframeId, { createdBy, notes } = {}) {
 
   const keyframe = keyframeStore.getKeyframe(projectId, keyframeId);
   if (!keyframe) return { ok: false, reason: `No keyframe found with id "${keyframeId}" in project "${projectId}"` };
+
+  // Stage 13E, Part 2 — at most one ACTIVE (READY or IN_PROGRESS) handoff
+  // per keyframe, so a human is never facing two concurrent, ambiguous
+  // execution instructions for the same keyframe at once. INGESTED and
+  // CANCELLED are historical/inactive and never block a new handoff — the
+  // old record is never deleted or touched, it simply stops being active.
+  const existingRecord = ensureRecord(projectId);
+  const activeHandoff = existingRecord ? existingRecord.handoffs.find((h) => h.keyframeId === keyframeId && ACTIVE_HANDOFF_STATUSES.includes(h.status)) : null;
+  if (activeHandoff) {
+    return {
+      ok: false,
+      reason: `An active handoff (${activeHandoff.handoffId}, status ${activeHandoff.status}) already exists for this keyframe. Cancel it or wait for it to be ingested before creating another.`,
+    };
+  }
 
   const pkg = keyframePromptService.getKeyframePromptPackage(projectId, keyframeId);
   if (!pkg) return { ok: false, reason: 'No prompt package has been built for this keyframe yet. Build one first.' };

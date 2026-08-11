@@ -106,6 +106,41 @@ function register(server) {
       return jsonResult({ ok: true, approvals: updated.approvals });
     }
   );
+
+  server.registerTool(
+    'acknowledge_budget_overage',
+    {
+      title: 'Acknowledge a budget overage',
+      description:
+        'Records a human acknowledgement of an existing budget overage, via the existing approval-gate service ' +
+        '(Stage 8.1\'s acknowledgeOverage, exposed here in Stage 13E). This lifts the hard stop that follows an ' +
+        'overage so canProceed() can be re-evaluated on its own merits — it never raises the budget limit, never ' +
+        'touches approvals.status, and never modifies any generation job or historical record. Fails clearly if ' +
+        'no overage exists; returns alreadyAcknowledged: true (not an error) if this overage was already ' +
+        'acknowledged, without overwriting who/when it was first acknowledged.',
+      inputSchema: {
+        projectId: z.string(),
+        acknowledgedBy: z.string().optional(),
+        note: z.string().optional(),
+      },
+    },
+    async ({ projectId, acknowledgedBy, note }) => {
+      const project = requireProject(projectId);
+      gate.ensureShape(project);
+      const { overage } = project.creditLedger;
+
+      if (!overage) {
+        return jsonResult({ ok: false, reason: 'No active budget overage exists for this project.' });
+      }
+      if (overage.acknowledged) {
+        return jsonResult({ ok: true, alreadyAcknowledged: true, overage });
+      }
+
+      gate.acknowledgeOverage(project, { acknowledgedBy, note });
+      projectStore.touch(project);
+      return jsonResult({ ok: true, alreadyAcknowledged: false, overage: project.creditLedger.overage, budget: gate.getBudgetView(project) });
+    }
+  );
 }
 
 module.exports = register;

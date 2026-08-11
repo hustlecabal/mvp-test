@@ -115,6 +115,27 @@ function createKeyframe(overrides = {}) {
     // services/keyframe-planner.js for how these get filled in.
     recommendedSkill: null,
     recommendationReason: null,
+
+    // Stage 13E, Part 1 — the CANONICAL asset. A keyframe can accumulate
+    // many candidate assets (fake-image generations, human handoffs,
+    // retries), but at most one can ever be "the" asset for this keyframe.
+    // Selection is always an explicit human/agent action — nothing in this
+    // codebase ever sets this field automatically (not on generation, not
+    // on approval, not because an asset is newest). See
+    // services/keyframe-store.js's selectCanonicalKeyframeAsset.
+    canonicalAssetId: null,
+    canonicalAssetSelectedAt: null,
+    canonicalAssetSelectedBy: null,
+    canonicalAssetChangeNote: null,
+    // Every PREVIOUS canonical selection, preserved rather than
+    // overwritten — {assetId, selectedAt, selectedBy, changeNote,
+    // supersededAt}. Deliberately separate from the Keyframe Plan's own
+    // version history (see keyframe-store.js's applyVersionedUpdate):
+    // canonical selection is process bookkeeping like
+    // setKeyframeGenerationStatus, not a creative-planning edit, so it
+    // must not mark prompt packages stale the way a plan-version bump
+    // would.
+    canonicalAssetHistory: [],
   };
   return withDefaults(base, overrides);
 }
