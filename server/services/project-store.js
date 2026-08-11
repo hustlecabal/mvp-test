@@ -4,10 +4,14 @@
 // Everything else (like index.js) asks these functions to do the work,
 // instead of touching the filesystem directly. That keeps file-handling
 // logic in one place, so it's easier to keep safe and easier to test.
+//
+// What a project actually LOOKS like (its fields and their defaults) lives
+// in schemas/production-schema.js — this file only handles saving,
+// loading, listing, and validating ids.
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const productionSchema = require('../schemas/production-schema');
 
 // Where project files live. Can be overridden with an environment
 // variable so tests can point this at a temporary, throwaway folder
@@ -33,36 +37,12 @@ function projectFilePath(id) {
   return path.join(PROJECTS_DIR, `${id}.json`);
 }
 
-function blankProject({ title, topic }) {
-  const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    title: title || '',
-    topic: topic || '',
-    status: 'PLANNING',
-    createdAt: now,
-    updatedAt: now,
-    creativeDirection: {},
-    research: {},
-    story: {},
-    script: {},
-    visualBible: {},
-    characters: [],
-    locations: [],
-    shots: [],
-    assets: [],
-    generations: [],
-    approvals: {},
-    creditLedger: {},
-  };
-}
-
 function saveProject(project) {
   fs.writeFileSync(projectFilePath(project.id), JSON.stringify(project, null, 2));
 }
 
-function createProject({ title, topic } = {}) {
-  const project = blankProject({ title, topic });
+function createProject(overrides = {}) {
+  const project = productionSchema.createBlankProject(overrides);
   saveProject(project);
   return project;
 }
