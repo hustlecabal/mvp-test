@@ -183,6 +183,31 @@ function updateKeyframe(projectId, keyframeId, updates = {}, { updatedBy, change
   return attachStale(projectId, updatedKeyframe);
 }
 
+// Stage 13B — updates ONLY a keyframe's `status` field, WITHOUT bumping
+// the Keyframe Plan's version or recording a history entry. Deliberately
+// separate from updateKeyframe(): the generation-lifecycle transitions
+// this is for (GENERATING while a provider call is in flight, GENERATED/
+// APPROVED/REJECTED as its outcome — see services/keyframe-generation-
+// service.js) are process bookkeeping, not a creative-planning edit. If
+// plan-version bumps counted these, every generation attempt would
+// immediately mark its own just-built prompt package STALE (Stage 13A's
+// sourceKeyframePlanVersion check comparing against a plan version this
+// same call just changed) even though nothing about the shot, storyboard,
+// or keyframe's own creative content actually changed. A human editing a
+// keyframe's real fields (frameType, subject, composition, ...) still
+// always goes through the versioned updateKeyframe() above.
+function setKeyframeGenerationStatus(projectId, keyframeId, status) {
+  const plan = ensurePlan(projectId);
+  if (!plan) return null;
+
+  const index = plan.keyframes.findIndex((k) => k.keyframeId === keyframeId);
+  if (index === -1) return null;
+
+  plan.keyframes[index] = { ...plan.keyframes[index], status };
+  savePlan(plan);
+  return attachStale(projectId, plan.keyframes[index]);
+}
+
 // Stage 12 REST route /keyframes/:keyframeId — finds a keyframe by id
 // WITHOUT already knowing its project. Same reasoning and scale tradeoff
 // as timelineStore.findAssetById/findShotById.
@@ -200,6 +225,7 @@ module.exports = {
   KEYFRAME_DATA_DIR,
   getKeyframePlan,
   updateKeyframePlan,
+  setKeyframeGenerationStatus,
   listKeyframes,
   getKeyframe,
   createKeyframe,

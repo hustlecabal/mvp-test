@@ -81,10 +81,15 @@ test('all 7 keyframe tools are discoverable', async () => {
   }
 });
 
-test('no execute/generate-style keyframe tool exists', async () => {
+test('no keyframe PLANNING tool bypasses controlled generation', async () => {
+  // Stage 13B added a real generate_keyframe tool, but it lives in
+  // keyframe-generation-tools.js and is safety-gated (see
+  // keyframe-generation-tools.test.js) — this test only confirms the
+  // Stage 12 keyframe-INTELLIGENCE tools tested in this file never grew a
+  // shortcut around it.
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  for (const forbidden of ['execute_keyframe', 'generate_keyframe', 'run_keyframe_skill']) {
+  for (const forbidden of ['execute_keyframe', 'run_keyframe_skill']) {
     assert.ok(!names.includes(forbidden), `${forbidden} must not exist`);
   }
 });

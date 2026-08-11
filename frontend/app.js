@@ -42,6 +42,16 @@ const state = {
     // nothing in this section can generate, execute, or submit anything.
     viewedPackageKeyframeId: null,
     viewedPackage: null,
+
+    // Stage 13B — Controlled Keyframe Generation. Read/write, but every
+    // write here (request/approve/reject generation approval, GENERATE
+    // KEYFRAME, approve/reject the result) is an explicit human button
+    // click — nothing on this page ever fires automatically. The server
+    // (services/keyframe-generation-service.js) re-checks every safety
+    // condition itself regardless of what this UI computes for its
+    // disabled/enabled button state.
+    viewedGenerationKeyframeId: null,
+    viewedGenerationData: null, // { approval, generations, pkg, budget }
   },
 };
 
@@ -1688,6 +1698,7 @@ function renderKeyframeList(container, plan) {
       }
 
       card.appendChild(renderPromptPackageControls(kf));
+      card.appendChild(renderKeyframeGenerationControls(kf));
 
       list.appendChild(card);
     });
@@ -1868,6 +1879,257 @@ function renderPromptPackagePanel(pkg) {
   panel.appendChild(promptBox);
 
   return panel;
+}
+
+// --- Controlled Keyframe Generation (Stage 13B) -------------------------------------
+//
+// Part 15 — NO AUTONOMY: every write below (request/approve/reject
+// generation approval, GENERATE KEYFRAME, approve/reject the generated
+// result) fires ONLY from an explicit button click. Nothing here ever
+// runs on a timer, on page load, or as a side effect of viewing a
+// keyframe. The server is the real enforcement point regardless of what
+// this file computes for a button's disabled state — see
+// services/keyframe-generation-service.js.
+
+function renderKeyframeGenerationControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-secondary';
+  toggleBtn.textContent = state.creative.viewedGenerationKeyframeId === kf.keyframeId ? 'HIDE GENERATION' : 'GENERATION';
+  toggleBtn.addEventListener('click', () => toggleKeyframeGeneration(kf));
+  box.appendChild(toggleBtn);
+
+  if (state.creative.viewedGenerationKeyframeId === kf.keyframeId) {
+    box.appendChild(renderKeyframeGenerationPanel(kf, state.creative.viewedGenerationData));
+  }
+
+  return box;
+}
+
+async function toggleKeyframeGeneration(kf) {
+  if (state.creative.viewedGenerationKeyframeId === kf.keyframeId) {
+    state.creative.viewedGenerationKeyframeId = null;
+    state.creative.viewedGenerationData = null;
+    renderKeyframePlanView();
+    return;
+  }
+  await loadKeyframeGenerationData(kf);
+}
+
+async function loadKeyframeGenerationData(kf) {
+  try {
+    const [approval, generations, pkg, budget] = await Promise.all([
+      fetchJson(`/keyframes/${kf.keyframeId}/generation-approval`),
+      fetchJson(`/keyframes/${kf.keyframeId}/generations`),
+      fetchJson(`/keyframes/${kf.keyframeId}/prompt-package`).catch(() => null),
+      fetchJson(`/projects/${state.selectedProjectId}/budget`),
+    ]);
+    state.creative.viewedGenerationKeyframeId = kf.keyframeId;
+    state.creative.viewedGenerationData = { approval, generations, pkg, budget };
+  } catch {
+    state.creative.viewedGenerationKeyframeId = kf.keyframeId;
+    state.creative.viewedGenerationData = null;
+  }
+  renderKeyframePlanView();
+}
+
+// Client-side mirror of keyframe-generation-service.js's runSafetyChecks/
+// checkKeyframeBudget, used ONLY to decide whether to show the GENERATE
+// KEYFRAME button as enabled — a convenience, not a security boundary.
+// Deliberately ignores budget.generationAllowed/approvalStatus, which
+// reflect the PROJECT's own video-generation approval (Part 5: not
+// sufficient for keyframe generation) — only the ledger numbers
+// (remainingBudget/blocked) are shared between the two.
+function computeKeyframeGenerationEligibility({ kf, pkg, approval, budget }) {
+  if (kf.status === 'GENERATING') return { allowed: false, reason: 'A generation is already in progress for this keyframe.' };
+  if (!pkg) return { allowed: false, reason: 'No prompt package has been built yet.' };
+  if (pkg.status !== 'CURRENT') return { allowed: false, reason: 'The prompt package is STALE — rebuild it first.' };
+  if (!approval || approval.status !== 'APPROVED') return { allowed: false, reason: 'No approved keyframe generation request.' };
+  if (approval.promptPackageId !== pkg.packageId || approval.promptPackageVersion !== pkg.version) {
+    return { allowed: false, reason: 'The approval was granted for a different prompt package version.' };
+  }
+  if (budget.blocked) return { allowed: false, reason: 'Project budget is blocked pending an overage acknowledgement.' };
+  if (approval.estimatedCost == null && !approval.unknownCostAcknowledged) {
+    return { allowed: false, reason: 'Estimated cost is unknown and has not been acknowledged.' };
+  }
+  const estimatedCost = approval.estimatedCost || 0;
+  if (budget.remainingBudget != null && estimatedCost > budget.remainingBudget) {
+    return { allowed: false, reason: 'Approved cost would exceed the remaining project budget.' };
+  }
+  return { allowed: true, reason: null };
+}
+
+function renderKeyframeGenerationPanel(kf, data) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!data) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'Could not load generation data.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const { approval, generations, pkg, budget } = data;
+
+  // --- GENERATION APPROVAL -------------------------------------------------
+  const approvalHeading = document.createElement('div');
+  approvalHeading.className = 'entity-sub';
+  approvalHeading.textContent = 'Generation approval:';
+  panel.appendChild(approvalHeading);
+  panel.appendChild(statusBadge(approval.status));
+  panel.appendChild(infoRow('Estimated cost', approval.estimatedCost));
+  panel.appendChild(infoRow('Requested by', approval.requestedBy));
+  panel.appendChild(infoRow('Approved by', approval.approvedBy));
+
+  const approvalActions = document.createElement('div');
+  approvalActions.className = 'form-actions';
+
+  const requestBtn = document.createElement('button');
+  requestBtn.type = 'button';
+  requestBtn.className = 'btn btn-secondary';
+  requestBtn.textContent = 'REQUEST GENERATION APPROVAL';
+  requestBtn.addEventListener('click', async () => {
+    const costInput = window.prompt('Estimated cost in credits (leave blank if unknown):', approval.estimatedCost != null ? String(approval.estimatedCost) : '');
+    if (costInput === null) return; // cancelled
+    const estimatedCost = costInput.trim() === '' ? undefined : Number(costInput);
+    await fetchJson(`/keyframes/${kf.keyframeId}/generation-approval/request`, {
+      method: 'POST',
+      body: { estimatedCost, requestedBy: 'Creative Director UI', reason: 'Requested from the Keyframe Plan workspace' },
+    });
+    await loadKeyframeGenerationData(kf);
+  });
+  approvalActions.appendChild(requestBtn);
+
+  if (approval.status === 'PENDING') {
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn';
+    approveBtn.textContent = 'APPROVE GENERATION';
+    approveBtn.addEventListener('click', async () => {
+      await fetchJson(`/keyframes/${kf.keyframeId}/generation-approval/decision`, { method: 'POST', body: { approve: true, decidedBy: 'Creative Director UI' } });
+      await loadKeyframeGenerationData(kf);
+    });
+    approvalActions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'REJECT GENERATION';
+    rejectBtn.addEventListener('click', async () => {
+      await fetchJson(`/keyframes/${kf.keyframeId}/generation-approval/decision`, { method: 'POST', body: { approve: false, decidedBy: 'Creative Director UI' } });
+      await loadKeyframeGenerationData(kf);
+    });
+    approvalActions.appendChild(rejectBtn);
+  }
+  panel.appendChild(approvalActions);
+
+  // --- GENERATE KEYFRAME ----------------------------------------------------
+  const eligibility = computeKeyframeGenerationEligibility({ kf, pkg, approval, budget });
+
+  const generateBtn = document.createElement('button');
+  generateBtn.type = 'button';
+  generateBtn.className = 'btn';
+  generateBtn.style.marginTop = '12px';
+  generateBtn.textContent = 'GENERATE KEYFRAME';
+  generateBtn.disabled = !eligibility.allowed;
+  generateBtn.title = eligibility.allowed ? '' : eligibility.reason;
+  generateBtn.addEventListener('click', async () => {
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating…';
+    try {
+      await fetchJson(`/keyframes/${kf.keyframeId}/generate`, { method: 'POST', body: {} });
+    } finally {
+      await loadKeyframeGenerationData(kf); // re-renders the whole view, including this button's fresh state
+    }
+  });
+  panel.appendChild(generateBtn);
+  if (!eligibility.allowed) {
+    const reasonEl = document.createElement('div');
+    reasonEl.className = 'field-hint';
+    reasonEl.textContent = eligibility.reason;
+    panel.appendChild(reasonEl);
+  }
+
+  // --- GENERATION HISTORY -----------------------------------------------------
+  const historyHeading = document.createElement('div');
+  historyHeading.className = 'entity-sub';
+  historyHeading.style.marginTop = '16px';
+  historyHeading.textContent = 'Generation history:';
+  panel.appendChild(historyHeading);
+
+  if (!generations || generations.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No generation attempts yet.';
+    panel.appendChild(none);
+  } else {
+    generations.forEach((gen) => panel.appendChild(renderKeyframeGenerationHistoryEntry(kf, gen)));
+  }
+
+  return panel;
+}
+
+function renderKeyframeGenerationHistoryEntry(kf, gen) {
+  const card = document.createElement('div');
+  card.className = 'entity-card';
+
+  card.appendChild(statusBadge(gen.status));
+  card.appendChild(infoRow('Provider', gen.provider));
+  card.appendChild(infoRow('Model', gen.model));
+  card.appendChild(infoRow('Reserved cost', gen.reservedCost));
+  card.appendChild(infoRow('Generation ID', gen.id));
+  card.appendChild(infoRow('Asset ID', gen.assetId));
+
+  if (gen.asset) {
+    card.appendChild(infoRow('Storage status', gen.asset.storage ? gen.asset.storage.status : null));
+    card.appendChild(approvalBadge(gen.asset.approvalStatus));
+
+    if (gen.asset.storage && gen.asset.storage.status === 'STORED') {
+      const preview = document.createElement('img');
+      preview.className = 'derived-prompt-box';
+      preview.style.maxWidth = '160px';
+      preview.src = `/assets/${gen.asset.assetId}/preview`;
+      preview.alt = 'Generated keyframe preview';
+      card.appendChild(preview);
+    }
+
+    // Part 13/17 — human review of the RESULT. Only ever shown for a
+    // still-unreviewed (NONE) asset; approving/rejecting is always an
+    // explicit click, never automatic.
+    if (gen.asset.approvalStatus === 'NONE') {
+      const reviewActions = document.createElement('div');
+      reviewActions.className = 'form-actions';
+
+      const approveKfBtn = document.createElement('button');
+      approveKfBtn.type = 'button';
+      approveKfBtn.className = 'btn';
+      approveKfBtn.textContent = 'APPROVE KEYFRAME';
+      approveKfBtn.addEventListener('click', async () => {
+        await fetchJson(`/keyframes/${kf.keyframeId}/approval`, { method: 'POST', body: { approve: true, assetId: gen.asset.assetId, decidedBy: 'Creative Director UI' } });
+        await loadKeyframeGenerationData(kf);
+      });
+      reviewActions.appendChild(approveKfBtn);
+
+      const rejectKfBtn = document.createElement('button');
+      rejectKfBtn.type = 'button';
+      rejectKfBtn.className = 'btn btn-secondary';
+      rejectKfBtn.textContent = 'REJECT KEYFRAME';
+      rejectKfBtn.addEventListener('click', async () => {
+        await fetchJson(`/keyframes/${kf.keyframeId}/approval`, { method: 'POST', body: { approve: false, assetId: gen.asset.assetId, decidedBy: 'Creative Director UI' } });
+        await loadKeyframeGenerationData(kf);
+      });
+      reviewActions.appendChild(rejectKfBtn);
+
+      card.appendChild(reviewActions);
+    }
+  }
+
+  return card;
 }
 
 // --- Creative Skills panel (Part 11) — display only, never executes anything ------

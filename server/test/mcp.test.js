@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 48 tools', async () => {
+test('a real MCP client can discover all 57 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -61,11 +61,15 @@ test('a real MCP client can discover all 48 tools', async () => {
   // Keyframe Intelligence tools (see
   // docs/architecture/keyframe-intelligence.md). Stage 13A added the 3
   // Keyframe Prompt Packaging tools (see
-  // docs/architecture/keyframe-prompt-packaging.md). Everything else is
+  // docs/architecture/keyframe-prompt-packaging.md). Stage 13B added the 9
+  // Controlled Keyframe Generation tools (see
+  // docs/architecture/keyframe-generation.md). Everything else is
   // unchanged.
-  assert.equal(names.length, 48);
+  assert.equal(names.length, 57);
   assert.deepEqual(names, [
     'analyze_shot_keyframes',
+    'approve_generated_keyframe',
+    'approve_keyframe_generation',
     'archive_asset',
     'build_keyframe_prompt_package',
     'create_keyframe',
@@ -75,6 +79,7 @@ test('a real MCP client can discover all 48 tools', async () => {
     'create_storyboard_scene',
     'create_storyboard_shot',
     'estimate_generation',
+    'generate_keyframe',
     'get_approval_status',
     'get_asset',
     'get_asset_download',
@@ -82,6 +87,8 @@ test('a real MCP client can discover all 48 tools', async () => {
     'get_creative_skill',
     'get_generation_status',
     'get_keyframe',
+    'get_keyframe_generation_approval',
+    'get_keyframe_generation_status',
     'get_keyframe_plan',
     'get_keyframe_prompt_package',
     'get_master_creative_spec',
@@ -96,6 +103,7 @@ test('a real MCP client can discover all 48 tools', async () => {
     'list_assets',
     'list_creative_skills',
     'list_generation_history',
+    'list_keyframe_generations',
     'list_keyframe_prompt_packages',
     'list_keyframes',
     'list_projects',
@@ -103,8 +111,11 @@ test('a real MCP client can discover all 48 tools', async () => {
     'list_shots',
     'poll_generation',
     'record_approval_decision',
+    'reject_generated_keyframe',
+    'reject_keyframe_generation',
     'request_generation',
     'request_generation_approval',
+    'request_keyframe_generation_approval',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',
@@ -125,10 +136,16 @@ test('safety boundary: no generation or raw-access tools exist', async () => {
     'execute_generation',
     'arbitrary_http_request',
     'generate_video',
-    'generate_keyframe',
     'generate_image',
     'execute_skill',
     'submit_generation',
+    // Stage 13B, Part 16 — generate_keyframe itself is a legitimate,
+    // safety-gated tool (see keyframe-generation-tools.test.js); these are
+    // the ones that would let a caller bypass its checks.
+    'raw_image_request',
+    'raw_http_request',
+    'bypass_budget',
+    'force_generate',
   ];
   for (const name of forbidden) {
     assert.ok(!names.includes(name), `${name} must not exist as an MCP tool`);

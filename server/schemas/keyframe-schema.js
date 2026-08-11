@@ -43,8 +43,29 @@ const FRAME_TYPES = [
 // (schemas/state-machine.js) or the Stage 11A storyboard shot planning
 // statuses (SHOT_PLANNING_STATUSES in schemas/creative-schema.js). No
 // automatic transitions exist between these — every status change is a
-// deliberate, human-driven update_keyframe call.
-const KEYFRAME_STATUSES = ['DRAFT', 'PLANNED', 'READY_FOR_GENERATION', 'GENERATED', 'APPROVED', 'REJECTED'];
+// deliberate, human-driven update_keyframe call (or, for the Stage 13B
+// generation-related statuses below, a deliberate call into
+// services/keyframe-generation-service.js triggered by an explicit human
+// action — see docs/architecture/keyframe-generation.md).
+//
+// Stage 13B, Part 12 extended this with GENERATION_APPROVED (a human has
+// explicitly authorized generating this keyframe — see
+// schemas/keyframe-generation-approval-schema.js), GENERATING (a
+// generation job is currently in flight for it), and STALE (its prompt
+// package no longer matches the current storyboard/keyframe plan
+// version). This is still keyframe-level state only — the project's own
+// state machine (schemas/state-machine.js) is untouched.
+const KEYFRAME_STATUSES = [
+  'DRAFT',
+  'PLANNED',
+  'READY_FOR_GENERATION',
+  'GENERATION_APPROVED',
+  'GENERATING',
+  'GENERATED',
+  'APPROVED',
+  'REJECTED',
+  'STALE',
+];
 
 // Part 1 — a single keyframe: one recommended/planned visual reference
 // for a specific storyboard shot.

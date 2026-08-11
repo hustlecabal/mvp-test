@@ -15,6 +15,13 @@ const crypto = require('crypto');
 // enforced — new types can show up without changing this file.
 const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'video'];
 
+// Stage 13B, Part 1 — distinguishes a controlled single-image keyframe
+// generation from the existing video generation flow. Every generation
+// job created before this stage (and every video job created after it)
+// has no explicit generationType of its own; createGenerationJob defaults
+// it to 'VIDEO' below so existing behavior is completely unchanged.
+const GENERATION_TYPES = ['VIDEO', 'IMAGE_KEYFRAME'];
+
 // Applies overrides on top of a set of defaults, but skips any override
 // whose value is undefined. A plain { ...base, ...overrides } would let an
 // explicit `{ audience: undefined }` wipe out the default '' — and since
@@ -158,6 +165,14 @@ function createAsset(overrides = {}) {
     type: null, // see ASSET_TYPES
     sceneId: null,
     shotId: null,
+    // Stage 13B, Part 11 — keyframe asset lineage. Every field below stays
+    // null for a non-keyframe (e.g. video) asset; together they trace a
+    // generated image all the way back to the exact creative decision
+    // (which keyframe, which prompt package version) that produced it.
+    keyframeId: null,
+    generationType: null, // see GENERATION_TYPES ('IMAGE_KEYFRAME' for a keyframe image)
+    promptPackageId: null,
+    promptPackageVersion: null,
     parentAssetId: null,
     version: 1,
     prompt: null,
@@ -231,6 +246,15 @@ function createGenerationJob(overrides = {}) {
     projectId: null,
     sceneId: null,
     shotId: null,
+    // Stage 13B, Part 1 — set only for a controlled keyframe image
+    // generation; stays null for every existing video generation job.
+    keyframeId: null,
+    keyframePromptPackageId: null,
+    keyframePromptPackageVersion: null,
+    // Defaults to 'VIDEO' so every job created by the existing
+    // generation-service.js (which never sets this field) is
+    // unambiguously a video job, exactly as before this stage existed.
+    generationType: 'VIDEO',
     provider: null,
     model: null,
     task: null,
@@ -286,6 +310,7 @@ function createBlankProject(overrides = {}) {
 
 module.exports = {
   ASSET_TYPES,
+  GENERATION_TYPES,
   createCreativeIR,
   createTimelineIR,
   createScene,

@@ -62,7 +62,18 @@ test('2. FRAME_TYPES is a fixed, non-empty vocabulary including every documented
 // --- 3. Keyframe planning statuses ---------------------------------------------
 
 test('3. KEYFRAME_STATUSES is separate from the production state machine and creative shot statuses', () => {
-  assert.deepEqual(KEYFRAME_STATUSES, ['DRAFT', 'PLANNED', 'READY_FOR_GENERATION', 'GENERATED', 'APPROVED', 'REJECTED']);
+  // Stage 13B, Part 12 extended this with GENERATION_APPROVED/GENERATING/STALE.
+  assert.deepEqual(KEYFRAME_STATUSES, [
+    'DRAFT',
+    'PLANNED',
+    'READY_FOR_GENERATION',
+    'GENERATION_APPROVED',
+    'GENERATING',
+    'GENERATED',
+    'APPROVED',
+    'REJECTED',
+    'STALE',
+  ]);
 });
 
 // --- 4. Keyframe Plan defaults --------------------------------------------------

@@ -11,6 +11,9 @@ const skillOrchestrator = require('./services/skill-orchestrator');
 const keyframeStore = require('./services/keyframe-store');
 const keyframePlanner = require('./services/keyframe-planner');
 const keyframePromptService = require('./services/keyframe-prompt-service');
+const keyframeGenerationApprovalStore = require('./services/keyframe-generation-approval-store');
+const keyframeGenerationService = require('./services/keyframe-generation-service');
+const generationStore = require('./services/generation-store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -420,6 +423,100 @@ app.get('/projects/:id/keyframe-prompt-packages', (req, res) => {
 
   const { shotId, sceneId, status } = req.query;
   res.json(keyframePromptService.listKeyframePromptPackages(req.params.id, { shotId, sceneId, status }));
+});
+
+// Stage 13B — Controlled Keyframe Generation. See docs/architecture/
+// keyframe-generation.md. Every route below is a thin wrapper over
+// services/keyframe-generation-approval-store.js or
+// services/keyframe-generation-service.js — all safety checks (approval,
+// budget, staleness, duplicate protection) live in those services, never
+// here. generate_keyframe (POST .../generate) is the only route that can
+// cause a real (fake-provider, in this stage) generation, and only if
+// that service's checks all pass.
+
+app.post('/keyframes/:keyframeId/generation-approval/request', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { promptPackageId, promptPackageVersion, estimatedCost, reason, requestedBy } = req.body || {};
+  let resolvedPackageId = promptPackageId;
+  let resolvedPackageVersion = promptPackageVersion;
+  if (!resolvedPackageId) {
+    const pkg = keyframePromptService.getKeyframePromptPackage(found.project.id, req.params.keyframeId);
+    if (!pkg) {
+      return res.status(409).json({ error: 'No prompt package has been built for this keyframe yet.' });
+    }
+    resolvedPackageId = pkg.packageId;
+    resolvedPackageVersion = pkg.version;
+  }
+
+  const approval = keyframeGenerationApprovalStore.requestApproval(found.project.id, req.params.keyframeId, {
+    promptPackageId: resolvedPackageId,
+    promptPackageVersion: resolvedPackageVersion,
+    estimatedCost,
+    reason,
+    requestedBy,
+  });
+  res.json(approval);
+});
+
+app.get('/keyframes/:keyframeId/generation-approval', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(keyframeGenerationApprovalStore.getApproval(found.project.id, req.params.keyframeId));
+});
+
+app.post('/keyframes/:keyframeId/generation-approval/decision', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { approve, decidedBy, reason } = req.body || {};
+  const approval = keyframeGenerationApprovalStore.decideApproval(found.project.id, req.params.keyframeId, { approve, decidedBy, reason });
+  if (!approval) return res.status(409).json({ error: 'No pending keyframe generation approval request to decide.' });
+
+  if (approve) {
+    keyframeStore.setKeyframeGenerationStatus(found.project.id, req.params.keyframeId, 'GENERATION_APPROVED');
+  }
+  res.json(approval);
+});
+
+app.post('/keyframes/:keyframeId/generate', async (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const result = await keyframeGenerationService.generateKeyframe(found.project.id, req.params.keyframeId);
+  res.json(result);
+});
+
+app.get('/keyframes/:keyframeId/generations', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(keyframeGenerationService.listKeyframeGenerations(found.project.id, req.params.keyframeId));
+});
+
+app.get('/keyframe-generations/:generationId', (req, res) => {
+  const job = generationStore.getGenerationJob(req.params.generationId);
+  if (!job || job.generationType !== 'IMAGE_KEYFRAME') return res.status(404).json({ error: 'Keyframe generation job not found' });
+  res.json(job);
+});
+
+// Part 13's post-generation human review — deliberately a DIFFERENT route
+// (and a different store) than /generation-approval/decision above: that
+// one authorizes SUBMITTING a generation; this one records what a human
+// thinks of its RESULT.
+app.post('/keyframes/:keyframeId/approval', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { approve, assetId, decidedBy, reason } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+  const result = approve
+    ? keyframeGenerationService.approveGeneratedKeyframe(found.project.id, req.params.keyframeId, assetId, { approvedBy: decidedBy })
+    : keyframeGenerationService.rejectGeneratedKeyframe(found.project.id, req.params.keyframeId, assetId, { decidedBy, reason });
+
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result);
 });
 
 // Stage 9A — permanent asset storage download/preview. See

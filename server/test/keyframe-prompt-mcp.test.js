@@ -84,10 +84,13 @@ test('all 3 keyframe prompt-packaging tools are discoverable', async () => {
   }
 });
 
-test('no generate/execute/submit-style tool exists for prompt packaging', async () => {
+test('no generate/execute/submit-style tool exists for prompt packaging itself', async () => {
+  // Stage 13B added a real (separately safety-gated) generate_keyframe
+  // tool elsewhere — this file only confirms the PACKAGING tools tested
+  // here never grew their own shortcut around it.
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  for (const forbidden of ['generate_keyframe', 'execute_skill', 'submit_generation', 'generate_prompt_package']) {
+  for (const forbidden of ['execute_skill', 'submit_generation', 'generate_prompt_package']) {
     assert.ok(!names.includes(forbidden), `${forbidden} must not exist`);
   }
 });
