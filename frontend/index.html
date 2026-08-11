@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EvoLink Video Factory</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>EVOLINK VIDEO FACTORY</h1>
+    <p class="topbar-sub">Production workspace — read-only preview (Stage 10)</p>
+  </header>
+
+  <div class="workspace">
+    <!-- LEFT: project / scene / shot navigation -->
+    <aside class="panel panel-left">
+      <section>
+        <h2>Projects</h2>
+        <div id="project-list" class="state-box">Loading…</div>
+      </section>
+
+      <section>
+        <h2>Scenes &amp; Shots</h2>
+        <div id="tree" class="state-box">No project selected.</div>
+      </section>
+    </aside>
+
+    <!-- CENTER: current shot workspace -->
+    <main class="panel panel-center">
+      <div id="shot-workspace" class="state-box">Select a shot from the left to see its workspace here.</div>
+    </main>
+
+    <!-- RIGHT: generation + budget information -->
+    <aside class="panel panel-right">
+      <section>
+        <h2>Generation</h2>
+        <div id="generation-panel" class="state-box">No generation selected.</div>
+      </section>
+
+      <section>
+        <h2>Budget</h2>
+        <div id="budget-panel" class="state-box">Select a project to see its budget.</div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

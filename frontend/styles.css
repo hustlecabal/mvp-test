@@ -1,0 +1,407 @@
+/* EvoLink Video Factory — Stage 10 frontend.
+   Plain CSS, no framework. Desktop-first (1280px/1440px/1920px),
+   simple flexbox layout, kept intentionally beginner-readable. */
+
+:root {
+  --bg: #0f1115;
+  --panel-bg: #171a21;
+  --panel-border: #2a2e38;
+  --text: #e6e8ec;
+  --text-dim: #9aa1ad;
+  --accent: #4da3ff;
+  --ok: #3ecf8e;
+  --warn: #f5a524;
+  --danger: #f14668;
+  --card-bg: #1e222b;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.topbar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.06em;
+}
+
+.topbar-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* --- Three-column workspace --- */
+
+.workspace {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  min-height: calc(100vh - 70px);
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow-y: auto;
+  max-height: calc(100vh - 100px);
+}
+
+.panel-left {
+  flex: 0 0 280px;
+}
+
+.panel-center {
+  flex: 1 1 auto;
+  min-width: 420px;
+}
+
+.panel-right {
+  flex: 0 0 320px;
+}
+
+.panel h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+
+.panel section + section {
+  margin-top: 24px;
+}
+
+/* Smaller desktop widths still stay usable — columns just narrow a bit. */
+@media (max-width: 1360px) {
+  .panel-left {
+    flex-basis: 240px;
+  }
+  .panel-right {
+    flex-basis: 280px;
+  }
+}
+
+/* --- Generic state boxes (loading / error / empty) --- */
+
+.state-box {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.state-box.error {
+  color: var(--danger);
+}
+
+.retry-btn {
+  display: inline-block;
+  margin-top: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.retry-btn:hover {
+  border-color: var(--accent);
+}
+
+/* --- Project list --- */
+
+.project-item {
+  padding: 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.project-item:hover {
+  background: var(--card-bg);
+}
+
+.project-item.selected {
+  border-color: var(--accent);
+  background: var(--card-bg);
+}
+
+.project-item .title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.project-item .meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* --- Scene / shot tree --- */
+
+.tree-scene {
+  margin-bottom: 10px;
+}
+
+.tree-scene-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+
+.tree-shot {
+  padding: 6px 8px 6px 16px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.tree-shot:hover {
+  background: var(--card-bg);
+}
+
+.tree-shot.selected {
+  border-color: var(--accent);
+  background: var(--card-bg);
+  color: var(--accent);
+}
+
+/* --- Shot workspace (center) --- */
+
+.shot-header h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.shot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+
+.shot-meta strong {
+  color: var(--text);
+}
+
+.shot-prompt {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  white-space: pre-wrap;
+}
+
+.video-preview {
+  width: 100%;
+  max-width: 640px;
+  border-radius: var(--radius);
+  background: #000;
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* --- Generation history cards --- */
+
+.history-section h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 20px 0 10px;
+}
+
+.history-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.history-card {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.history-card:hover {
+  border-color: var(--accent);
+}
+
+.history-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.history-card .gen-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.history-card .model {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.history-card .cost {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.history-card .card-action {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* --- Status / approval badges --- */
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-completed {
+  background: rgba(62, 207, 142, 0.15);
+  color: var(--ok);
+}
+
+.badge-failed,
+.badge-cancelled,
+.badge-timed_out {
+  background: rgba(241, 70, 104, 0.15);
+  color: var(--danger);
+}
+
+.badge-processing,
+.badge-submitted,
+.badge-requested {
+  background: rgba(245, 165, 36, 0.15);
+  color: var(--warn);
+}
+
+.badge-none {
+  background: rgba(154, 161, 173, 0.15);
+  color: var(--text-dim);
+}
+
+.badge-approved {
+  background: rgba(62, 207, 142, 0.15);
+  color: var(--ok);
+}
+
+.badge-rejected {
+  background: rgba(241, 70, 104, 0.15);
+  color: var(--danger);
+}
+
+.badge-stored {
+  background: rgba(77, 163, 255, 0.15);
+  color: var(--accent);
+}
+
+.badge-not_archived {
+  background: rgba(154, 161, 173, 0.15);
+  color: var(--text-dim);
+}
+
+/* --- Generation info panel (right) --- */
+
+.info-list {
+  font-size: 13px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row .label {
+  color: var(--text-dim);
+}
+
+.info-row .value {
+  text-align: right;
+  word-break: break-word;
+}
+
+.value.unknown {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* --- Buttons / links --- */
+
+.btn {
+  display: inline-block;
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+}
+
+/* --- Budget panel warning --- */
+
+.budget-warning {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(241, 70, 104, 0.12);
+  border: 1px solid rgba(241, 70, 104, 0.4);
+  color: var(--danger);
+  font-size: 12px;
+}

@@ -59,25 +59,7 @@ function register(server) {
         projectId: z.string(),
       },
     },
-    async ({ projectId }) => {
-      const project = requireProject(projectId);
-      gate.ensureShape(project);
-      const { allowed, reason } = gate.canProceed(project);
-      const { limit, reserved, actualSpent, overage, blocked } = project.creditLedger;
-
-      return jsonResult({
-        budgetLimit: limit,
-        estimatedAllocations: project.approvals.estimatedCost,
-        reservedCredits: reserved,
-        spentCredits: actualSpent, // null = provider has never reported an actual/final cost
-        remainingBudget: gate.getRemainingBudget(project),
-        overageAmount: overage ? overage.amount : null,
-        overage,
-        generationAllowed: allowed,
-        blocked,
-        reason,
-      });
-    }
+    async ({ projectId }) => jsonResult(gate.getBudgetView(requireProject(projectId)))
   );
 
   server.registerTool(

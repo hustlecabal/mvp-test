@@ -165,6 +165,30 @@ function acknowledgeUnknownCost(project, { acknowledgedBy } = {}) {
   return project;
 }
 
+// Stage 10 — the single, complete budget picture for a project. Both the
+// get_project_budget MCP tool (server/mcp/tools/approval-tools.js) and the
+// GET /projects/:id/budget HTTP endpoint (server/index.js) call this exact
+// function rather than each building their own version of it, so there is
+// only ever one place that decides what "the budget view" means.
+function getBudgetView(project) {
+  ensureShape(project);
+  const { allowed, reason } = canProceed(project);
+  const { limit, reserved, actualSpent, overage, blocked } = project.creditLedger;
+
+  return {
+    budgetLimit: limit,
+    estimatedAllocations: project.approvals.estimatedCost,
+    reservedCredits: reserved,
+    spentCredits: actualSpent, // null = provider has never reported an actual/final cost
+    remainingBudget: getRemainingBudget(project),
+    overageAmount: overage ? overage.amount : null,
+    overage,
+    generationAllowed: allowed,
+    blocked,
+    reason,
+  };
+}
+
 // The remaining budget, or null if no limit has been set (meaning
 // "unbounded" — there is nothing to compare against). Uses actualSpent
 // when the provider has ever told us one (more precise); otherwise falls
@@ -301,6 +325,7 @@ module.exports = {
   acknowledgeUnknownCost,
   acknowledgeOverage,
   getRemainingBudget,
+  getBudgetView,
   reconcileGenerationCost,
   canProceed,
 };

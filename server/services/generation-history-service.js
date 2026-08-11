@@ -56,6 +56,13 @@ function buildHistoryRecord(job) {
     task: job.task,
     status: job.status,
     prompt: job.prompt,
+    // Generic, provider-agnostic passthrough of whatever request
+    // parameters this job was submitted with (e.g. EvoLink's duration/
+    // quality/aspectRatio — see evolink-mapper.js). This file never
+    // hardcodes a provider-specific field name; a different provider's
+    // history would simply carry its own parameter shape here.
+    parameters: job.parameters || {},
+    providerTaskId: job.providerTaskId,
     createdAt: job.createdAt,
     submittedAt: job.submittedAt,
     completedAt: job.completedAt,

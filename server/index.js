@@ -5,6 +5,7 @@ const projectStore = require('./services/project-store');
 const gate = require('./services/approval-gate');
 const timelineStore = require('./services/timeline-store');
 const assetStorage = require('./services/asset-storage');
+const historyService = require('./services/generation-history-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,11 @@ const PORT = process.env.PORT || 3000;
 // Lets Express read a JSON body (e.g. { "title": "..." }) sent by a client
 // and turn it into req.body for us.
 app.use(express.json());
+
+// Stage 10 — serves frontend/ (plain HTML/CSS/JS, no build step) so the
+// whole app runs from one `npm start`. The frontend calls this same API
+// using relative paths (same origin — no CORS setup needed).
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 app.get('/health', (req, res) => {
   res.json({
@@ -150,6 +156,29 @@ app.get('/projects/:id/approval', (req, res) => {
     creditLedger: project.creditLedger,
     canProceed: gate.canProceed(project),
   });
+});
+
+// Stage 10 — the same complete budget picture the get_project_budget MCP
+// tool returns (both call gate.getBudgetView, so there is only one
+// implementation of what "the budget view" means). Read-only.
+app.get('/projects/:id/budget', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  res.json(gate.getBudgetView(project));
+});
+
+// Stage 10 — every generation attempt for one shot, exactly what the
+// get_shot_history MCP tool returns (both call
+// services/generation-history-service.js). Read-only — never triggers a
+// generation.
+app.get('/shots/:shotId/history', (req, res) => {
+  const records = historyService.listShotHistory(req.params.shotId);
+  if (records === null) {
+    return res.status(404).json({ error: 'Shot not found' });
+  }
+  res.json({ shotId: req.params.shotId, generations: records, totalCount: records.length });
 });
 
 // Stage 9A — permanent asset storage download/preview. See
