@@ -21,6 +21,7 @@ const registerApprovalTools = require('./tools/approval-tools');
 const registerGenerationTools = require('./tools/generation-tools');
 const registerHistoryTools = require('./tools/history-tools');
 const registerCreativeTools = require('./tools/creative-tools');
+const registerSkillOrchestrationTools = require('./tools/skill-orchestration-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -36,6 +37,7 @@ function createServer() {
   registerGenerationTools(server);
   registerHistoryTools(server);
   registerCreativeTools(server);
+  registerSkillOrchestrationTools(server);
 
   return server;
 }
