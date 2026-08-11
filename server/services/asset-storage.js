@@ -205,9 +205,91 @@ async function downloadAsset(url, assetId, { fetchImpl = fetch, maxBytes = DEFAU
   return { path: finalPath, relativePath, sizeBytes: totalBytes, contentType, alreadyExisted: false };
 }
 
+// ---------------------------------------------------------------------------
+// Stage 13D — storing a HUMAN-UPLOADED image (Part 6). Distinct from
+// downloadAsset() above: there is no remote URL here, just bytes already
+// in memory (the human downloaded the image from Higgsfield themselves
+// and is now handing it back to this application). "The uploaded image
+// itself is the only source of truth" (Part 6) — this function never
+// trusts a client-supplied filename or Content-Type; it identifies the
+// format itself by sniffing the file's own magic bytes.
+// ---------------------------------------------------------------------------
+
+// Reasonable default cap for a single human-uploaded image (25 MB — an
+// image, never a video, so far smaller than DEFAULT_MAX_BYTES above).
+// Overridable for tests.
+const DEFAULT_MAX_UPLOAD_BYTES = Number(process.env.ASSET_UPLOAD_MAX_BYTES) || 25 * 1024 * 1024;
+
+// Each entry's `check` looks only at the buffer's own leading bytes — the
+// actual file signature, not anything the client claims about it.
+const IMAGE_SIGNATURES = [
+  { ext: '.png', contentType: 'image/png', check: (b) => b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { ext: '.jpg', contentType: 'image/jpeg', check: (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: '.gif', contentType: 'image/gif', check: (b) => b.length >= 6 && (b.toString('ascii', 0, 6) === 'GIF87a' || b.toString('ascii', 0, 6) === 'GIF89a') },
+  {
+    ext: '.webp',
+    contentType: 'image/webp',
+    check: (b) => b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP',
+  },
+];
+
+// Returns { ext, contentType }, or null if the bytes don't match any
+// supported image signature — never guessed from a filename or header.
+function sniffImageFormat(buffer) {
+  if (!Buffer.isBuffer(buffer)) return null;
+  for (const sig of IMAGE_SIGNATURES) {
+    if (sig.check(buffer)) return { ext: sig.ext, contentType: sig.contentType };
+  }
+  return null;
+}
+
+// Writes an already-in-memory, already-validated-by-the-caller image
+// buffer to permanent local storage under `assetId`'s filename. `assetId`
+// must already be a server-generated UUID (Part 6: "generate the asset ID
+// server-side" — this function never accepts one from a client). Refuses
+// to overwrite an existing file (a fresh UUID should never collide;
+// treating a collision as an error rather than silently overwriting is
+// the safe default). Streams via a `.upload` temp file and only renames
+// into place on full success, matching downloadAsset()'s crash-safety.
+function storeUploadedImage(buffer, assetId, { maxBytes = DEFAULT_MAX_UPLOAD_BYTES } = {}) {
+  if (!isValidAssetId(assetId)) {
+    throw new AssetStorageError('invalid_asset_id', `"${assetId}" is not a valid asset id.`);
+  }
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new AssetStorageError('empty_upload', 'Uploaded file was empty.');
+  }
+  if (buffer.length > maxBytes) {
+    throw new AssetStorageError('too_large', `Uploaded file (${buffer.length} bytes) exceeds the ${maxBytes}-byte limit.`);
+  }
+
+  const format = sniffImageFormat(buffer);
+  if (!format) {
+    throw new AssetStorageError('unsupported_format', 'Uploaded file is not a recognized image format (PNG, JPEG, GIF, or WEBP).');
+  }
+
+  const relativePath = relativeFilename(assetId, format.ext);
+  const finalPath = resolveStoredPath(relativePath);
+
+  if (fs.existsSync(finalPath)) {
+    throw new AssetStorageError('already_exists', `A stored file already exists for asset "${assetId}".`);
+  }
+
+  const tmpPath = `${finalPath}.upload`;
+  try {
+    fs.writeFileSync(tmpPath, buffer);
+    fs.renameSync(tmpPath, finalPath);
+  } catch (err) {
+    fs.rmSync(tmpPath, { force: true });
+    throw err;
+  }
+
+  return { path: finalPath, relativePath, sizeBytes: buffer.length, contentType: format.contentType };
+}
+
 module.exports = {
   ASSETS_DIR,
   DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_UPLOAD_BYTES,
   AssetStorageError,
   isValidAssetId,
   isValidRemoteUrl,
@@ -215,4 +297,6 @@ module.exports = {
   resolveStoredPath,
   storedFileExists,
   downloadAsset,
+  sniffImageFormat,
+  storeUploadedImage,
 };

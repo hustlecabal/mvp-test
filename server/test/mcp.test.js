@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 59 tools', async () => {
+test('a real MCP client can discover all 63 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -65,16 +65,20 @@ test('a real MCP client can discover all 59 tools', async () => {
   // Controlled Keyframe Generation tools (see
   // docs/architecture/keyframe-generation.md). Stage 13C added the 2
   // read-only/fixture-only execution-bridge tools (see
-  // docs/architecture/keyframe-execution-bridge.md). Everything else is
-  // unchanged.
-  assert.equal(names.length, 59);
+  // docs/architecture/keyframe-execution-bridge.md). Stage 13D added the 4
+  // Human Keyframe Execution Handoff tools — create/get/list/cancel only;
+  // there is deliberately no execute/run/generate tool for a handoff.
+  // Everything else is unchanged.
+  assert.equal(names.length, 63);
   assert.deepEqual(names, [
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
     'approve_keyframe_generation',
     'archive_asset',
     'build_keyframe_prompt_package',
+    'cancel_keyframe_handoff',
     'create_keyframe',
+    'create_keyframe_handoff',
     'create_project',
     'create_scene',
     'create_shot',
@@ -91,6 +95,7 @@ test('a real MCP client can discover all 59 tools', async () => {
     'get_keyframe',
     'get_keyframe_generation_approval',
     'get_keyframe_generation_status',
+    'get_keyframe_handoff',
     'get_keyframe_plan',
     'get_keyframe_prompt_package',
     'get_master_creative_spec',
@@ -106,6 +111,7 @@ test('a real MCP client can discover all 59 tools', async () => {
     'list_creative_skills',
     'list_generation_history',
     'list_keyframe_generations',
+    'list_keyframe_handoffs',
     'list_keyframe_prompt_packages',
     'list_keyframes',
     'list_projects',
@@ -150,6 +156,12 @@ test('safety boundary: no generation or raw-access tools exist', async () => {
     'raw_http_request',
     'bypass_budget',
     'force_generate',
+    // Stage 13D, Part 4 — the handoff is intentionally human-controlled;
+    // none of these programmatic-execution tools exist.
+    'execute_handoff',
+    'run_handoff',
+    'run_skill',
+    'generate_from_handoff',
   ];
   for (const name of forbidden) {
     assert.ok(!names.includes(name), `${name} must not exist as an MCP tool`);

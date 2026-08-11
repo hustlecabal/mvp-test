@@ -13,6 +13,7 @@ server/data/creative/*.json
 server/data/keyframes/*.json
 server/data/keyframe-prompt-packages/*.json
 server/data/keyframe-generation-approvals/*.json
+server/data/keyframe-handoffs/*.json
 
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.

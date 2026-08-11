@@ -14,6 +14,7 @@ const keyframePromptService = require('./services/keyframe-prompt-service');
 const keyframeGenerationApprovalStore = require('./services/keyframe-generation-approval-store');
 const keyframeGenerationService = require('./services/keyframe-generation-service');
 const generationStore = require('./services/generation-store');
+const keyframeHandoffService = require('./services/keyframe-handoff-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -517,6 +518,88 @@ app.post('/keyframes/:keyframeId/approval', (req, res) => {
 
   if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json(result);
+});
+
+// Stage 13D — Human Keyframe Execution Handoff. See
+// docs/architecture/keyframe-execution-bridge.md (Stage 13C) for why the
+// real execution step is a human, not an automated call. Every route
+// below is a thin wrapper over services/keyframe-handoff-service.js.
+// Nothing here calls Higgsfield, an image API, or EvoLink — the only
+// "execution" that happens is writing a human-supplied image's bytes to
+// local disk once every safety check (approval, package currency,
+// duplicate protection) has passed.
+
+app.post('/keyframes/:keyframeId/handoff', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { createdBy, notes } = req.body || {};
+  const result = keyframeHandoffService.createHandoff(found.project.id, req.params.keyframeId, { createdBy, notes });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.status(201).json(result.handoff);
+});
+
+app.get('/keyframes/:keyframeId/handoffs', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+  res.json(keyframeHandoffService.listHandoffs(found.project.id, { keyframeId: req.params.keyframeId }));
+});
+
+app.get('/handoffs/:handoffId', (req, res) => {
+  const found = keyframeHandoffService.findHandoffById(req.params.handoffId);
+  if (!found) return res.status(404).json({ error: 'Handoff not found' });
+  res.json(found.handoff);
+});
+
+app.put('/handoffs/:handoffId', (req, res) => {
+  const found = keyframeHandoffService.findHandoffById(req.params.handoffId);
+  if (!found) return res.status(404).json({ error: 'Handoff not found' });
+
+  const { status, notes, updatedBy, changeNote } = req.body || {};
+  const result = keyframeHandoffService.updateHandoff(found.project.id, req.params.handoffId, { status, notes }, { updatedBy, changeNote });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result.handoff);
+});
+
+app.post('/handoffs/:handoffId/cancel', (req, res) => {
+  const found = keyframeHandoffService.findHandoffById(req.params.handoffId);
+  if (!found) return res.status(404).json({ error: 'Handoff not found' });
+
+  const { decidedBy, reason } = req.body || {};
+  const result = keyframeHandoffService.cancelHandoff(found.project.id, req.params.handoffId, { decidedBy, reason });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result.handoff);
+});
+
+app.get('/handoffs/:handoffId/package', (req, res) => {
+  const found = keyframeHandoffService.findHandoffById(req.params.handoffId);
+  if (!found) return res.status(404).json({ error: 'Handoff not found' });
+
+  const pkg = keyframeHandoffService.buildExecutionPackage(found.project.id, req.params.handoffId);
+  res.json(pkg);
+});
+
+// Part 6 — the image-return/ingestion endpoint. Deliberately raw-body,
+// not JSON: the request body IS the image's bytes, nothing else. Never
+// trusts the client's Content-Type or any filename — see
+// asset-storage.js's storeUploadedImage(), which identifies the format
+// by sniffing the file's own magic bytes and is the only thing that
+// decides whether this is really a supported image.
+app.post('/handoffs/:handoffId/asset', express.raw({ type: () => true, limit: '50mb' }), (req, res) => {
+  const found = keyframeHandoffService.findHandoffById(req.params.handoffId);
+  if (!found) return res.status(404).json({ error: 'Handoff not found' });
+
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).json({ error: 'Request body must be the raw image bytes.' });
+  }
+
+  const completedBy = req.query.completedBy || req.get('X-Completed-By') || null;
+  const result = keyframeHandoffService.ingestHandoffAsset(req.params.handoffId, req.body, { completedBy });
+  if (!result.ok) {
+    const status = result.code === 'already_ingested' || result.code === 'cancelled' || result.code === 'invalid_status' ? 409 : 400;
+    return res.status(status).json({ error: result.reason });
+  }
+  res.status(201).json(result);
 });
 
 // Stage 9A — permanent asset storage download/preview. See

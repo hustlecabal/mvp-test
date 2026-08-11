@@ -20,7 +20,10 @@ const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'v
 // job created before this stage (and every video job created after it)
 // has no explicit generationType of its own; createGenerationJob defaults
 // it to 'VIDEO' below so existing behavior is completely unchanged.
-const GENERATION_TYPES = ['VIDEO', 'IMAGE_KEYFRAME'];
+// Stage 13D, Part 7 added 'KEYFRAME' — an asset ingested from a HUMAN
+// handoff (services/keyframe-handoff-service.js), never through a
+// generation job at all (no generationId, provider: "human-handoff").
+const GENERATION_TYPES = ['VIDEO', 'IMAGE_KEYFRAME', 'KEYFRAME'];
 
 // Applies overrides on top of a set of defaults, but skips any override
 // whose value is undefined. A plain { ...base, ...overrides } would let an
@@ -170,9 +173,11 @@ function createAsset(overrides = {}) {
     // generated image all the way back to the exact creative decision
     // (which keyframe, which prompt package version) that produced it.
     keyframeId: null,
-    generationType: null, // see GENERATION_TYPES ('IMAGE_KEYFRAME' for a keyframe image)
+    generationType: null, // see GENERATION_TYPES ('IMAGE_KEYFRAME' for a keyframe image, 'KEYFRAME' for a human-handoff image — Stage 13D)
     promptPackageId: null,
     promptPackageVersion: null,
+    skillId: null, // Stage 13D — which skill's workflow the human followed, recorded only, never executed
+    handoffId: null, // Stage 13D — the execution handoff this asset was ingested through, if any
     parentAssetId: null,
     version: 1,
     prompt: null,

@@ -52,6 +52,15 @@ const state = {
     // disabled/enabled button state.
     viewedGenerationKeyframeId: null,
     viewedGenerationData: null, // { approval, generations, pkg, budget }
+
+    // Stage 13D — Human Keyframe Execution Handoff. Stage 13C found no
+    // installed skill can be executed programmatically, so every action
+    // here either creates a frozen instruction record for a HUMAN to
+    // carry out in Higgsfield, or ingests whatever image that human
+    // brings back. There is no GENERATE/EXECUTE/RUN button anywhere in
+    // this section — those actions do not exist programmatically.
+    viewedHandoffKeyframeId: null,
+    viewedHandoffData: null, // { handoffs: [...], selectedHandoffId, executionPackage }
   },
 };
 
@@ -76,6 +85,56 @@ async function fetchJson(url, options = {}) {
     throw new Error(message);
   }
   return res.json();
+}
+
+// Stage 13D — sends a raw file's bytes as the request body (the human-
+// image-return upload). Never JSON-wraps the bytes, never trusts or
+// forwards the browser-supplied filename — the server identifies the
+// image format itself from the bytes.
+async function uploadRaw(url, file) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  if (!res.ok) {
+    let message = `Request failed (HTTP ${res.status})`;
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch {
+      // response wasn't JSON — keep the default message
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+// Stage 13D — COPY PROMPT / COPY EXECUTION PACKAGE buttons. Falls back to
+// a hidden textarea when the async Clipboard API isn't available.
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text || '');
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text || '';
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+  return Promise.resolve();
+}
+
+// Stage 13D — DOWNLOAD PACKAGE. Builds the file purely client-side from
+// text already returned by the server; never a new network request.
+function downloadText(filename, text, mimeType) {
+  const blob = new Blob([text || ''], { type: mimeType || 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 // --- generic state-box rendering (loading / error / empty) ------------------
@@ -1699,6 +1758,7 @@ function renderKeyframeList(container, plan) {
 
       card.appendChild(renderPromptPackageControls(kf));
       card.appendChild(renderKeyframeGenerationControls(kf));
+      card.appendChild(renderKeyframeHandoffControls(kf));
 
       list.appendChild(card);
     });
@@ -2130,6 +2190,385 @@ function renderKeyframeGenerationHistoryEntry(kf, gen) {
   }
 
   return card;
+}
+
+// --- Human Keyframe Execution Handoff (Stage 13D) -----------------------------------
+//
+// Stage 13C found no installed skill (Banana Pro Director, Cinema
+// Worldbuilder, video-prompt-builder) can be executed programmatically —
+// the real execution step is a HUMAN operating Higgsfield's UI directly.
+// So there is deliberately no GENERATE / EXECUTE / RUN button anywhere
+// below: every action either creates a frozen instruction record for a
+// human to carry out, or ingests whatever image bytes that human brings
+// back. The server (services/keyframe-handoff-service.js) re-checks every
+// safety condition itself regardless of what this UI shows.
+
+function renderKeyframeHandoffControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-secondary';
+  toggleBtn.textContent = state.creative.viewedHandoffKeyframeId === kf.keyframeId ? 'HIDE HUMAN EXECUTION' : 'HUMAN EXECUTION';
+  toggleBtn.addEventListener('click', () => toggleKeyframeHandoff(kf));
+  box.appendChild(toggleBtn);
+
+  if (state.creative.viewedHandoffKeyframeId === kf.keyframeId) {
+    box.appendChild(renderKeyframeHandoffPanel(kf, state.creative.viewedHandoffData));
+  }
+
+  return box;
+}
+
+async function toggleKeyframeHandoff(kf) {
+  if (state.creative.viewedHandoffKeyframeId === kf.keyframeId) {
+    state.creative.viewedHandoffKeyframeId = null;
+    state.creative.viewedHandoffData = null;
+    renderKeyframePlanView();
+    return;
+  }
+  await loadKeyframeHandoffData(kf);
+}
+
+// Loads every handoff for this keyframe plus the deterministic execution
+// package (Part 11) for whichever one is selected — preferHandoffId lets
+// callers (START HANDOFF, SELECT, MARK IN PROGRESS, UPLOAD, cancel) jump
+// straight to the handoff they just acted on instead of always falling
+// back to the newest one.
+async function loadKeyframeHandoffData(kf, preferHandoffId) {
+  try {
+    const handoffs = await fetchJson(`/keyframes/${kf.keyframeId}/handoffs`);
+    const sorted = [...handoffs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const selectedHandoffId = preferHandoffId || (sorted[0] ? sorted[0].handoffId : null);
+    const executionPackage = selectedHandoffId
+      ? await fetchJson(`/handoffs/${selectedHandoffId}/package`).catch(() => null)
+      : null;
+    state.creative.viewedHandoffKeyframeId = kf.keyframeId;
+    state.creative.viewedHandoffData = { handoffs: sorted, selectedHandoffId, executionPackage };
+  } catch {
+    state.creative.viewedHandoffKeyframeId = kf.keyframeId;
+    state.creative.viewedHandoffData = null;
+  }
+  renderKeyframePlanView();
+}
+
+function renderKeyframeHandoffPanel(kf, data) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!data) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'Could not load handoff data.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const { handoffs, selectedHandoffId, executionPackage } = data;
+
+  // START HANDOFF — the server (createHandoff) is the real gate: a CURRENT
+  // package + a matching APPROVED generation approval. This button is
+  // always shown; a rejection just surfaces the server's reason.
+  const startActions = document.createElement('div');
+  startActions.className = 'form-actions';
+  const startBtn = document.createElement('button');
+  startBtn.type = 'button';
+  startBtn.className = 'btn';
+  startBtn.textContent = 'START HANDOFF';
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    try {
+      const handoff = await fetchJson(`/keyframes/${kf.keyframeId}/handoff`, { method: 'POST', body: { createdBy: 'Creative Director UI' } });
+      await loadKeyframeHandoffData(kf, handoff.handoffId);
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      startBtn.disabled = false;
+    }
+  });
+  startActions.appendChild(startBtn);
+  panel.appendChild(startActions);
+
+  const listHeading = document.createElement('div');
+  listHeading.className = 'entity-sub';
+  listHeading.textContent = 'Handoffs:';
+  panel.appendChild(listHeading);
+
+  if (!handoffs || handoffs.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No handoffs created yet.';
+    panel.appendChild(none);
+    return panel;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'card-list';
+  for (const h of handoffs) {
+    const item = document.createElement('div');
+    item.className = 'entity-card';
+    item.appendChild(statusBadge(h.status));
+    item.appendChild(document.createTextNode(` Package v${displayValue(h.promptPackageVersion)} — ${fmtDate(h.createdAt)}`));
+
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'btn btn-secondary';
+    const isSelected = h.handoffId === selectedHandoffId;
+    selectBtn.textContent = isSelected ? 'SELECTED' : 'SELECT';
+    selectBtn.disabled = isSelected;
+    selectBtn.addEventListener('click', () => loadKeyframeHandoffData(kf, h.handoffId));
+    item.appendChild(selectBtn);
+
+    list.appendChild(item);
+  }
+  panel.appendChild(list);
+
+  const selectedHandoff = handoffs.find((h) => h.handoffId === selectedHandoffId);
+  if (selectedHandoff) {
+    panel.appendChild(renderHandoffDetail(kf, selectedHandoff, executionPackage));
+  }
+
+  return panel;
+}
+
+// Part 10's "Human Execution" detail view for one selected handoff —
+// execution status / skill / prompt package version / references /
+// prompt / instructions, then COPY PROMPT / COPY EXECUTION PACKAGE /
+// DOWNLOAD PACKAGE, then whichever status-specific actions apply.
+function renderHandoffDetail(kf, handoff, pkg) {
+  const detail = document.createElement('div');
+  detail.className = 'prompt-package-panel';
+  detail.style.marginTop = '12px';
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'shot-meta';
+  statusRow.appendChild(statusBadge(handoff.status));
+  statusRow.appendChild(document.createTextNode(` Handoff ${handoff.handoffId}`));
+  detail.appendChild(statusRow);
+
+  detail.appendChild(infoRow('Skill', handoff.skillName || handoff.skillId));
+  detail.appendChild(infoRow('Prompt package', `${handoff.promptPackageId} (version ${handoff.promptPackageVersion})`));
+  detail.appendChild(infoRow('Created', fmtDate(handoff.createdAt)));
+  if (handoff.completedAt) detail.appendChild(infoRow('Completed', fmtDate(handoff.completedAt)));
+
+  // Part 9 — the frozen-vs-current banner. The handoff's own content never
+  // changes; this only tells a human the live package has moved on.
+  if (pkg && pkg.frozen) {
+    const warn = document.createElement('div');
+    warn.className = 'budget-warning';
+    warn.textContent = `EXECUTION PACKAGE FROZEN — the current prompt package is now version ${pkg.currentPromptPackageVersion}; this handoff still reflects version ${handoff.promptPackageVersion}.`;
+    detail.appendChild(warn);
+  }
+
+  const refsHeading = document.createElement('div');
+  refsHeading.className = 'entity-sub';
+  refsHeading.textContent = 'References:';
+  detail.appendChild(refsHeading);
+  if (!handoff.requiredReferences || handoff.requiredReferences.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'None.';
+    detail.appendChild(none);
+  } else {
+    for (const ref of handoff.requiredReferences) {
+      detail.appendChild(infoRow(ref.role, ref.assetId));
+    }
+  }
+  if (pkg && pkg.references && pkg.references.missing && pkg.references.missing.length > 0) {
+    const missingBox = document.createElement('div');
+    missingBox.className = 'budget-warning';
+    missingBox.textContent = `Missing references: ${pkg.references.missing.join(' ')}`;
+    detail.appendChild(missingBox);
+  }
+
+  const promptLabel = document.createElement('div');
+  promptLabel.className = 'recommended-next-step-label';
+  promptLabel.textContent = 'PROMPT';
+  detail.appendChild(promptLabel);
+  const promptBox = document.createElement('pre');
+  promptBox.className = 'derived-prompt-box';
+  promptBox.textContent = (pkg && pkg.prompt) || '(prompt unavailable)';
+  detail.appendChild(promptBox);
+
+  const instrLabel = document.createElement('div');
+  instrLabel.className = 'recommended-next-step-label';
+  instrLabel.textContent = 'EXECUTION INSTRUCTIONS';
+  detail.appendChild(instrLabel);
+  const instrBox = document.createElement('pre');
+  instrBox.className = 'derived-prompt-box';
+  instrBox.textContent = handoff.instructions;
+  detail.appendChild(instrBox);
+
+  const copyActions = document.createElement('div');
+  copyActions.className = 'form-actions';
+
+  const copyPromptBtn = document.createElement('button');
+  copyPromptBtn.type = 'button';
+  copyPromptBtn.className = 'btn btn-secondary';
+  copyPromptBtn.textContent = 'COPY PROMPT';
+  copyPromptBtn.addEventListener('click', () => copyTextToClipboard(pkg && pkg.prompt));
+  copyActions.appendChild(copyPromptBtn);
+
+  const copyPackageBtn = document.createElement('button');
+  copyPackageBtn.type = 'button';
+  copyPackageBtn.className = 'btn btn-secondary';
+  copyPackageBtn.textContent = 'COPY EXECUTION PACKAGE';
+  copyPackageBtn.addEventListener('click', () => copyTextToClipboard(pkg && pkg.text));
+  copyActions.appendChild(copyPackageBtn);
+
+  const downloadBtn = document.createElement('button');
+  downloadBtn.type = 'button';
+  downloadBtn.className = 'btn btn-secondary';
+  downloadBtn.textContent = 'DOWNLOAD PACKAGE';
+  downloadBtn.addEventListener('click', () => downloadText(`handoff-${handoff.handoffId}.txt`, pkg && pkg.text, 'text/plain'));
+  copyActions.appendChild(downloadBtn);
+
+  detail.appendChild(copyActions);
+
+  // Deliberately NO GENERATE IMAGE / EXECUTE SKILL / RUN HIGGSFIELD button
+  // here (Part 10) — those actions do not exist programmatically.
+  if (handoff.status === 'READY' || handoff.status === 'IN_PROGRESS') {
+    const actions = document.createElement('div');
+    actions.className = 'form-actions';
+
+    if (handoff.status === 'READY') {
+      const inProgressBtn = document.createElement('button');
+      inProgressBtn.type = 'button';
+      inProgressBtn.className = 'btn btn-secondary';
+      inProgressBtn.textContent = 'MARK IN PROGRESS';
+      inProgressBtn.addEventListener('click', async () => {
+        await fetchJson(`/handoffs/${handoff.handoffId}`, { method: 'PUT', body: { status: 'IN_PROGRESS', updatedBy: 'Creative Director UI' } });
+        await loadKeyframeHandoffData(kf, handoff.handoffId);
+      });
+      actions.appendChild(inProgressBtn);
+    }
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'CANCEL HANDOFF';
+    cancelBtn.addEventListener('click', async () => {
+      if (!window.confirm('Cancel this handoff?')) return;
+      await fetchJson(`/handoffs/${handoff.handoffId}/cancel`, { method: 'POST', body: { decidedBy: 'Creative Director UI' } });
+      await loadKeyframeHandoffData(kf, handoff.handoffId);
+    });
+    actions.appendChild(cancelBtn);
+
+    detail.appendChild(actions);
+    detail.appendChild(renderUploadImageControl(kf, handoff));
+  } else if (handoff.status === 'INGESTED') {
+    detail.appendChild(renderIngestedHandoffResult(kf, handoff));
+  } else if (handoff.status === 'CANCELLED') {
+    const cancelledNote = document.createElement('div');
+    cancelledNote.className = 'state-box';
+    cancelledNote.textContent = 'This handoff was cancelled.';
+    detail.appendChild(cancelledNote);
+  }
+
+  return detail;
+}
+
+// UPLOAD GENERATED IMAGE — the only way an image ever enters the
+// application in this stage. Sends the chosen file's raw bytes; the
+// server sniffs the actual image format itself (Part 6) rather than
+// trusting this input's filename or the browser's reported MIME type.
+function renderUploadImageControl(kf, handoff) {
+  const box = document.createElement('div');
+  box.className = 'form-actions';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/png,image/jpeg,image/gif,image/webp';
+  box.appendChild(fileInput);
+
+  const uploadBtn = document.createElement('button');
+  uploadBtn.type = 'button';
+  uploadBtn.className = 'btn';
+  uploadBtn.textContent = 'UPLOAD GENERATED IMAGE';
+  uploadBtn.addEventListener('click', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      window.alert('Choose an image file first.');
+      return;
+    }
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+    try {
+      await uploadRaw(`/handoffs/${handoff.handoffId}/asset?completedBy=${encodeURIComponent('Creative Director UI')}`, file);
+      await loadKeyframeHandoffData(kf, handoff.handoffId);
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'UPLOAD GENERATED IMAGE';
+    }
+  });
+  box.appendChild(uploadBtn);
+
+  return box;
+}
+
+// Part 10's post-ingestion view — preview / asset ID / handoff ID /
+// package version / skill / approval status, then APPROVE IMAGE / REJECT
+// IMAGE, reusing the exact same review mechanism Stage 13B already built
+// (POST /keyframes/:keyframeId/approval) rather than inventing a second one.
+function renderIngestedHandoffResult(kf, handoff) {
+  const box = document.createElement('div');
+  box.className = 'entity-card';
+
+  const asset = handoff.asset;
+  if (!asset) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'Ingested asset details unavailable.';
+    box.appendChild(none);
+    return box;
+  }
+
+  if (asset.storage && asset.storage.status === 'STORED') {
+    const preview = document.createElement('img');
+    preview.className = 'derived-prompt-box';
+    preview.style.maxWidth = '240px';
+    preview.src = `/assets/${asset.assetId}/preview`;
+    preview.alt = 'Ingested keyframe image';
+    box.appendChild(preview);
+  }
+
+  box.appendChild(infoRow('Asset ID', asset.assetId));
+  box.appendChild(infoRow('Handoff ID', handoff.handoffId));
+  box.appendChild(infoRow('Prompt package version', handoff.promptPackageVersion));
+  box.appendChild(infoRow('Skill', handoff.skillName || handoff.skillId));
+  box.appendChild(approvalBadge(asset.approvalStatus));
+
+  if (asset.approvalStatus === 'NONE') {
+    const reviewActions = document.createElement('div');
+    reviewActions.className = 'form-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn';
+    approveBtn.textContent = 'APPROVE IMAGE';
+    approveBtn.addEventListener('click', async () => {
+      await fetchJson(`/keyframes/${kf.keyframeId}/approval`, { method: 'POST', body: { approve: true, assetId: asset.assetId, decidedBy: 'Creative Director UI' } });
+      await loadKeyframeHandoffData(kf, handoff.handoffId);
+    });
+    reviewActions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'REJECT IMAGE';
+    rejectBtn.addEventListener('click', async () => {
+      await fetchJson(`/keyframes/${kf.keyframeId}/approval`, { method: 'POST', body: { approve: false, assetId: asset.assetId, decidedBy: 'Creative Director UI' } });
+      await loadKeyframeHandoffData(kf, handoff.handoffId);
+    });
+    reviewActions.appendChild(rejectBtn);
+
+    box.appendChild(reviewActions);
+  }
+
+  return box;
 }
 
 // --- Creative Skills panel (Part 11) — display only, never executes anything ------

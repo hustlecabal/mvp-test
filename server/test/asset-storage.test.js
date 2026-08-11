@@ -236,3 +236,100 @@ test('a second download for the same assetId never overwrites the existing file'
   assert.equal(second.alreadyExisted, true);
   assert.equal(fs.readFileSync(first.path, 'utf8'), 'original content');
 });
+
+// --- Stage 13D, Part 6 — storeUploadedImage / sniffImageFormat (human-upload ingestion) -----
+
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]);
+const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+const GIF_BYTES = Buffer.from('GIF89a' + '\x00\x00\x00\x00', 'ascii');
+const WEBP_BYTES = Buffer.concat([Buffer.from('RIFF', 'ascii'), Buffer.from([0x00, 0x00, 0x00, 0x00]), Buffer.from('WEBP', 'ascii')]);
+
+test('sniffImageFormat recognizes PNG/JPEG/GIF/WEBP purely from magic bytes', () => {
+  assert.deepEqual(assetStorage.sniffImageFormat(PNG_BYTES), { ext: '.png', contentType: 'image/png' });
+  assert.deepEqual(assetStorage.sniffImageFormat(JPEG_BYTES), { ext: '.jpg', contentType: 'image/jpeg' });
+  assert.deepEqual(assetStorage.sniffImageFormat(GIF_BYTES), { ext: '.gif', contentType: 'image/gif' });
+  assert.deepEqual(assetStorage.sniffImageFormat(WEBP_BYTES), { ext: '.webp', contentType: 'image/webp' });
+});
+
+test('sniffImageFormat rejects unsupported bytes, never guessing from a filename', () => {
+  assert.equal(assetStorage.sniffImageFormat(Buffer.from('not an image, just text')), null);
+  assert.equal(assetStorage.sniffImageFormat(Buffer.from([0x25, 0x50, 0x44, 0x46])), null); // %PDF
+  assert.equal(assetStorage.sniffImageFormat(Buffer.alloc(0)), null);
+  assert.equal(assetStorage.sniffImageFormat('not-a-buffer'), null);
+});
+
+test('storeUploadedImage writes a valid image under assetId + the sniffed extension, ignoring any claimed filename', () => {
+  const id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const result = assetStorage.storeUploadedImage(PNG_BYTES, id);
+  assert.equal(result.relativePath, `${id}.png`);
+  assert.equal(result.contentType, 'image/png');
+  assert.equal(result.sizeBytes, PNG_BYTES.length);
+  assert.ok(fs.existsSync(path.join(assetsTempDir, `${id}.png`)));
+});
+
+test('storeUploadedImage rejects an unsupported format (Part 12: unsupported image rejection)', () => {
+  const id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  assert.throws(
+    () => assetStorage.storeUploadedImage(Buffer.from('just some text, not an image'), id),
+    (err) => {
+      assert.equal(err.code, 'unsupported_format');
+      return true;
+    }
+  );
+  assert.equal(fs.existsSync(path.join(assetsTempDir, `${id}.png`)), false);
+});
+
+test('storeUploadedImage rejects an oversized upload (Part 12: file-size limit)', () => {
+  const id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  const big = Buffer.concat([PNG_BYTES, Buffer.alloc(2048, 'a')]); // bigger than the 1024-byte test limit
+  assert.throws(
+    () => assetStorage.storeUploadedImage(big, id, { maxBytes: 1024 }),
+    (err) => {
+      assert.equal(err.code, 'too_large');
+      return true;
+    }
+  );
+});
+
+test('storeUploadedImage rejects an empty buffer', () => {
+  const id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+  assert.throws(
+    () => assetStorage.storeUploadedImage(Buffer.alloc(0), id),
+    (err) => {
+      assert.equal(err.code, 'empty_upload');
+      return true;
+    }
+  );
+});
+
+test('storeUploadedImage refuses an invalid (non-server-generated) asset id — never accepts an arbitrary id', () => {
+  assert.throws(
+    () => assetStorage.storeUploadedImage(PNG_BYTES, 'not-a-uuid'),
+    (err) => {
+      assert.equal(err.code, 'invalid_asset_id');
+      return true;
+    }
+  );
+  assert.throws(
+    () => assetStorage.storeUploadedImage(PNG_BYTES, '../../etc/passwd'),
+    (err) => {
+      assert.equal(err.code, 'invalid_asset_id');
+      return true;
+    }
+  );
+});
+
+test('storeUploadedImage never overwrites an existing file for the same assetId', () => {
+  const id = '12121212-1212-1212-1212-121212121212';
+  const otherPng = Buffer.concat([PNG_BYTES, Buffer.from('first upload')]);
+  assetStorage.storeUploadedImage(otherPng, id);
+  assert.throws(
+    () => assetStorage.storeUploadedImage(PNG_BYTES, id), // same sniffed extension (.png) -> same path
+    (err) => {
+      assert.equal(err.code, 'already_exists');
+      return true;
+    }
+  );
+  // the original bytes must be untouched
+  assert.deepEqual(fs.readFileSync(path.join(assetsTempDir, `${id}.png`)), otherPng);
+});

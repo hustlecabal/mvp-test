@@ -26,6 +26,7 @@ const registerKeyframeTools = require('./tools/keyframe-tools');
 const registerKeyframePromptTools = require('./tools/keyframe-prompt-tools');
 const registerKeyframeGenerationTools = require('./tools/keyframe-generation-tools');
 const registerKeyframeExecutionTools = require('./tools/keyframe-execution-tools');
+const registerKeyframeHandoffTools = require('./tools/keyframe-handoff-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -46,6 +47,7 @@ function createServer() {
   registerKeyframePromptTools(server);
   registerKeyframeGenerationTools(server);
   registerKeyframeExecutionTools(server);
+  registerKeyframeHandoffTools(server);
 
   return server;
 }
