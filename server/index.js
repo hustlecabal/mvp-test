@@ -10,6 +10,7 @@ const creativeStore = require('./services/creative-store');
 const skillOrchestrator = require('./services/skill-orchestrator');
 const keyframeStore = require('./services/keyframe-store');
 const keyframePlanner = require('./services/keyframe-planner');
+const keyframePromptService = require('./services/keyframe-prompt-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -387,6 +388,38 @@ app.post('/projects/:id/keyframes/analyze', (req, res) => {
   const result = keyframePlanner.analyzeShotKeyframes(req.params.id, shotId);
   if (!result) return res.status(404).json({ error: 'Storyboard shot not found' });
   res.json(result);
+});
+
+// Stage 13A — Keyframe Prompt Packaging. See
+// docs/architecture/keyframe-prompt-packaging.md. Every route below is a
+// thin wrapper over services/keyframe-prompt-service.js. Nothing here can
+// generate an image/video, call EvoLink, execute a skill, or spend a
+// credit.
+
+app.get('/keyframes/:keyframeId/prompt-package', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const pkg = keyframePromptService.getKeyframePromptPackage(found.project.id, req.params.keyframeId);
+  if (!pkg) return res.status(404).json({ error: 'No prompt package has been built for this keyframe yet' });
+  res.json(pkg);
+});
+
+app.post('/keyframes/:keyframeId/prompt-package', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { updatedBy, changeNote } = req.body || {};
+  const pkg = keyframePromptService.buildKeyframePromptPackage(found.project.id, req.params.keyframeId, { updatedBy, changeNote });
+  res.json(pkg);
+});
+
+app.get('/projects/:id/keyframe-prompt-packages', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const { shotId, sceneId, status } = req.query;
+  res.json(keyframePromptService.listKeyframePromptPackages(req.params.id, { shotId, sceneId, status }));
 });
 
 // Stage 9A — permanent asset storage download/preview. See

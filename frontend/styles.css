@@ -892,6 +892,33 @@ body {
   margin-bottom: 8px;
 }
 
+/* --- Keyframe Prompt Packaging (Stage 13A) — read-only display only --- */
+
+.prompt-package-controls {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prompt-package-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.derived-prompt-box {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  margin-top: 6px;
+}
+
 /* --- Responsive: collapse rather than overflow below desktop widths --- */
 
 @media (max-width: 1024px) {

@@ -36,6 +36,12 @@ const state = {
     keyframePlan: null,
     keyframeWorkload: null, // { totalRequired, reusable, newRecommended, alreadyPlanned } aggregated client-side
     shotAnalysis: null, // last analyze_shot_keyframes result shown in the Shot Editor
+
+    // Stage 13A — Keyframe Prompt Packaging. Read-only display state; a
+    // package is only ever BUILT (deterministic, local) or VIEWED here —
+    // nothing in this section can generate, execute, or submit anything.
+    viewedPackageKeyframeId: null,
+    viewedPackage: null,
   },
 };
 
@@ -1533,12 +1539,47 @@ async function renderKeyframePlanView() {
     container.appendChild(heading);
 
     await renderKeyframeWorkloadSummary(container);
+    await renderCreditEfficiencySummary(container);
     renderKeyframeList(container, plan);
 
     renderCreativeVersionPanel(plan);
     renderSkillPanel(null);
   } catch {
     showError(container, renderKeyframePlanView);
+  }
+}
+
+// Part 18 — "Credit efficiency": asset-COUNT information only, computed
+// from already-BUILT prompt packages (services/keyframe-prompt-service.js).
+// Never estimates a credit amount or invents pricing.
+async function renderCreditEfficiencySummary(container) {
+  const box = document.createElement('div');
+  box.className = 'keyframe-workload-summary';
+  box.textContent = 'Loading credit efficiency…';
+  container.appendChild(box);
+
+  try {
+    const projectId = state.selectedProjectId;
+    const packages = await fetchJson(`/projects/${projectId}/keyframe-prompt-packages`);
+
+    const reusableReferences = packages.reduce((sum, p) => sum + p.existingReferenceAssets.length, 0);
+    const newVisualReferencesRequired = packages.reduce(
+      (sum, p) => sum + p.warnings.filter((w) => w.startsWith('Approved reference asset not available')).length,
+      0
+    );
+
+    box.innerHTML = '';
+    const h4 = document.createElement('h4');
+    h4.textContent = 'Credit Efficiency (asset counts only)';
+    box.appendChild(h4);
+    const list = document.createElement('div');
+    list.className = 'info-list';
+    list.appendChild(infoRow('Approved reusable references', reusableReferences));
+    list.appendChild(infoRow('New visual references required', newVisualReferencesRequired));
+    list.appendChild(infoRow('Keyframe packages', packages.length));
+    box.appendChild(list);
+  } catch {
+    box.textContent = 'Could not load credit efficiency.';
   }
 }
 
@@ -1646,11 +1687,187 @@ function renderKeyframeList(container, plan) {
         card.appendChild(staleBadge);
       }
 
+      card.appendChild(renderPromptPackageControls(kf));
+
       list.appendChild(card);
     });
     shotBox.appendChild(list);
     container.appendChild(shotBox);
   }
+}
+
+// Part 16/17 — per-keyframe prompt-package controls. Only BUILD PACKAGE /
+// REFRESH PACKAGE / VIEW PACKAGE exist here — deliberately no GENERATE,
+// EXECUTE, or SUBMIT button anywhere in this section (Part 17).
+function renderPromptPackageControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const buildBtn = document.createElement('button');
+  buildBtn.type = 'button';
+  buildBtn.className = 'btn btn-secondary';
+  buildBtn.textContent = 'BUILD / REFRESH PACKAGE';
+  buildBtn.addEventListener('click', async () => {
+    buildBtn.disabled = true;
+    buildBtn.textContent = 'Building…';
+    try {
+      const pkg = await fetchJson(`/keyframes/${kf.keyframeId}/prompt-package`, { method: 'POST', body: {} });
+      state.creative.viewedPackageKeyframeId = kf.keyframeId;
+      state.creative.viewedPackage = pkg;
+      renderKeyframePlanView();
+    } catch {
+      buildBtn.disabled = false;
+      buildBtn.textContent = 'BUILD / REFRESH PACKAGE';
+    }
+  });
+  box.appendChild(buildBtn);
+
+  const viewBtn = document.createElement('button');
+  viewBtn.type = 'button';
+  viewBtn.className = 'btn btn-secondary';
+  viewBtn.textContent = 'VIEW PACKAGE';
+  viewBtn.addEventListener('click', async () => {
+    if (state.creative.viewedPackageKeyframeId === kf.keyframeId) {
+      state.creative.viewedPackageKeyframeId = null;
+      state.creative.viewedPackage = null;
+      renderKeyframePlanView();
+      return;
+    }
+    viewBtn.disabled = true;
+    viewBtn.textContent = 'Loading…';
+    try {
+      const pkg = await fetchJson(`/keyframes/${kf.keyframeId}/prompt-package`);
+      state.creative.viewedPackageKeyframeId = kf.keyframeId;
+      state.creative.viewedPackage = pkg;
+      renderKeyframePlanView();
+    } catch {
+      viewBtn.disabled = false;
+      viewBtn.textContent = 'VIEW PACKAGE';
+    }
+  });
+  box.appendChild(viewBtn);
+
+  if (state.creative.viewedPackageKeyframeId === kf.keyframeId) {
+    box.appendChild(renderPromptPackagePanel(state.creative.viewedPackage));
+  }
+
+  return box;
+}
+
+// Part 16 — the full package display. Every field it shows is clearly
+// grouped as either SOURCE OF TRUTH (the structured fields this stage
+// resolved from the Creative Brief / Master Spec / Visual Bible /
+// Storyboard / Keyframe Plan / approved assets) or DERIVED PROMPT (the
+// deterministic text composition of those fields) — this distinction is
+// never blurred.
+function renderPromptPackagePanel(pkg) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!pkg) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'No prompt package has been built for this keyframe yet.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'shot-meta';
+  statusRow.appendChild(statusBadge(pkg.status));
+  statusRow.appendChild(document.createTextNode(` Version ${displayValue(pkg.version)}`));
+  panel.appendChild(statusRow);
+
+  if (pkg.warnings && pkg.warnings.length > 0) {
+    const warnBox = document.createElement('div');
+    warnBox.className = 'budget-warning';
+    warnBox.textContent = pkg.warnings.join(' ');
+    panel.appendChild(warnBox);
+  }
+
+  const sourceLabel = document.createElement('div');
+  sourceLabel.className = 'recommended-next-step-label';
+  sourceLabel.textContent = 'SOURCE OF TRUTH — structured fields';
+  panel.appendChild(sourceLabel);
+
+  const sourceList = document.createElement('div');
+  sourceList.className = 'info-list';
+  sourceList.appendChild(infoRow('Purpose', pkg.purpose));
+  sourceList.appendChild(infoRow('Frame type', pkg.frameType));
+  sourceList.appendChild(infoRow('Character references', (pkg.characterReferences || []).join(', ')));
+  sourceList.appendChild(infoRow('Location references', (pkg.locationReferences || []).join(', ')));
+  sourceList.appendChild(infoRow('Composition', pkg.composition));
+  sourceList.appendChild(infoRow('Camera', pkg.camera));
+  sourceList.appendChild(infoRow('Lighting', pkg.lighting));
+  sourceList.appendChild(infoRow('Recommended skill', pkg.recommendedSkill));
+  sourceList.appendChild(infoRow('Recommendation reason', pkg.recommendationReason));
+  panel.appendChild(sourceList);
+
+  const assetsHeading = document.createElement('div');
+  assetsHeading.className = 'entity-sub';
+  assetsHeading.textContent = 'Reusable approved assets:';
+  panel.appendChild(assetsHeading);
+  if ((pkg.existingReferenceAssets || []).length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'None yet.';
+    panel.appendChild(none);
+  } else {
+    for (const ref of pkg.existingReferenceAssets) {
+      panel.appendChild(infoRow(ref.role, ref.assetId));
+    }
+  }
+
+  function lockSection(title, entries, fields) {
+    const h = document.createElement('div');
+    h.className = 'entity-sub';
+    h.textContent = title;
+    panel.appendChild(h);
+    if (!entries || entries.length === 0) {
+      const none = document.createElement('div');
+      none.className = 'state-box';
+      none.textContent = 'None.';
+      panel.appendChild(none);
+      return;
+    }
+    for (const entry of entries) {
+      const card = document.createElement('div');
+      card.className = 'entity-card';
+      for (const field of fields) {
+        card.appendChild(infoRow(field, Array.isArray(entry[field]) ? entry[field].join(', ') : entry[field]));
+      }
+      panel.appendChild(card);
+    }
+  }
+
+  lockSection('Identity lock:', pkg.identityLock, ['name', 'facialCharacteristics', 'bodyCharacteristics', 'hair', 'skinDescription', 'identityConstraints', 'continuityNotes']);
+  lockSection('Wardrobe lock:', pkg.wardrobeLock, ['name', 'wardrobe', 'accessories', 'wardrobeOverride']);
+  lockSection('Environment lock:', pkg.environmentLock, ['name', 'architecture', 'materials', 'colourPalette', 'atmosphere', 'continuityConstraints']);
+
+  const continuityHeading = document.createElement('div');
+  continuityHeading.className = 'entity-sub';
+  continuityHeading.textContent = 'Continuity requirements:';
+  panel.appendChild(continuityHeading);
+  panel.appendChild(infoRow('Continuity', (pkg.continuityRequirements || []).join('; ')));
+
+  const negHeading = document.createElement('div');
+  negHeading.className = 'entity-sub';
+  negHeading.textContent = 'Negative constraints:';
+  panel.appendChild(negHeading);
+  panel.appendChild(infoRow('Negative constraints', (pkg.negativeConstraints || []).join('; ')));
+
+  const derivedLabel = document.createElement('div');
+  derivedLabel.className = 'recommended-next-step-label';
+  derivedLabel.style.marginTop = '16px';
+  derivedLabel.textContent = 'DERIVED PROMPT — composed from the fields above, not a separate source of truth';
+  panel.appendChild(derivedLabel);
+
+  const promptBox = document.createElement('pre');
+  promptBox.className = 'derived-prompt-box';
+  promptBox.textContent = pkg.prompt || '(no prompt sections resolved yet)';
+  panel.appendChild(promptBox);
+
+  return panel;
 }
 
 // --- Creative Skills panel (Part 11) — display only, never executes anything ------

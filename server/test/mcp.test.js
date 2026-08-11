@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 45 tools', async () => {
+test('a real MCP client can discover all 48 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -59,12 +59,15 @@ test('a real MCP client can discover all 45 tools', async () => {
   // Stage 11B added the 3 read-only skill-orchestration discovery tools
   // (see docs/architecture/skill-orchestration.md). Stage 12 added the 7
   // Keyframe Intelligence tools (see
-  // docs/architecture/keyframe-intelligence.md). Everything else is
+  // docs/architecture/keyframe-intelligence.md). Stage 13A added the 3
+  // Keyframe Prompt Packaging tools (see
+  // docs/architecture/keyframe-prompt-packaging.md). Everything else is
   // unchanged.
-  assert.equal(names.length, 45);
+  assert.equal(names.length, 48);
   assert.deepEqual(names, [
     'analyze_shot_keyframes',
     'archive_asset',
+    'build_keyframe_prompt_package',
     'create_keyframe',
     'create_project',
     'create_scene',
@@ -80,6 +83,7 @@ test('a real MCP client can discover all 45 tools', async () => {
     'get_generation_status',
     'get_keyframe',
     'get_keyframe_plan',
+    'get_keyframe_prompt_package',
     'get_master_creative_spec',
     'get_project',
     'get_project_budget',
@@ -92,6 +96,7 @@ test('a real MCP client can discover all 45 tools', async () => {
     'list_assets',
     'list_creative_skills',
     'list_generation_history',
+    'list_keyframe_prompt_packages',
     'list_keyframes',
     'list_projects',
     'list_scenes',
@@ -122,6 +127,8 @@ test('safety boundary: no generation or raw-access tools exist', async () => {
     'generate_video',
     'generate_keyframe',
     'generate_image',
+    'execute_skill',
+    'submit_generation',
   ];
   for (const name of forbidden) {
     assert.ok(!names.includes(name), `${name} must not exist as an MCP tool`);
