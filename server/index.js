@@ -1,5 +1,6 @@
 const express = require('express');
 const projectStore = require('./services/project-store');
+const gate = require('./services/approval-gate');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -64,6 +65,87 @@ app.patch('/projects/:id', (req, res) => {
     return res.status(404).json({ error: 'Project not found' });
   }
   res.json(updated);
+});
+
+// Set (or change) how many credits a project is allowed to spend in total.
+app.post('/projects/:id/budget', (req, res) => {
+  const { limit } = req.body || {};
+
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) {
+    return res.status(400).json({ error: 'limit must be a positive number' });
+  }
+
+  const project = projectStore.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  gate.setBudget(project, limit);
+  res.json(projectStore.touch(project));
+});
+
+// Ask for human approval before any generation is allowed to happen.
+// estimatedCost is optional — a rough number of credits this step might use.
+app.post('/projects/:id/approval/request', (req, res) => {
+  const { estimatedCost, note } = req.body || {};
+
+  if (estimatedCost !== undefined && (typeof estimatedCost !== 'number' || !Number.isFinite(estimatedCost) || estimatedCost < 0)) {
+    return res.status(400).json({ error: 'estimatedCost must be a non-negative number' });
+  }
+  if (note !== undefined && typeof note !== 'string') {
+    return res.status(400).json({ error: 'note must be a string' });
+  }
+
+  const project = projectStore.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  gate.requestApproval(project, { estimatedCost, note });
+  res.json(projectStore.touch(project));
+});
+
+// A human approves or rejects the most recent pending approval request.
+app.post('/projects/:id/approval/decision', (req, res) => {
+  const { approve, decidedBy, note } = req.body || {};
+
+  if (typeof approve !== 'boolean') {
+    return res.status(400).json({ error: 'approve must be true or false' });
+  }
+  if (decidedBy !== undefined && typeof decidedBy !== 'string') {
+    return res.status(400).json({ error: 'decidedBy must be a string' });
+  }
+  if (note !== undefined && typeof note !== 'string') {
+    return res.status(400).json({ error: 'note must be a string' });
+  }
+
+  const project = projectStore.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  const updated = gate.decideApproval(project, { approve, decidedBy, note });
+  if (!updated) {
+    return res.status(400).json({ error: 'No pending approval request for this project' });
+  }
+
+  res.json(projectStore.touch(updated));
+});
+
+// Check the gate: is this project currently allowed to generate anything?
+// This is read-only — it does not change or save the project.
+app.get('/projects/:id/approval', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  gate.ensureShape(project);
+  res.json({
+    approvals: project.approvals,
+    creditLedger: project.creditLedger,
+    canProceed: gate.canProceed(project),
+  });
 });
 
 // If a client sends broken JSON (e.g. a typo'd request body), express.json()

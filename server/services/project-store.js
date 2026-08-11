@@ -97,8 +97,14 @@ function updateProject(id, updates = {}) {
       project[field] = updates[field];
     }
   }
-  project.updatedAt = new Date().toISOString();
+  return touch(project);
+}
 
+// Stamps updatedAt and saves the project as-is. Used by updateProject above,
+// and by anything else (like the approval gate) that changes a project
+// in memory and needs to persist that change the same safe way.
+function touch(project) {
+  project.updatedAt = new Date().toISOString();
   saveProject(project);
   return project;
 }
@@ -108,6 +114,7 @@ module.exports = {
   getProject,
   listProjects,
   updateProject,
+  touch,
   isValidId,
   PROJECTS_DIR,
 };
