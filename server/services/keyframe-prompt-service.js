@@ -35,6 +35,18 @@ const {
   createEnvironmentLockEntry,
 } = require('../schemas/keyframe-prompt-schema');
 
+// Stage 16, Part 2 — maps resolveExistingReferenceAssets()'s existing
+// `kind` argument ('character'/'location'/'prop') to the new, additive
+// REFERENCE_ROLE_TYPES vocabulary. Anything not in this map (there is
+// nothing today, but a future `kind` would fall through safely) becomes
+// 'OTHER' rather than throwing — this field is informational, never a hard
+// requirement.
+const REFERENCE_KIND_TO_ROLE_TYPE = {
+  character: 'CHARACTER',
+  location: 'ENVIRONMENT',
+  prop: 'PROP',
+};
+
 // Overridable for tests, same pattern as CREATIVE_DATA_DIR/KEYFRAME_DATA_DIR.
 const KEYFRAME_PROMPT_DATA_DIR = process.env.KEYFRAME_PROMPT_DATA_DIR
   ? path.resolve(process.env.KEYFRAME_PROMPT_DATA_DIR)
@@ -194,7 +206,15 @@ function resolveExistingReferenceAssets(visualBible, { characterIds, locationIds
     const label = entity && entity.name ? entity.name : id;
     const asset = approvedAssetFor(entity);
     if (asset) {
-      entries.push({ assetId: asset.assetId, type: asset.type || assetType, role: `${kind}:${label}`, reason: 'approved reusable reference' });
+      entries.push({
+        assetId: asset.assetId,
+        type: asset.type || assetType,
+        role: `${kind}:${label}`,
+        // Stage 16, Part 2 — additive machine-checkable role, alongside the
+        // existing free-text `role` label above. Never replaces it.
+        roleType: REFERENCE_KIND_TO_ROLE_TYPE[kind] || 'OTHER',
+        reason: 'approved reusable reference',
+      });
     } else {
       warnings.push(`Approved reference asset not available for ${kind} "${label}".`);
     }

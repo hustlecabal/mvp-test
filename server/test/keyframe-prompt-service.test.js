@@ -284,6 +284,76 @@ test('10. an APPROVED reference asset is reused, not flagged as missing', () => 
   assert.ok(!fields.warnings.some((w) => w.includes('character') && w.includes('Mira')));
 });
 
+// --- Stage 16, Part 2 — additive reference roleType -----------------------------------
+
+test('Stage 16: a character reference entry carries roleType CHARACTER alongside its existing role label', () => {
+  const { project, keyframe } = buildFixture();
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+
+  const charEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('character:'));
+  assert.equal(charEntry.roleType, 'CHARACTER');
+  // the original free-text role label is unchanged, not replaced
+  assert.equal(charEntry.role, 'character:Mira');
+});
+
+test('Stage 16: a prop reference entry carries roleType PROP', () => {
+  const project = newProject();
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
+  const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, propReferences: ['prop-1'] });
+  const storyboard = creativeStore.getStoryboard(project.id);
+  const asset = timelineStore.addAsset(project.id, { type: 'keyframe' });
+  timelineStore.setAssetApprovalStatus(project.id, asset.assetId, 'APPROVED');
+  creativeStore.updateVisualBible(project.id, { props: [{ propId: 'prop-1', name: 'Compass', referenceAssets: [asset.assetId] }] });
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, sourceShotVersion: storyboard.version });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  const propEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('prop:'));
+  assert.ok(propEntry);
+  assert.equal(propEntry.roleType, 'PROP');
+});
+
+test('Stage 16: a location reference entry (when approved) carries roleType ENVIRONMENT', () => {
+  const project = newProject();
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
+  const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, locationReferences: ['loc-1'] });
+  const storyboard = creativeStore.getStoryboard(project.id);
+  const asset = timelineStore.addAsset(project.id, { type: 'location_reference' });
+  timelineStore.setAssetApprovalStatus(project.id, asset.assetId, 'APPROVED');
+  creativeStore.updateVisualBible(project.id, { locations: [{ locationId: 'loc-1', name: 'Pier', referenceAssets: [asset.assetId] }] });
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, sourceShotVersion: storyboard.version });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  const locEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('location:'));
+  assert.equal(locEntry.roleType, 'ENVIRONMENT');
+});
+
+test('Stage 16: multiple simultaneous references each carry their own distinct roleType', () => {
+  const project = newProject();
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
+  const shot = creativeStore.addStoryboardShot(project.id, {
+    sceneId: scene.sceneId,
+    characterReferences: ['char-1'],
+    locationReferences: ['loc-1'],
+    propReferences: ['prop-1'],
+  });
+  const storyboard = creativeStore.getStoryboard(project.id);
+  const charAsset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  const locAsset = timelineStore.addAsset(project.id, { type: 'location_reference' });
+  const propAsset = timelineStore.addAsset(project.id, { type: 'keyframe' });
+  for (const a of [charAsset, locAsset, propAsset]) timelineStore.setAssetApprovalStatus(project.id, a.assetId, 'APPROVED');
+  creativeStore.updateVisualBible(project.id, {
+    characters: [{ characterId: 'char-1', name: 'Mira', referenceAssets: [charAsset.assetId] }],
+    locations: [{ locationId: 'loc-1', name: 'Pier', referenceAssets: [locAsset.assetId] }],
+    props: [{ propId: 'prop-1', name: 'Compass', referenceAssets: [propAsset.assetId] }],
+  });
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, sourceShotVersion: storyboard.version });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.equal(fields.existingReferenceAssets.length, 3);
+  const roleTypes = fields.existingReferenceAssets.map((e) => e.roleType).sort();
+  assert.deepEqual(roleTypes, ['CHARACTER', 'ENVIRONMENT', 'PROP']);
+});
+
 test('11. a reference with no APPROVED asset produces a warning, and never a fabricated existingReferenceAssets entry', () => {
   const { project, keyframe } = buildFixture();
   const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);

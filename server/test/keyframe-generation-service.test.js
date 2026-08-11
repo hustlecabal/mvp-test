@@ -330,10 +330,16 @@ test('canGenerateKeyframe reports the same reasons as generateKeyframe, without 
 
 // --- safety: no forbidden imports -----------------------------------------------------------
 
-test('services/keyframe-generation-service.js imports generation-service.js ONLY for its IN_FLIGHT_STATUSES constant, and never imports providers/evolink or approval-gate video-submission paths', () => {
+test('services/keyframe-generation-service.js imports generation-service.js ONLY for its IN_FLIGHT_STATUSES constant, and never imports the VIDEO-specific EvoLink provider/mapper or approval-gate video-submission paths', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'services', 'keyframe-generation-service.js'), 'utf8');
   const requireStatements = [...text.matchAll(/require\(\s*['"`][^'"`]+['"`]\s*\)/g)].map((m) => m[0]);
-  assert.ok(!requireStatements.some((r) => r.includes('providers/evolink')), 'must never require the EvoLink provider');
+  // Stage 16 intentionally requires providers/evolink/evolink-image-provider
+  // (the IMAGE adapter) — what must never happen is requiring the VIDEO
+  // provider/mapper, which would mean this file duplicating (or bypassing)
+  // generation-service.js's own video generation path.
+  assert.ok(!requireStatements.some((r) => r.includes("providers/evolink/evolink-provider'")), 'must never require the video-specific EvoLink provider');
+  assert.ok(!requireStatements.some((r) => r.includes("providers/evolink/evolink-mapper'")), 'must never require the video-specific EvoLink mapper');
+  assert.ok(requireStatements.some((r) => r.includes('providers/evolink/evolink-image-provider')), 'Stage 16: must require the real EvoLink IMAGE provider');
   // Only the destructuring import line should mention these two names —
   // check there's no actual CALL syntax (a `.` member-call or bare
   // invocation) anywhere in the file, ignoring the doc-comment prose above
@@ -341,4 +347,66 @@ test('services/keyframe-generation-service.js imports generation-service.js ONLY
   assert.doesNotMatch(text, /\.requestGeneration\(|\.checkGenerationOnce\(/, 'must never call the video-specific generation functions');
   const requires = [...text.matchAll(/require\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((m) => m[1]);
   assert.ok(requires.includes('./generation-service'), 'the only expected use of generation-service.js is importing IN_FLIGHT_STATUSES');
+});
+
+// --- Stage 16: provider registry -------------------------------------------------------------
+
+test('Stage 16: IMAGE_PROVIDERS registers both fake-image and evolink-image, but DEFAULT_PROVIDER_NAME stays fake-image', () => {
+  assert.deepEqual(Object.keys(kfgen.IMAGE_PROVIDERS).sort(), ['evolink-image', 'fake-image']);
+  assert.equal(kfgen.DEFAULT_PROVIDER_NAME, 'fake-image');
+});
+
+test('Stage 16: generateKeyframe only reaches the real EvoLink provider when providerName is explicitly "evolink-image" — every existing caller (no providerName passed) is completely unaffected', async () => {
+  const { project, keyframe, pkg } = buildFixture();
+  approve(project.id, keyframe.keyframeId, pkg);
+  gate.setBudget(project, 100);
+
+  let realProviderCalled = false;
+  const spyEvolinkProvider = {
+    createImageGeneration: async () => {
+      realProviderCalled = true;
+      throw new Error('should never be reached by the default call');
+    },
+    getGenerationStatus: async () => {
+      throw new Error('should never be reached');
+    },
+  };
+
+  // Default call (no providerName) must route to fake-image, never touch
+  // the injected "evolink-image" stand-in.
+  const result = await kfgen.generateKeyframe(project.id, keyframe.keyframeId, {
+    ...FAST_POLL,
+    providers: { 'fake-image': fakeImageProvider, 'evolink-image': spyEvolinkProvider },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(realProviderCalled, false, 'the real/injected evolink-image provider must never be called unless explicitly requested');
+});
+
+test('Stage 16: generateKeyframe with providerName "evolink-image" reaches only that provider, passing imageParameters through to it', async () => {
+  const { project, keyframe, pkg } = buildFixture();
+  approve(project.id, keyframe.keyframeId, pkg);
+  gate.setBudget(project, 100);
+
+  let receivedRequest;
+  const spyEvolinkProvider = {
+    createImageGeneration: async (request) => {
+      receivedRequest = request;
+      return { generationId: 'fake-task-1', provider: 'evolink-image', model: 'gemini-3-pro-image-preview', status: 'COMPLETED', progress: 100, reservedCost: 0, results: ['https://fake-image-provider.local/fixtures/sample-keyframe.png'], error: null };
+    },
+    getGenerationStatus: async () => {
+      throw new Error('COMPLETED on submission — polling must not be reached in this test');
+    },
+    fakeFetchImpl: fakeImageProvider.fakeFetchImpl,
+  };
+
+  const result = await kfgen.generateKeyframe(project.id, keyframe.keyframeId, {
+    ...FAST_POLL,
+    providerName: 'evolink-image',
+    imageParameters: { model: 'gemini-3-pro-image-preview', size: 'auto', quality: '1K' },
+    providers: { 'fake-image': fakeImageProvider, 'evolink-image': spyEvolinkProvider },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.job.provider, 'evolink-image');
+  assert.deepEqual(receivedRequest.parameters, { model: 'gemini-3-pro-image-preview', size: 'auto', quality: '1K' });
 });

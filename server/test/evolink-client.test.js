@@ -89,6 +89,27 @@ test('5. getTask returns the parsed status response', async () => {
   assert.equal(result.progress, 40);
 });
 
+test('Stage 16: createImageGenerationTask sends the Bearer header to the images endpoint and returns the parsed task', async () => {
+  process.env.EVOLINK_API_KEY = 'test-key-abc';
+  let capturedHeaders;
+
+  const fetchImpl = async (url, options) => {
+    capturedHeaders = options.headers;
+    assert.equal(url, 'https://api.evolink.ai/v1/images/generations');
+    return fakeResponse(200, { id: 'task-unified-img-1', status: 'pending', model: 'gemini-3-pro-image-preview' });
+  };
+
+  const result = await client.createImageGenerationTask({ model: 'gemini-3-pro-image-preview', prompt: 'x' }, { fetchImpl });
+
+  assert.equal(capturedHeaders.Authorization, 'Bearer test-key-abc');
+  assert.equal(result.id, 'task-unified-img-1');
+});
+
+test('Stage 16: createImageGenerationTask throws the same clear missing-key error as the video endpoint', async () => {
+  delete process.env.EVOLINK_API_KEY;
+  await assert.rejects(() => client.createImageGenerationTask({ model: 'x', prompt: 'x' }), /EVOLINK_API_KEY is not set/);
+});
+
 test('getCredits calls the safe, non-generation account endpoint', async () => {
   process.env.EVOLINK_API_KEY = 'test-key-abc';
   const fetchImpl = async (url) => {

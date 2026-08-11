@@ -37,6 +37,7 @@ test('3. buildNormalizedImageRequest produces exactly the canonical shape', () =
     'promptSections',
     'recommendedSkill',
     'referenceAssets',
+    'referenceDetails',
   ].sort());
 });
 
@@ -52,6 +53,46 @@ test('normalized request fields map exactly onto the source package', () => {
   assert.deepEqual(request.referenceAssets, ['asset-1', 'asset-2']);
   assert.equal(request.recommendedSkill, pkg.recommendedSkill);
   assert.deepEqual(request.parameters, {});
+});
+
+// --- Stage 16, Part 2 — additive referenceDetails (role/type preservation) -----------
+
+test('Stage 16: referenceDetails carries assetId/roleType/role for every reference, alongside the unchanged referenceAssets array', () => {
+  const pkg = fixturePackage({
+    existingReferenceAssets: [
+      { assetId: 'asset-1', role: 'character:Mira', roleType: 'CHARACTER' },
+      { assetId: 'asset-2', role: 'location:Lighthouse', roleType: 'ENVIRONMENT' },
+    ],
+  });
+  const request = buildNormalizedImageRequest(pkg);
+  assert.deepEqual(request.referenceAssets, ['asset-1', 'asset-2']);
+  assert.deepEqual(request.referenceDetails, [
+    { assetId: 'asset-1', roleType: 'CHARACTER', role: 'character:Mira' },
+    { assetId: 'asset-2', roleType: 'ENVIRONMENT', role: 'location:Lighthouse' },
+  ]);
+});
+
+test('Stage 16: empty references produce empty referenceAssets and referenceDetails arrays, not null', () => {
+  const pkg = fixturePackage({ existingReferenceAssets: [] });
+  const request = buildNormalizedImageRequest(pkg);
+  assert.deepEqual(request.referenceAssets, []);
+  assert.deepEqual(request.referenceDetails, []);
+});
+
+test('Stage 16: a package built before this extension (entries missing roleType) defaults to OTHER, never throws', () => {
+  // fixturePackage()'s default existingReferenceAssets entries have no
+  // roleType field at all -- exactly what a pre-Stage-16 persisted package
+  // looks like on disk.
+  const pkg = fixturePackage();
+  assert.equal(pkg.existingReferenceAssets.every((r) => r.roleType === undefined), true);
+
+  const request = buildNormalizedImageRequest(pkg);
+  assert.deepEqual(
+    request.referenceDetails.map((r) => r.roleType),
+    ['OTHER', 'OTHER']
+  );
+  // and the original, pre-existing referenceAssets array is completely unaffected
+  assert.deepEqual(request.referenceAssets, ['asset-1', 'asset-2']);
 });
 
 test('never leaks an EvoLink-specific field name into the normalized request', () => {

@@ -83,6 +83,16 @@ function createVideoGenerationTask(body, options = {}) {
   return evolinkRequest({ method: 'POST', path: '/v1/videos/generations', body, ...options });
 }
 
+// POST /v1/images/generations — Stage 16. Verified in Stage 15's
+// investigation (docs/integrations/image-provider-investigation.md Part
+// 4/11) to be a distinct endpoint from video generation, but reusing this
+// exact same evolinkRequest() helper (same auth, same error handling) —
+// no second HTTP stack. See providers/evolink/evolink-image-mapper.js for
+// the request body this is called with.
+function createImageGenerationTask(body, options = {}) {
+  return evolinkRequest({ method: 'POST', path: '/v1/images/generations', body, ...options });
+}
+
 // GET /v1/tasks/{task_id} — used for both status checks and result
 // retrieval; EvoLink returns both from the same endpoint.
 function getTask(taskId, options = {}) {
@@ -101,6 +111,7 @@ module.exports = {
   EvolinkApiError,
   hasApiKey,
   createVideoGenerationTask,
+  createImageGenerationTask,
   getTask,
   getCredits,
 };

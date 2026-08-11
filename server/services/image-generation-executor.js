@@ -16,10 +16,23 @@
 // Part 9 — the canonical shape. No EvoLink-specific (or any other
 // provider-specific) field is ever added to this — a provider adapter is
 // responsible for translating THIS into whatever its own API expects.
+//
+// Stage 16, Part 2 — `referenceDetails` is an ADDITIVE field alongside the
+// original `referenceAssets` (bare asset-id strings, unchanged, still
+// populated exactly as before for backward compatibility). It carries each
+// reference's `roleType` (CHARACTER/ENVIRONMENT/WARDROBE/PROP/STYLE/OTHER —
+// schemas/keyframe-prompt-schema.js's REFERENCE_ROLE_TYPES) and free-text
+// `role` label through to a provider adapter, so an adapter that CAN
+// represent semantic roles has the information to do so, without forcing
+// every existing caller of the plain `referenceAssets` array to change. A
+// package built before Stage 16 (missing `roleType` on its entries) simply
+// yields `roleType: 'OTHER'` here — never an error.
 function buildNormalizedImageRequest(promptPackage, { parameters = {} } = {}) {
   if (!promptPackage) {
     throw new Error('buildNormalizedImageRequest requires a KeyframePromptPackage');
   }
+
+  const existingReferenceAssets = promptPackage.existingReferenceAssets || [];
 
   return {
     projectId: promptPackage.projectId,
@@ -28,7 +41,12 @@ function buildNormalizedImageRequest(promptPackage, { parameters = {} } = {}) {
     promptPackageVersion: promptPackage.version,
     prompt: promptPackage.prompt,
     promptSections: promptPackage.promptSections,
-    referenceAssets: (promptPackage.existingReferenceAssets || []).map((ref) => ref.assetId),
+    referenceAssets: existingReferenceAssets.map((ref) => ref.assetId),
+    referenceDetails: existingReferenceAssets.map((ref) => ({
+      assetId: ref.assetId,
+      roleType: ref.roleType || 'OTHER',
+      role: ref.role || null,
+    })),
     recommendedSkill: promptPackage.recommendedSkill,
     parameters,
   };

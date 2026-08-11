@@ -39,17 +39,23 @@ const gate = require('./approval-gate');
 const assetArchiveService = require('./asset-archive-service');
 const { FakeImageGenerationExecutor } = require('./image-generation-executor');
 const fakeImageProvider = require('../providers/fake-image/fake-image-provider');
+const evolinkImageProvider = require('../providers/evolink/evolink-image-provider');
 // Read-only reuse of the existing in-flight vocabulary — never calls
 // anything else exported by generation-service.js (see file header).
 const { IN_FLIGHT_STATUSES } = require('./generation-service');
 
-// The image-provider registry. Only "fake-image" is wired in — Stage
-// 13B, Part 10 explicitly stops here until a real provider's API has been
-// independently verified from primary documentation and connecting it has
-// been explicitly authorized. Adding a real provider later means adding
-// an entry here, exactly like providers/evolink/ was added to
-// generation-service.js's own PROVIDERS registry.
-const IMAGE_PROVIDERS = { 'fake-image': fakeImageProvider };
+// The image-provider registry. Stage 13B, Part 10 stopped at "fake-image"
+// only, until a real provider's API had been independently verified from
+// primary documentation and connecting it was explicitly authorized. Stage
+// 15 (docs/integrations/image-provider-investigation.md) did that
+// verification; Stage 16 adds "evolink-image" here as a result.
+//
+// DEFAULT_PROVIDER_NAME stays "fake-image" — connecting a real provider
+// does not change what every existing MCP/REST caller gets by default
+// (they never pass providerName). A caller must explicitly opt in to
+// "evolink-image" to ever reach the real EvoLink API, exactly like Stage
+// 13B's original design intended for whenever this day came.
+const IMAGE_PROVIDERS = { 'fake-image': fakeImageProvider, 'evolink-image': evolinkImageProvider };
 const DEFAULT_PROVIDER_NAME = 'fake-image';
 
 const KEYFRAME_POLL_INTERVAL_MS = Number(process.env.KEYFRAME_GENERATION_POLL_INTERVAL_MS) || 500;
@@ -202,7 +208,20 @@ function listKeyframeGenerations(projectId, keyframeId) {
 async function generateKeyframe(
   projectId,
   keyframeId,
-  { providers = IMAGE_PROVIDERS, providerName = DEFAULT_PROVIDER_NAME, intervalMs = KEYFRAME_POLL_INTERVAL_MS, maxAttempts = KEYFRAME_POLL_MAX_ATTEMPTS, sleepImpl = defaultSleep } = {}
+  {
+    providers = IMAGE_PROVIDERS,
+    providerName = DEFAULT_PROVIDER_NAME,
+    // Stage 16, Part 4 — passed straight through to
+    // buildNormalizedImageRequest()'s `parameters`, unchanged from before
+    // for any caller that doesn't supply it (defaults to {}, exactly the
+    // prior behavior). A real-provider caller uses this to supply
+    // provider-relevant values like { model, size, quality,
+    // referenceImageUrls } — see evolink-image-mapper.js.
+    imageParameters = {},
+    intervalMs = KEYFRAME_POLL_INTERVAL_MS,
+    maxAttempts = KEYFRAME_POLL_MAX_ATTEMPTS,
+    sleepImpl = defaultSleep,
+  } = {}
 ) {
   const checks = runSafetyChecks(projectId, keyframeId);
   if (!checks.ok) {
@@ -221,7 +240,7 @@ async function generateKeyframe(
     return { ok: false, reason: err.message };
   }
 
-  const normalizedRequest = FakeImageGenerationExecutor.buildRequest(pkg);
+  const normalizedRequest = FakeImageGenerationExecutor.buildRequest(pkg, { parameters: imageParameters });
 
   // Create and persist the job BEFORE calling the provider (Part 1/4),
   // exactly like generation-service.js's requestGeneration does for video.

@@ -46,11 +46,29 @@ const EVOLINK_MODELS = {
     requestSchemaVerified: false,
     docsUrl: 'https://evolink.ai/docs/en/api-manual/video-series/seedance2.5/seedance-2.5-video-extend',
   },
+  // Stage 15 opened this model's own dedicated OpenAPI spec page (not just
+  // the quickstart's abbreviated example that Stage 6 originally saw) —
+  // full request/response field list independently verified, including
+  // image_urls (1-16 reference images), size, resolution, quality, n,
+  // mask_url, callback_url. See docs/integrations/image-provider-investigation.md
+  // Part 4b.
   'gpt-image-2': {
-    task: 'text-to-image',
+    task: 'image-generation',
     endpointPath: '/v1/images/generations',
-    requestSchemaVerified: false, // only seen in quickstart's abbreviated example, not a full opened spec
+    requestSchemaVerified: true,
     docsUrl: 'https://evolink.ai/docs/en/api-manual/image-series/gpt-image-2/gpt-image-2-image-generation',
+  },
+  // Stage 15 — "Nano Banana Pro" (Google's gemini-3-pro-image), resold by
+  // EvoLink. Full request schema independently verified from its own
+  // dedicated OpenAPI spec page: image_urls (up to 14 reference images, max
+  // 5 real-person images), size, quality, model_params, callback_url. See
+  // docs/integrations/image-provider-investigation.md Part 4a — this is the
+  // Stage 15/16 recommended model.
+  'gemini-3-pro-image-preview': {
+    task: 'image-generation',
+    endpointPath: '/v1/images/generations',
+    requestSchemaVerified: true,
+    docsUrl: 'https://evolink.ai/docs/en/api-manual/image-series/nanobanana/nanobanana-pro-image-generate',
   },
 };
 

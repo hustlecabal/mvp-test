@@ -59,6 +59,17 @@ function createPromptSections(overrides = {}) {
 // changed. No automatic transitions exist — see keyframe-prompt-service.js.
 const PACKAGE_STATUSES = ['CURRENT', 'STALE'];
 
+// Stage 16, Part 2 — the minimum additive vocabulary needed to distinguish
+// WHAT an existingReferenceAssets entry is a reference FOR. This does not
+// replace or restructure `role` (the existing free-text label like
+// "character:Aria", set by keyframe-prompt-service.js's
+// resolveExistingReferenceAssets) — it adds one new, optional,
+// machine-checkable field alongside it. A reference entry (or a whole
+// package) built before this field existed simply has `roleType: undefined`
+// on its entries; every reader treats that the same as 'OTHER', never as an
+// error — see evolink-image-mapper.js and image-generation-executor.js.
+const REFERENCE_ROLE_TYPES = ['CHARACTER', 'ENVIRONMENT', 'WARDROBE', 'PROP', 'STYLE', 'OTHER'];
+
 // Part 4 — one character's identity lock: what must never change about
 // them, carried forward from the Visual Bible verbatim (never invented).
 function createIdentityLockEntry(overrides = {}) {
@@ -168,6 +179,7 @@ function createKeyframePromptPackage(overrides = {}) {
 module.exports = {
   PROMPT_SECTION_KEYS,
   PACKAGE_STATUSES,
+  REFERENCE_ROLE_TYPES,
   createPromptSections,
   createIdentityLockEntry,
   createWardrobeLockEntry,
