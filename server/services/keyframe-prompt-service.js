@@ -383,11 +383,19 @@ function composePrompt(promptSections) {
 // plan versions, the same "compute on read" approach keyframe-store.js
 // uses for its own `stale` flag (Stage 12, Part 17) — a persisted status
 // could itself go stale, so callers always get the true current answer.
-function attachLiveStatus(projectId, pkg) {
-  const storyboard = creativeStore.getStoryboard(projectId);
-  const keyframePlan = keyframeStore.getKeyframePlan(projectId);
-  const currentStoryboardVersion = storyboard ? storyboard.version : null;
-  const currentKeyframePlanVersion = keyframePlan ? keyframePlan.version : null;
+// `liveVersions` lets a caller that's about to attach live status to MANY
+// packages at once (listKeyframePromptPackages below) fetch the current
+// storyboard/plan versions ONCE and pass them through, instead of this
+// function re-fetching them per package. Without this, listing N packages
+// costs O(N) calls to getKeyframePlan() — itself O(keyframe count), since
+// it runs keyframe-store.js's attachStale() per keyframe — turning an
+// O(N) listing into O(N^2) (Stage 14, Part 13/20 measured this at ~4.6s
+// for 100 packages before this fix). getKeyframePlanVersion() (used
+// below) is the O(1)-per-call alternative: it reads the plan's own
+// version field without ever running attachStale.
+function attachLiveStatus(projectId, pkg, liveVersions) {
+  const currentStoryboardVersion = liveVersions ? liveVersions.storyboardVersion : (creativeStore.getStoryboard(projectId) || {}).version ?? null;
+  const currentKeyframePlanVersion = liveVersions ? liveVersions.keyframePlanVersion : keyframeStore.getKeyframePlanVersion(projectId);
 
   const shotChanged = pkg.sourceShotVersion != null && currentStoryboardVersion != null && pkg.sourceShotVersion !== currentStoryboardVersion;
   const planChanged =
@@ -548,7 +556,12 @@ function listKeyframePromptPackages(projectId, { shotId, sceneId, status } = {})
   const record = ensureRecord(projectId);
   if (!record) return null;
 
-  let packages = record.packages.map((p) => attachLiveStatus(projectId, p));
+  // Fetch the live storyboard/plan versions ONCE for the whole list — see
+  // attachLiveStatus's own comment for why this matters at scale.
+  const storyboard = creativeStore.getStoryboard(projectId);
+  const liveVersions = { storyboardVersion: storyboard ? storyboard.version : null, keyframePlanVersion: keyframeStore.getKeyframePlanVersion(projectId) };
+
+  let packages = record.packages.map((p) => attachLiveStatus(projectId, p, liveVersions));
   if (shotId) packages = packages.filter((p) => p.shotId === shotId);
   if (sceneId) packages = packages.filter((p) => p.sceneId === sceneId);
   if (status) packages = packages.filter((p) => p.status === status);

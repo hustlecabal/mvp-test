@@ -97,6 +97,19 @@ function getKeyframePlan(projectId) {
   return { ...plan, keyframes: plan.keyframes.map((k) => attachStale(projectId, k)) };
 }
 
+// Stage 14, Part 13/20 — a cheap companion to getKeyframePlan() for a
+// caller that only needs the Keyframe Plan's OWN version number (e.g.
+// keyframe-prompt-service.js's attachLiveStatus, comparing a package's
+// sourceKeyframePlanVersion against the current one). getKeyframePlan()
+// itself is O(keyframe count) — it runs attachStale() (a storyboard read)
+// per keyframe — so a caller that calls it once per PACKAGE while
+// listing every package for a project turns an O(n) listing into O(n^2).
+// This never touches attachStale at all.
+function getKeyframePlanVersion(projectId) {
+  const plan = ensurePlan(projectId);
+  return plan ? plan.version : null;
+}
+
 function updateKeyframePlan(projectId, updates = {}, { updatedBy, changeNote } = {}) {
   const plan = ensurePlan(projectId);
   if (!plan) return null;
@@ -304,6 +317,7 @@ function findKeyframeById(keyframeId) {
 module.exports = {
   KEYFRAME_DATA_DIR,
   getKeyframePlan,
+  getKeyframePlanVersion,
   updateKeyframePlan,
   setKeyframeGenerationStatus,
   listKeyframes,

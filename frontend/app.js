@@ -69,6 +69,20 @@ const state = {
     viewedCanonicalKeyframeId: null,
     viewedCanonicalData: null, // { canonical, candidates: [{asset, source, promptPackageVersion}] }
   },
+
+  // Stage 14 — the Operator Queue. A pure control surface: every item's
+  // only action is OPEN KEYFRAME, which switches to Creative Director's
+  // existing Keyframe Plan workspace — nothing here generates, approves,
+  // or mutates anything itself. Read-only display state.
+  queue: {
+    loadedForProjectId: null,
+    items: null, // GET /projects/:id/operator-queue
+    summary: null, // GET /projects/:id/operator-queue/summary
+    next: null, // GET /projects/:id/operator-queue/next
+    readiness: null, // GET /projects/:id/shot-readiness
+    filter: 'ALL', // ALL | NEEDS_ATTENTION | BLOCKED | IN_PROGRESS | COMPLETE
+    sort: 'priority', // priority | scene | shot
+  },
 };
 
 // --- small fetch helper -----------------------------------------------------
@@ -643,22 +657,26 @@ function renderBudgetPanel() {
 function switchView(view) {
   const productionView = document.getElementById('production-view');
   const creativeView = document.getElementById('creative-view');
+  const queueView = document.getElementById('queue-view');
   const tabProduction = document.getElementById('tab-production');
   const tabCreative = document.getElementById('tab-creative');
+  const tabQueue = document.getElementById('tab-queue');
   const sub = document.getElementById('topbar-sub');
 
+  productionView.hidden = view !== 'production';
+  creativeView.hidden = view !== 'creative';
+  queueView.hidden = view !== 'queue';
+  tabProduction.classList.toggle('selected', view === 'production');
+  tabCreative.classList.toggle('selected', view === 'creative');
+  tabQueue.classList.toggle('selected', view === 'queue');
+
   if (view === 'creative') {
-    productionView.hidden = true;
-    creativeView.hidden = false;
-    tabProduction.classList.remove('selected');
-    tabCreative.classList.add('selected');
     sub.textContent = 'Creative Director — pre-generation planning workspace';
     onEnterCreativeView();
+  } else if (view === 'queue') {
+    sub.textContent = 'Operator Queue — what needs attention next';
+    onEnterQueueView();
   } else {
-    productionView.hidden = false;
-    creativeView.hidden = true;
-    tabCreative.classList.remove('selected');
-    tabProduction.classList.add('selected');
     sub.textContent = 'Production workspace';
   }
 }
@@ -1782,6 +1800,7 @@ function renderKeyframeList(container, plan) {
     kfs.forEach((kf) => {
       const card = document.createElement('div');
       card.className = 'entity-card';
+      card.dataset.keyframeId = kf.keyframeId; // Stage 14 — OPEN KEYFRAME deep-link scroll target
 
       const name = document.createElement('div');
       name.className = 'entity-name';
@@ -2846,6 +2865,298 @@ function renderSkillRecommendationCard(rec) {
   return card;
 }
 
+// ============================================================
+// Stage 14 — Operator Queue workspace
+//
+// A pure control surface: every item's only interactive action is OPEN
+// KEYFRAME, which switches to the existing Creative Director Keyframe
+// Plan workspace (never a duplicate editor here — Part 10). Nothing in
+// this section calls anything that generates, approves, executes, or
+// otherwise mutates state; every fetch below is a GET against a
+// read-only server/services/operator-queue-service.js endpoint.
+// ============================================================
+
+async function onEnterQueueView() {
+  renderQueueProjectBanner();
+  if (!state.selectedProjectId) {
+    showEmpty(document.getElementById('queue-next-action'), 'Select a project in Production first.');
+    document.getElementById('queue-list').innerHTML = '';
+    showEmpty(document.getElementById('queue-progress-panel'), 'Select a project to see its progress.');
+    showEmpty(document.getElementById('queue-shot-readiness'), 'Select a project to see shot readiness.');
+    return;
+  }
+  if (state.queue.loadedForProjectId !== state.selectedProjectId) {
+    await loadOperatorQueue(state.selectedProjectId);
+  } else {
+    renderQueueView();
+  }
+}
+
+function renderQueueProjectBanner() {
+  const container = document.getElementById('queue-project-banner');
+  const project = state.projects.find((p) => p.id === state.selectedProjectId);
+  if (!project) {
+    showEmpty(container, 'No project selected — pick one in Production first.');
+    return;
+  }
+  container.innerHTML = '';
+  const name = document.createElement('div');
+  name.className = 'creative-project-name';
+  name.textContent = project.title || 'Untitled project';
+  container.appendChild(name);
+}
+
+async function loadOperatorQueue(projectId) {
+  const container = document.getElementById('queue-next-action');
+  showLoading(container);
+  try {
+    const [items, summary, next, readiness] = await Promise.all([
+      fetchJson(`/projects/${projectId}/operator-queue`),
+      fetchJson(`/projects/${projectId}/operator-queue/summary`),
+      fetchJson(`/projects/${projectId}/operator-queue/next`),
+      fetchJson(`/projects/${projectId}/shot-readiness`),
+    ]);
+    state.queue.loadedForProjectId = projectId;
+    state.queue.items = items;
+    state.queue.summary = summary;
+    state.queue.next = next;
+    state.queue.readiness = readiness;
+    renderQueueView();
+  } catch {
+    showError(container, () => loadOperatorQueue(projectId));
+  }
+}
+
+function renderQueueView() {
+  renderQueueProgressPanel(state.queue.summary);
+  renderNextActionCard(state.queue.next);
+  renderQueueList(state.queue.items);
+  renderShotReadinessPanel(state.queue.readiness);
+}
+
+// --------------------------------
+// PROJECT PROGRESS
+// --------------------------------
+function renderQueueProgressPanel(summary) {
+  const container = document.getElementById('queue-progress-panel');
+  container.innerHTML = '';
+  if (!summary) {
+    showEmpty(container, 'No data.');
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'info-list';
+  list.appendChild(infoRow('Keyframes', `${summary.complete} / ${summary.totalKeyframes} complete`));
+  list.appendChild(infoRow('Completion', `${summary.completionPercentage}%`));
+  list.appendChild(infoRow('Needs attention', summary.needsAttention));
+  list.appendChild(infoRow('Blocked', summary.blocked));
+  list.appendChild(infoRow('In progress', summary.inProgress));
+  list.appendChild(infoRow('Needs approval', summary.needsApproval));
+  list.appendChild(infoRow('Ready for handoff', summary.readyForHandoff));
+  list.appendChild(infoRow('Awaiting asset review', summary.assetsAwaitingReview));
+  container.appendChild(list);
+}
+
+// --------------------------------
+// NEXT ACTION
+// --------------------------------
+function renderNextActionCard(next) {
+  const container = document.getElementById('queue-next-action');
+  container.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'entity-card';
+
+  const heading = document.createElement('div');
+  heading.className = 'recommended-next-step-label';
+  heading.textContent = 'NEXT ACTION';
+  card.appendChild(heading);
+
+  if (!next || !next.nextAction) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'Nothing needs attention right now.';
+    card.appendChild(none);
+    container.appendChild(card);
+    return;
+  }
+
+  const title = document.createElement('div');
+  title.className = 'entity-name';
+  title.style.fontSize = '1.3em';
+  title.textContent = `NEXT: ${next.nextAction}`;
+  card.appendChild(title);
+
+  card.appendChild(infoRow('Scene', next.sceneName));
+  card.appendChild(infoRow('Shot', next.shotName));
+  if (next.keyframeId) card.appendChild(infoRow('Keyframe', next.keyframeId));
+  card.appendChild(infoRow('Reason', next.blockingReason));
+
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'btn';
+  openBtn.textContent = 'OPEN KEYFRAME';
+  openBtn.addEventListener('click', () => openKeyframeFromQueue(next));
+  card.appendChild(openBtn);
+
+  container.appendChild(card);
+}
+
+// --------------------------------
+// QUEUE (filter + sort + list)
+// --------------------------------
+const QUEUE_FILTERS = ['ALL', 'NEEDS_ATTENTION', 'BLOCKED', 'IN_PROGRESS', 'COMPLETE'];
+const QUEUE_FILTER_LABELS = { ALL: 'ALL', NEEDS_ATTENTION: 'NEEDS ATTENTION', BLOCKED: 'BLOCKED', IN_PROGRESS: 'IN PROGRESS', COMPLETE: 'COMPLETE' };
+
+function renderQueueList(items) {
+  const container = document.getElementById('queue-list');
+  container.innerHTML = '';
+  if (!items) {
+    showEmpty(container, 'No data.');
+    return;
+  }
+
+  const controls = document.createElement('div');
+  controls.className = 'form-actions';
+
+  for (const filterKey of QUEUE_FILTERS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = state.queue.filter === filterKey ? 'btn' : 'btn btn-secondary';
+    btn.textContent = QUEUE_FILTER_LABELS[filterKey];
+    btn.addEventListener('click', () => {
+      state.queue.filter = filterKey;
+      renderQueueList(state.queue.items);
+    });
+    controls.appendChild(btn);
+  }
+
+  const sortLabel = document.createElement('span');
+  sortLabel.className = 'field-hint';
+  sortLabel.textContent = ' Sort: ';
+  controls.appendChild(sortLabel);
+
+  for (const sortKey of ['priority', 'scene', 'shot']) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = state.queue.sort === sortKey ? 'btn' : 'btn btn-secondary';
+    btn.textContent = sortKey.toUpperCase();
+    btn.addEventListener('click', () => {
+      state.queue.sort = sortKey;
+      renderQueueList(state.queue.items);
+    });
+    controls.appendChild(btn);
+  }
+
+  container.appendChild(controls);
+
+  const filtered = items.filter((item) => state.queue.filter === 'ALL' || item.status === state.queue.filter);
+  const sorted = [...filtered].sort((a, b) => {
+    if (state.queue.sort === 'scene') return String(a.sceneName || '').localeCompare(String(b.sceneName || '')) || a.priority - b.priority;
+    if (state.queue.sort === 'shot') return String(a.shotName || '').localeCompare(String(b.shotName || '')) || a.priority - b.priority;
+    return a.priority - b.priority; // items already arrive priority-then-scene-then-shot ordered from the server
+  });
+
+  if (sorted.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'Nothing matches this filter.';
+    container.appendChild(none);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'card-list';
+  for (const item of sorted) {
+    list.appendChild(renderQueueRow(item));
+  }
+  container.appendChild(list);
+}
+
+function renderQueueRow(item) {
+  const card = document.createElement('div');
+  card.className = 'entity-card';
+
+  const name = document.createElement('div');
+  name.className = 'entity-name';
+  name.textContent = `[P${item.priority}] ${item.category}`;
+  card.appendChild(name);
+
+  card.appendChild(statusBadge(item.status));
+  card.appendChild(infoRow('Scene', item.sceneName));
+  card.appendChild(infoRow('Shot', item.shotName));
+  if (item.keyframeId) card.appendChild(infoRow('Keyframe', item.keyframeId));
+  card.appendChild(infoRow('Next action', item.nextAction || '(none)'));
+  if (item.blockingReason) card.appendChild(infoRow('Reason', item.blockingReason));
+  if (item.skillId) card.appendChild(infoRow('Skill', item.skillId));
+  if (item.keyframeId) {
+    card.appendChild(infoRow('References', `${item.approvedReferenceCount} / ${item.referenceCount} approved`));
+    card.appendChild(infoRow('Handoff', item.handoffId ? `${item.handoffStatus} (${item.handoffId})` : 'None'));
+    card.appendChild(infoRow('Assets', `${item.approvedAssetCount} / ${item.assetCount} approved`));
+    card.appendChild(infoRow('Canonical', item.canonicalAssetId ? `${item.canonicalAssetApprovalStatus} (${item.canonicalAssetId})` : 'Not selected'));
+    // Part 14 — the frozen-vs-current package banner, only shown when a
+    // handoff's frozen version has drifted from the live package.
+    if (item.handoffId && item.handoffPromptPackageVersion != null && item.promptPackageVersion != null && item.handoffPromptPackageVersion !== item.promptPackageVersion) {
+      const frozenBanner = document.createElement('div');
+      frozenBanner.className = 'budget-warning';
+      frozenBanner.textContent = `HANDOFF FROZEN — PACKAGE v${item.handoffPromptPackageVersion} / CURRENT PACKAGE v${item.promptPackageVersion}`;
+      card.appendChild(frozenBanner);
+    }
+  }
+
+  const openBtn = document.createElement('button');
+  openBtn.type = 'button';
+  openBtn.className = 'btn btn-secondary';
+  openBtn.textContent = 'OPEN KEYFRAME';
+  openBtn.addEventListener('click', () => openKeyframeFromQueue(item));
+  card.appendChild(openBtn);
+
+  return card;
+}
+
+// Part 10 — deep link into the EXISTING Creative Director Keyframe Plan
+// workspace. Never opens a second editor here. Sets activeArtifact BEFORE
+// switching views and leaves the actual render to switchView's own
+// onEnterCreativeView() — calling selectCreativeArtifact again here too
+// would double-render into the same container (loadCreativeRecord's own
+// eventual selectCreativeArtifact call would stack with this one).
+function openKeyframeFromQueue(item) {
+  state.creative.activeArtifact = 'keyframes';
+  switchView('creative');
+  if (item.keyframeId) {
+    setTimeout(() => {
+      const card = document.querySelector(`[data-keyframe-id="${item.keyframeId}"]`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+  }
+}
+
+// --------------------------------
+// SHOT READINESS
+// --------------------------------
+function renderShotReadinessPanel(readiness) {
+  const container = document.getElementById('queue-shot-readiness');
+  container.innerHTML = '';
+  if (!readiness || readiness.length === 0) {
+    showEmpty(container, 'No shots with keyframes yet.');
+    return;
+  }
+
+  for (const shot of readiness) {
+    const row = document.createElement('div');
+    row.className = 'entity-card';
+    row.appendChild(infoRow('Shot', shot.shotId));
+    row.appendChild(infoRow('Keyframes', `${shot.keyframesComplete} / ${shot.keyframesRequired}`));
+    row.appendChild(infoRow('Missing', shot.keyframesMissing));
+    const badge = document.createElement('span');
+    badge.className = shot.readyForVideo ? 'badge badge-approved' : 'badge badge-none';
+    badge.textContent = shot.readyForVideo ? 'READY FOR VIDEO' : 'NOT READY';
+    row.appendChild(badge);
+    container.appendChild(row);
+  }
+}
+
 // --- init ------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2853,6 +3164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('tab-production').addEventListener('click', () => switchView('production'));
   document.getElementById('tab-creative').addEventListener('click', () => switchView('creative'));
+  document.getElementById('tab-queue').addEventListener('click', () => switchView('queue'));
 
   document.querySelectorAll('.creative-nav-item').forEach((btn) => {
     btn.addEventListener('click', () => selectCreativeArtifact(btn.dataset.artifact));

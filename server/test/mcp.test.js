@@ -70,8 +70,11 @@ test('a real MCP client can discover all 66 tools', async () => {
   // there is deliberately no execute/run/generate tool for a handoff.
   // Stage 13E added select_canonical_keyframe_asset/
   // get_canonical_keyframe_asset (Part 1) and acknowledge_budget_overage
-  // (Part 5). Everything else is unchanged.
-  assert.equal(names.length, 66);
+  // (Part 5). Stage 14 added the 3 read-only Operator Queue tools
+  // (get_operator_queue, get_operator_queue_summary,
+  // get_next_operator_action — see docs/architecture/operator-queue.md).
+  // Everything else is unchanged.
+  assert.equal(names.length, 69);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'analyze_shot_keyframes',
@@ -103,6 +106,9 @@ test('a real MCP client can discover all 66 tools', async () => {
     'get_keyframe_plan',
     'get_keyframe_prompt_package',
     'get_master_creative_spec',
+    'get_next_operator_action',
+    'get_operator_queue',
+    'get_operator_queue_summary',
     'get_project',
     'get_project_budget',
     'get_project_status',
@@ -167,6 +173,13 @@ test('safety boundary: no generation or raw-access tools exist', async () => {
     'run_handoff',
     'run_skill',
     'generate_from_handoff',
+    // Stage 14, Part 7 — the Operator Queue is an information/control
+    // surface only, never an automation engine.
+    'execute_queue',
+    'run_queue',
+    'generate_queue',
+    'auto_process_queue',
+    'batch_generate',
   ];
   for (const name of forbidden) {
     assert.ok(!names.includes(name), `${name} must not exist as an MCP tool`);

@@ -128,10 +128,25 @@ function acknowledgeUnknownCost(projectId, keyframeId, { acknowledgedBy } = {}) 
   return approval;
 }
 
+// Stage 14, Part 13 — bulk read for the operator queue engine (and any
+// future caller that needs every keyframe's approval for a project at
+// once). Returns a plain object keyed by keyframeId, backed by exactly
+// ONE file read regardless of how many keyframes the project has —
+// calling getApproval() once per keyframe in a loop would instead re-open
+// this same file N times. No new business rule: this is the same
+// record.approvals map getApproval() already reads from, just returned
+// whole instead of narrowed to one keyframe.
+function listApprovals(projectId) {
+  const record = ensureRecord(projectId);
+  if (!record) return null;
+  return record.approvals;
+}
+
 module.exports = {
   KEYFRAME_GENERATION_APPROVAL_DATA_DIR,
   getApproval,
   requestApproval,
   decideApproval,
   acknowledgeUnknownCost,
+  listApprovals,
 };

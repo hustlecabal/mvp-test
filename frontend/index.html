@@ -15,6 +15,7 @@
     <nav class="view-switch" aria-label="Workspace">
       <button type="button" class="view-tab selected" id="tab-production">Production</button>
       <button type="button" class="view-tab" id="tab-creative">Creative Director</button>
+      <button type="button" class="view-tab" id="tab-queue">Operator Queue</button>
     </nav>
   </header>
 
@@ -90,6 +91,38 @@
       <section>
         <h2>Creative Skills</h2>
         <div id="creative-skill-panel" class="state-box">Select a shot to see a recommended next step.</div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- ================= OPERATOR QUEUE WORKSPACE (Stage 14) ================= -->
+  <!-- Control surface only — every action here navigates into the
+       Creative Director keyframe workspace above, which already owns all
+       generation-adjacent controls (build package, approve, handoff,
+       upload, canonical selection). Nothing on this page generates,
+       executes, or auto-processes anything. -->
+  <div class="workspace" id="queue-view" hidden>
+    <aside class="panel panel-left">
+      <section>
+        <h2>Project</h2>
+        <div id="queue-project-banner" class="state-box">No project selected — pick one in Production first.</div>
+      </section>
+
+      <section>
+        <h2>Project Progress</h2>
+        <div id="queue-progress-panel" class="state-box">Select a project to see its progress.</div>
+      </section>
+    </aside>
+
+    <main class="panel panel-center">
+      <div id="queue-next-action" class="state-box">Select a project to see the next action.</div>
+      <div id="queue-list" class="state-box"></div>
+    </main>
+
+    <aside class="panel panel-right">
+      <section>
+        <h2>Shot Readiness</h2>
+        <div id="queue-shot-readiness" class="state-box">Select a project to see shot readiness.</div>
       </section>
     </aside>
   </div>

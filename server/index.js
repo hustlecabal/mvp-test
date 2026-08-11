@@ -16,6 +16,7 @@ const keyframeGenerationService = require('./services/keyframe-generation-servic
 const generationStore = require('./services/generation-store');
 const keyframeHandoffService = require('./services/keyframe-handoff-service');
 const stateMachine = require('./schemas/state-machine');
+const operatorQueueService = require('./services/operator-queue-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -684,6 +685,34 @@ app.post('/handoffs/:handoffId/asset', express.raw({ type: () => true, limit: '5
     return res.status(status).json({ error: result.reason });
   }
   res.status(201).json(result);
+});
+
+// Stage 14 — the Operator Queue. All three routes are thin wrappers over
+// services/operator-queue-service.js — no queue logic lives here. Every
+// one is read-only: nothing below can generate, approve, or mutate
+// anything. See docs/architecture/operator-queue.md.
+app.get('/projects/:id/operator-queue', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(operatorQueueService.buildProjectQueue(req.params.id));
+});
+
+app.get('/projects/:id/operator-queue/summary', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(operatorQueueService.getQueueSummary(req.params.id));
+});
+
+app.get('/projects/:id/operator-queue/next', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(operatorQueueService.getNextAction(req.params.id));
+});
+
+app.get('/projects/:id/shot-readiness', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(operatorQueueService.getShotReadiness(req.params.id));
 });
 
 // Stage 9A — permanent asset storage download/preview. See
