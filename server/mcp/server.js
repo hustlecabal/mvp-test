@@ -25,6 +25,7 @@ const registerSkillOrchestrationTools = require('./tools/skill-orchestration-too
 const registerKeyframeTools = require('./tools/keyframe-tools');
 const registerKeyframePromptTools = require('./tools/keyframe-prompt-tools');
 const registerKeyframeGenerationTools = require('./tools/keyframe-generation-tools');
+const registerKeyframeExecutionTools = require('./tools/keyframe-execution-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -44,6 +45,7 @@ function createServer() {
   registerKeyframeTools(server);
   registerKeyframePromptTools(server);
   registerKeyframeGenerationTools(server);
+  registerKeyframeExecutionTools(server);
 
   return server;
 }

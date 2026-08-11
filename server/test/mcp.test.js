@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 57 tools', async () => {
+test('a real MCP client can discover all 59 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -63,9 +63,11 @@ test('a real MCP client can discover all 57 tools', async () => {
   // Keyframe Prompt Packaging tools (see
   // docs/architecture/keyframe-prompt-packaging.md). Stage 13B added the 9
   // Controlled Keyframe Generation tools (see
-  // docs/architecture/keyframe-generation.md). Everything else is
+  // docs/architecture/keyframe-generation.md). Stage 13C added the 2
+  // read-only/fixture-only execution-bridge tools (see
+  // docs/architecture/keyframe-execution-bridge.md). Everything else is
   // unchanged.
-  assert.equal(names.length, 57);
+  assert.equal(names.length, 59);
   assert.deepEqual(names, [
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
@@ -110,12 +112,14 @@ test('a real MCP client can discover all 57 tools', async () => {
     'list_scenes',
     'list_shots',
     'poll_generation',
+    'prepare_keyframe_execution',
     'record_approval_decision',
     'reject_generated_keyframe',
     'reject_keyframe_generation',
     'request_generation',
     'request_generation_approval',
     'request_keyframe_generation_approval',
+    'run_fixture_keyframe_execution',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',

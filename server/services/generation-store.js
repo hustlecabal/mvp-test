@@ -56,11 +56,22 @@ function listGenerationJobs(filters = {}) {
   return jobs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
-// Fields that can be changed after a job is created. Identity fields
-// (id, projectId, shotId, provider, model, task, prompt, references,
+// Fields that can be changed after a job is created. Most identity
+// fields (id, projectId, shotId, provider, task, prompt, references,
 // parameters, createdAt) are set once at creation and never rewritten.
+//
+// `model` is the one exception (Stage 13B): for a video generation the
+// human/Claude always names the exact model before submitting
+// (e.g. "seedance-2.5-text-to-video"), so it's known at creation and
+// never needs updating. An image provider like providers/fake-image/ can
+// instead determine its own model version only once it actually responds
+// to createImageGeneration() — services/keyframe-generation-service.js
+// creates the job with model: null and fills it in from the provider's
+// response, so `model` has to be updatable for that path to ever record
+// a real value instead of silently staying null forever.
 const UPDATABLE_FIELDS = [
   'status',
+  'model',
   'providerTaskId',
   'progress',
   'estimatedCost',

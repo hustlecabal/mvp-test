@@ -64,14 +64,14 @@ async function call(name, args = {}) {
   return client.callTool({ name, arguments: args });
 }
 
-test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A + 9B + 11A + 11B + 12 + 13A + 13B additions included)', async () => {
+test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A + 9B + 11A + 11B + 12 + 13A + 13B + 13C additions included)', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
   assert.ok(names.includes('estimate_generation'));
   assert.ok(names.includes('request_generation'));
   assert.ok(names.includes('get_generation_status'));
   assert.ok(names.includes('poll_generation'));
-  assert.equal(names.length, 57);
+  assert.equal(names.length, 59);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {
