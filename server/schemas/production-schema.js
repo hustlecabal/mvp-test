@@ -144,9 +144,11 @@ function createAsset(overrides = {}) {
     parentAssetId: null,
     version: 1,
     prompt: null,
+    references: [], // reference assets/images this one was generated from
     provider: null,
     model: null,
     generationId: null,
+    url: null, // the provider's result URL — see docs/architecture/generation-lifecycle.md
     approvalStatus: 'NONE',
     createdAt: new Date().toISOString(),
   };
@@ -187,6 +189,59 @@ function createNextAssetVersion(previousAsset, overrides = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// A Generation Job: one request to an external generation provider,
+// tracked from submission through completion. This is deliberately
+// generic — it holds no EvoLink-specific fields. See
+// docs/architecture/generation-lifecycle.md for the full explanation.
+//
+// Cost has three distinct fields because they become known at different
+// times and from different sources, and must never be confused:
+//   estimatedCost — set by a HUMAN, via the Stage 3 approval gate, BEFORE
+//                   any provider call. This is what approval is based on.
+//   reservedCost  — reported BY THE PROVIDER at submission time, if it
+//                   provides one. Purely informational; never used to
+//                   retroactively justify a submission that already
+//                   happened.
+//   actualCost    — the real final cost, if and when a provider reports
+//                   one. EvoLink's documented API does not return this
+//                   anywhere we've found (see docs/integrations/
+//                   evolink-api.md) — it stays null rather than guessing.
+// ---------------------------------------------------------------------------
+function createGenerationJob(overrides = {}) {
+  const base = {
+    id: crypto.randomUUID(),
+    projectId: null,
+    sceneId: null,
+    shotId: null,
+    provider: null,
+    model: null,
+    task: null,
+    prompt: null,
+    references: [],
+    parameters: {},
+    status: 'REQUESTED',
+    providerTaskId: null,
+    progress: null,
+    estimatedCost: null,
+    reservedCost: null,
+    actualCost: null,
+    result: null,
+    assetId: null,
+    error: null,
+    // A transient polling/network failure — deliberately separate from
+    // `error`, which is reserved for a failure the PROVIDER reported.
+    // See docs/architecture/generation-lifecycle.md's "Polling" section.
+    lastPollError: null,
+    createdAt: new Date().toISOString(),
+    submittedAt: null,
+    completedAt: null,
+    failedAt: null,
+    timedOutAt: null,
+  };
+  return withDefaults(base, overrides);
+}
+
+// ---------------------------------------------------------------------------
 // The full blank project: project identity plus the Creative IR and
 // Timeline IR layers, plus the approval/budget gate fields from Stage 3.
 // ---------------------------------------------------------------------------
@@ -220,5 +275,6 @@ module.exports = {
   createGenerationRequest,
   createAsset,
   createNextAssetVersion,
+  createGenerationJob,
   createBlankProject,
 };

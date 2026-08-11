@@ -31,7 +31,9 @@ function assertImplementsProviderInterface(provider) {
 // Our internal, provider-agnostic status vocabulary. Every adapter must
 // map its own status values into these — see docs/integrations/
 // evolink-api.md's "Job / Task Lifecycle" section for the EvoLink mapping.
-const GENERATION_STATUSES = ['REQUESTED', 'SUBMITTED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'];
+// TIMED_OUT is ours alone — it means WE gave up waiting, not that the
+// provider reported any particular outcome (see generation-poller.js).
+const GENERATION_STATUSES = ['REQUESTED', 'SUBMITTED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
 
 function createGenerationStatus(overrides = {}) {
   const base = {
@@ -40,6 +42,10 @@ function createGenerationStatus(overrides = {}) {
     model: null,
     status: 'REQUESTED',
     progress: null,
+    // A cost the provider reserved/estimated at submission time, if it
+    // provided one. Never assume this exists — see
+    // docs/integrations/evolink-api.md's "Pricing / Cost" section.
+    reservedCost: null,
     results: [],
     error: null,
   };

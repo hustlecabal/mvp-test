@@ -100,8 +100,23 @@ test('3. maps a pending EvoLink task to our SUBMITTED status', () => {
   assert.equal(status.provider, 'evolink');
   assert.equal(status.status, 'SUBMITTED');
   assert.equal(status.progress, 0);
+  assert.equal(status.reservedCost, null);
   assert.deepEqual(status.results, []);
   assert.equal(status.error, null);
+});
+
+test('maps usage.credits_reserved into reservedCost when the provider includes it', () => {
+  const status = mapper.fromEvolinkTask({
+    id: 'task-unified-123',
+    status: 'pending',
+    usage: { billing_rule: 'per_second', credits_reserved: 50, user_group: 'default' },
+  });
+  assert.equal(status.reservedCost, 50);
+});
+
+test('reservedCost stays null when usage is absent (not present on status/polling responses)', () => {
+  const status = mapper.fromEvolinkTask({ id: 'task-unified-123', status: 'processing', progress: 40 });
+  assert.equal(status.reservedCost, null);
 });
 
 test('maps processing and completed statuses', () => {

@@ -81,6 +81,20 @@ function getAsset(projectId, assetId) {
   return project.assets.find((asset) => asset.assetId === assetId) || null;
 }
 
+// Returns the created asset, or null if the project doesn't exist. Used by
+// generation-service.js when a generation job completes — never called to
+// edit an existing asset (see createNextAssetVersion in
+// schemas/production-schema.js for how changes to an asset are handled).
+function addAsset(projectId, overrides = {}) {
+  const project = projectStore.getProject(projectId);
+  if (!project) return null;
+
+  const asset = productionSchema.createAsset({ ...overrides, projectId });
+  project.assets.push(asset);
+  projectStore.touch(project);
+  return asset;
+}
+
 module.exports = {
   addScene,
   listScenes,
@@ -89,4 +103,5 @@ module.exports = {
   listShots,
   listAssets,
   getAsset,
+  addAsset,
 };

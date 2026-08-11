@@ -116,6 +116,8 @@ test('createAsset is traceable to project, scene, shot, prompt, provider, model,
   assert.equal(asset.parentAssetId, null);
   assert.equal(asset.version, 1);
   assert.equal(asset.approvalStatus, 'NONE');
+  assert.equal(asset.url, null);
+  assert.deepEqual(asset.references, []);
 });
 
 test('createNextAssetVersion never mutates the original asset', () => {
@@ -145,4 +147,29 @@ test('createNextAssetVersion cannot be tricked into skipping the version chain',
 test('createNextAssetVersion requires a real previous asset', () => {
   assert.throws(() => schema.createNextAssetVersion(null));
   assert.throws(() => schema.createNextAssetVersion({}));
+});
+
+test('createGenerationJob distinguishes estimatedCost, reservedCost, and actualCost, all defaulting to null', () => {
+  const job = schema.createGenerationJob({
+    projectId: 'proj-1',
+    shotId: 'shot-1',
+    provider: 'evolink',
+    model: 'seedance-2.5-text-to-video',
+    task: 'text-to-video',
+    prompt: 'x',
+  });
+
+  assert.ok(job.id);
+  assert.equal(job.status, 'REQUESTED');
+  assert.equal(job.providerTaskId, null);
+  assert.equal(job.estimatedCost, null);
+  assert.equal(job.reservedCost, null);
+  assert.equal(job.actualCost, null);
+  assert.equal(job.result, null);
+  assert.equal(job.assetId, null);
+  assert.equal(job.error, null);
+  assert.equal(job.lastPollError, null);
+  assert.ok(job.createdAt);
+  assert.equal(job.submittedAt, null);
+  assert.equal(job.completedAt, null);
 });

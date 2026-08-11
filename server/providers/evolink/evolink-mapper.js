@@ -74,12 +74,22 @@ function fromEvolinkTask(evolinkResponse) {
     }
   }
 
+  // Documented (docs/integrations/evolink-api.md, "Pricing / Cost"):
+  // usage.credits_reserved is only present on the task-CREATION response,
+  // not on the status/polling response. Never assume it's there — this
+  // stays null whenever it's missing rather than guessing a cost.
+  const reservedCost =
+    evolinkResponse.usage && typeof evolinkResponse.usage.credits_reserved === 'number'
+      ? evolinkResponse.usage.credits_reserved
+      : null;
+
   return {
     generationId: evolinkResponse.id,
     provider: 'evolink',
     model: evolinkResponse.model,
     status,
     progress: typeof evolinkResponse.progress === 'number' ? evolinkResponse.progress : null,
+    reservedCost,
     results: Array.isArray(evolinkResponse.results) ? evolinkResponse.results : [],
     error,
   };

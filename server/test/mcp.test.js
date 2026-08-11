@@ -49,17 +49,19 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 16 tools', async () => {
+test('a real MCP client can discover all 20 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
-  assert.equal(names.length, 16);
+  assert.equal(names.length, 20);
   assert.deepEqual(names, [
     'create_project',
     'create_scene',
     'create_shot',
+    'estimate_generation',
     'get_approval_status',
     'get_asset',
+    'get_generation_status',
     'get_project',
     'get_project_status',
     'get_shot',
@@ -67,7 +69,9 @@ test('a real MCP client can discover all 16 tools', async () => {
     'list_projects',
     'list_scenes',
     'list_shots',
+    'poll_generation',
     'record_approval_decision',
+    'request_generation',
     'request_generation_approval',
     'transition_project',
     'update_project',

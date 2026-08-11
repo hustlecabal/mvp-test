@@ -13,6 +13,7 @@ test('1. GENERATION_STATUSES defines the documented lifecycle', () => {
     'COMPLETED',
     'FAILED',
     'CANCELLED',
+    'TIMED_OUT',
   ]);
 });
 
@@ -41,6 +42,7 @@ test('createGenerationStatus fills in generic defaults', () => {
   const status = providerInterface.createGenerationStatus();
   assert.equal(status.status, 'REQUESTED');
   assert.equal(status.generationId, null);
+  assert.equal(status.reservedCost, null);
   assert.deepEqual(status.results, []);
   assert.equal(status.error, null);
 });
