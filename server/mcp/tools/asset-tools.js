@@ -23,6 +23,7 @@ function summarizeAsset(asset) {
     model: asset.model,
     type: asset.type,
     storageStatus: asset.storage ? asset.storage.status : 'NOT_ARCHIVED',
+    approvalStatus: asset.approvalStatus || 'NONE',
     createdAt: asset.createdAt,
   };
 }
@@ -31,17 +32,23 @@ function register(server) {
   server.registerTool(
     'list_assets',
     {
-      title: "List a project's assets",
+      title: "List a project's asset library",
       description:
-        'Returns a concise summary of each asset in a project (id, lineage, type, storage status, createdAt), ' +
-        'optionally filtered to one shot. Use get_asset for the full record, including the provider result URL.',
+        'Returns a concise summary of each asset in a project (id, lineage, type, storage status, approval ' +
+        'status, createdAt). Optionally filtered by any combination of scene, shot, generation, asset type, and ' +
+        'storage status (Stage 9B asset library) — filtering stays simple, no search language. Use get_asset for ' +
+        'the full record, including the provider result URL.',
       inputSchema: {
         projectId: z.string(),
+        sceneId: z.string().optional(),
         shotId: z.string().optional(),
+        generationId: z.string().optional(),
+        type: z.string().optional(),
+        storageStatus: z.enum(['NOT_ARCHIVED', 'STORED', 'FAILED']).optional(),
       },
     },
-    async ({ projectId, shotId }) => {
-      const assets = timelineStore.listAssets(projectId, { shotId });
+    async ({ projectId, sceneId, shotId, generationId, type, storageStatus }) => {
+      const assets = timelineStore.listAssets(projectId, { sceneId, shotId, generationId, type, storageStatus });
       if (assets === null) {
         throw new Error(`No project found with id "${projectId}"`);
       }

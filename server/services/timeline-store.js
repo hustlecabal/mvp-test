@@ -62,16 +62,24 @@ function listShots(projectId, { sceneId } = {}) {
   return project.shots;
 }
 
-// Returns the project's assets (optionally filtered to one shot), or null
-// if the project doesn't exist. Nothing generates real assets yet, so this
-// is typically an empty list at this stage.
-function listAssets(projectId, { shotId } = {}) {
+// Returns the project's assets, optionally filtered by any combination of
+// scene, shot, generation, type, and storage status (Stage 9B's asset
+// library — see docs/architecture/generation-history.md). Returns null if
+// the project doesn't exist. Filtering stays simple on purpose: plain
+// array .filter() calls, no query language or search engine.
+function listAssets(projectId, { shotId, sceneId, generationId, type, storageStatus } = {}) {
   const project = projectStore.getProject(projectId);
   if (!project) return null;
-  if (shotId) {
-    return project.assets.filter((asset) => asset.shotId === shotId);
+
+  let assets = project.assets;
+  if (shotId) assets = assets.filter((asset) => asset.shotId === shotId);
+  if (sceneId) assets = assets.filter((asset) => asset.sceneId === sceneId);
+  if (generationId) assets = assets.filter((asset) => asset.generationId === generationId);
+  if (type) assets = assets.filter((asset) => asset.type === type);
+  if (storageStatus) {
+    assets = assets.filter((asset) => (asset.storage ? asset.storage.status : 'NOT_ARCHIVED') === storageStatus);
   }
-  return project.assets;
+  return assets;
 }
 
 // Returns the asset, or null if the project or asset doesn't exist.
@@ -126,6 +134,42 @@ function updateAssetStorage(projectId, assetId, storageUpdates = {}) {
   return asset;
 }
 
+// Stage 9B — finds a shot by id WITHOUT already knowing its project
+// (needed by get_shot_history, which only takes a shotId). Same reasoning
+// and same scale tradeoff as findAssetById above.
+function findShotById(shotId) {
+  for (const project of projectStore.listProjects()) {
+    const shot = (project.shots || []).find((s) => s.shotId === shotId);
+    if (shot) return { project, shot };
+  }
+  return null;
+}
+
+// Stage 9B — candidate vs. approved assets (see
+// docs/architecture/generation-history.md). Every asset already had an
+// `approvalStatus` field (defaulting to 'NONE', meaning "a candidate,
+// not yet reviewed") since Stage 5 — this is the smallest possible
+// addition on top of that: a named set of valid values, and a setter that
+// only ever touches this one field. It never deletes or overwrites an
+// asset — a shot can have many candidate assets (one per generation
+// attempt) and this only marks which one (if any) a human has approved.
+const ASSET_APPROVAL_STATUSES = ['NONE', 'APPROVED', 'REJECTED'];
+
+function setAssetApprovalStatus(projectId, assetId, approvalStatus) {
+  if (!ASSET_APPROVAL_STATUSES.includes(approvalStatus)) {
+    throw new Error(`"${approvalStatus}" is not a valid asset approval status. Use one of: ${ASSET_APPROVAL_STATUSES.join(', ')}`);
+  }
+  const project = projectStore.getProject(projectId);
+  if (!project) return null;
+
+  const asset = project.assets.find((a) => a.assetId === assetId);
+  if (!asset) return null;
+
+  asset.approvalStatus = approvalStatus;
+  projectStore.touch(project);
+  return asset;
+}
+
 module.exports = {
   addScene,
   listScenes,
@@ -137,4 +181,7 @@ module.exports = {
   addAsset,
   findAssetById,
   updateAssetStorage,
+  findShotById,
+  ASSET_APPROVAL_STATUSES,
+  setAssetApprovalStatus,
 };

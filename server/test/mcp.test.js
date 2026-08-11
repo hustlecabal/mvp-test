@@ -49,14 +49,15 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 23 tools', async () => {
+test('a real MCP client can discover all 25 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
   // Stage 8.1 added get_project_budget. Stage 9A added archive_asset and
-  // get_asset_download (see docs/architecture/asset-storage.md). Everything
-  // else is unchanged.
-  assert.equal(names.length, 23);
+  // get_asset_download. Stage 9B added list_generation_history and
+  // get_shot_history (see docs/architecture/generation-history.md).
+  // Everything else is unchanged.
+  assert.equal(names.length, 25);
   assert.deepEqual(names, [
     'archive_asset',
     'create_project',
@@ -71,7 +72,9 @@ test('a real MCP client can discover all 23 tools', async () => {
     'get_project_budget',
     'get_project_status',
     'get_shot',
+    'get_shot_history',
     'list_assets',
+    'list_generation_history',
     'list_projects',
     'list_scenes',
     'list_shots',
