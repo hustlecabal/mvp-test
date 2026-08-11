@@ -28,8 +28,13 @@ body {
 }
 
 .topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--panel-border);
+  flex-wrap: wrap;
 }
 
 .topbar h1 {
@@ -42,6 +47,41 @@ body {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* --- Stage 11C: workspace switcher (Production / Creative Director) --- */
+
+.view-switch {
+  display: flex;
+  gap: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+
+.view-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 6px 14px;
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  color: var(--text);
+}
+
+.view-tab.selected {
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 600;
+}
+
+.workspace[hidden] {
+  display: none;
 }
 
 /* --- Three-column workspace --- */
@@ -404,4 +444,401 @@ body {
   border: 1px solid rgba(241, 70, 104, 0.4);
   color: var(--danger);
   font-size: 12px;
+}
+
+/* ============================================================
+   Stage 11C — Creative Director workspace
+   ============================================================ */
+
+/* --- Left nav: creative artifact list --- */
+
+.creative-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.creative-nav-item {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.creative-nav-item:hover {
+  background: var(--card-bg);
+}
+
+.creative-nav-item.selected {
+  border-color: var(--accent);
+  background: var(--card-bg);
+  color: var(--accent);
+}
+
+.creative-project-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* --- Editable forms --- */
+
+.field-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.field input[type='text'],
+.field input[type='number'],
+.field textarea {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.field-list-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.change-note-box {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--card-bg);
+  margin-top: 8px;
+}
+
+.change-note-box label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.change-note-box input {
+  width: 100%;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.change-note-box input.invalid {
+  border-color: var(--danger);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.save-toast {
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.derived-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: rgba(154, 161, 173, 0.15);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* --- Character identity lock --- */
+
+.identity-lock-box {
+  border: 1px solid var(--accent);
+  background: rgba(77, 163, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.identity-lock-box label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.identity-lock-box textarea {
+  width: 100%;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+/* --- Visual Bible section tabs --- */
+
+.bible-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.bible-tab {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bible-tab.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- Card lists (characters / locations) --- */
+
+.card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.entity-card {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.entity-card:hover {
+  border-color: var(--accent);
+}
+
+.entity-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.entity-card .entity-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.entity-card .entity-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* --- Storyboard scene / shot cards --- */
+
+.storyboard-scene {
+  margin-bottom: 24px;
+}
+
+.storyboard-scene-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.shot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.shot-card {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.shot-card:hover {
+  border-color: var(--accent);
+}
+
+.shot-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.shot-card .shot-card-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.shot-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.shot-card dt {
+  color: var(--text-dim);
+}
+
+.shot-card dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+/* --- Version history --- */
+
+.version-current {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.version-current .version-number {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.version-current .version-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.version-current .version-note {
+  font-size: 13px;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.version-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-history-item {
+  font-size: 12px;
+  border-left: 2px solid var(--panel-border);
+  padding-left: 8px;
+}
+
+.version-history-item .version-number {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* --- Recommended next step (skills) --- */
+
+.skill-recommendation {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.skill-recommendation .skill-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.skill-recommendation .skill-reason {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.skill-recommendation .skill-flags {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recommended-next-step-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+/* --- Responsive: collapse rather than overflow below desktop widths --- */
+
+@media (max-width: 1024px) {
+  .workspace {
+    flex-direction: column;
+  }
+  .panel-left,
+  .panel-right,
+  .panel-center {
+    flex-basis: auto;
+    width: 100%;
+    max-height: none;
+  }
 }

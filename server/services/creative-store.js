@@ -185,6 +185,50 @@ function addStoryboardShot(projectId, overrides = {}, { updatedBy, changeNote } 
   return shot;
 }
 
+// Stage 11C — updates ONE existing shot's fields within the storyboard
+// (the Shot Editor's Save action). Still a versioned storyboard update
+// (Part 9/10 of Stage 11A) — it replaces the whole `shots` array with one
+// entry changed, going through the exact same applyVersionedUpdate path
+// addStoryboardShot already uses, so history/version behave identically.
+// Never touches `shotId` even if present in `updates`. Returns the
+// updated shot, or null if the project/storyboard/shot doesn't exist.
+function updateStoryboardShot(projectId, shotId, updates = {}, { updatedBy, changeNote } = {}) {
+  const record = ensureRecord(projectId);
+  if (!record || !record.storyboard) return null;
+
+  const shotIndex = record.storyboard.shots.findIndex((s) => s.shotId === shotId);
+  if (shotIndex === -1) return null;
+
+  const updatedShot = { ...record.storyboard.shots[shotIndex] };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && key !== 'shotId') {
+      updatedShot[key] = value;
+    }
+  }
+
+  const newShots = [...record.storyboard.shots];
+  newShots[shotIndex] = updatedShot;
+
+  applyVersionedUpdate(record.storyboard, { shots: newShots }, { updatedBy, changeNote });
+  saveRecord(record);
+  return updatedShot;
+}
+
+// Stage 11C — everything a UI needs in one call, so the Creative Director
+// workspace can load with a single request instead of four. Read-only;
+// just calls the four getters above. Returns null if the project itself
+// doesn't exist.
+function getCreativeRecord(projectId) {
+  const record = ensureRecord(projectId);
+  if (!record) return null;
+  return {
+    creativeBrief: record.creativeBrief,
+    masterCreativeSpec: record.masterCreativeSpec,
+    visualBible: record.visualBible,
+    storyboard: record.storyboard,
+  };
+}
+
 module.exports = {
   CREATIVE_DATA_DIR,
   getCreativeBrief: creativeBrief.get,
@@ -197,4 +241,6 @@ module.exports = {
   updateStoryboard: storyboardArtifact.update,
   addStoryboardScene,
   addStoryboardShot,
+  updateStoryboardShot,
+  getCreativeRecord,
 };

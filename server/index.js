@@ -6,6 +6,8 @@ const gate = require('./services/approval-gate');
 const timelineStore = require('./services/timeline-store');
 const assetStorage = require('./services/asset-storage');
 const historyService = require('./services/generation-history-service');
+const creativeStore = require('./services/creative-store');
+const skillOrchestrator = require('./services/skill-orchestrator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -179,6 +181,146 @@ app.get('/shots/:shotId/history', (req, res) => {
     return res.status(404).json({ error: 'Shot not found' });
   }
   res.json({ shotId: req.params.shotId, generations: records, totalCount: records.length });
+});
+
+// Stage 11C — Creative Director workspace API. Every route here is a
+// thin wrapper over services/creative-store.js (Stage 11A) — no creative
+// business logic is duplicated here, matching every other stage's REST
+// layer. None of these routes import or call approval-gate.js,
+// generation-service.js, or any provider — saving a creative artifact
+// cannot create a generation job, spend a credit, or change budget/
+// approval state, because this code has no path to reach any of that.
+
+// Part 13's save rule, steps 2-3: a non-blank changeNote is required on
+// every creative save. Returns the trimmed note, or writes a 400 and
+// returns null (caller must stop on null).
+function requireChangeNote(body, res) {
+  const note = typeof body.changeNote === 'string' ? body.changeNote.trim() : '';
+  if (!note) {
+    res.status(400).json({ error: 'changeNote is required and cannot be blank.' });
+    return null;
+  }
+  return note;
+}
+
+// Every PUT body may include `updatedBy` and `changeNote` alongside the
+// artifact's own fields — this splits those two bookkeeping fields out so
+// only real field updates get passed to the store layer.
+function splitVersionMeta(body) {
+  const { changeNote, updatedBy, ...updates } = body || {};
+  return { changeNote, updatedBy, updates };
+}
+
+// GET everything the Creative Director workspace needs in one call.
+app.get('/projects/:id/creative', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeStore.getCreativeRecord(req.params.id));
+});
+
+app.get('/projects/:id/creative/brief', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeStore.getCreativeBrief(req.params.id));
+});
+
+app.put('/projects/:id/creative/brief', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  res.json(creativeStore.updateCreativeBrief(req.params.id, updates, { updatedBy, changeNote }));
+});
+
+app.get('/projects/:id/creative/spec', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeStore.getMasterCreativeSpec(req.params.id));
+});
+
+app.put('/projects/:id/creative/spec', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  res.json(creativeStore.updateMasterCreativeSpec(req.params.id, updates, { updatedBy, changeNote }));
+});
+
+app.get('/projects/:id/creative/bible', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeStore.getVisualBible(req.params.id));
+});
+
+app.put('/projects/:id/creative/bible', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  res.json(creativeStore.updateVisualBible(req.params.id, updates, { updatedBy, changeNote }));
+});
+
+app.get('/projects/:id/creative/storyboard', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeStore.getStoryboard(req.params.id));
+});
+
+app.put('/projects/:id/creative/storyboard', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  res.json(creativeStore.updateStoryboard(req.params.id, updates, { updatedBy, changeNote }));
+});
+
+// The Shot Editor's Save action — updates one shot's fields in place.
+app.put('/projects/:id/creative/storyboard/shots/:shotId', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  let updated;
+  try {
+    updated = creativeStore.updateStoryboardShot(req.params.id, req.params.shotId, updates, { updatedBy, changeNote });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (!updated) return res.status(404).json({ error: 'Shot not found' });
+  res.json(updated);
+});
+
+// Stage 11C — read-only skill discovery for the Creative Skills panel.
+// Thin wrappers over services/skill-orchestrator.js; no skill is ever run.
+app.get('/skills', (req, res) => {
+  res.json(skillOrchestrator.listSkills());
+});
+
+app.get('/skills/recommendation', (req, res) => {
+  const { desiredOutput, platform, needsCinematicPlanning, needsReferenceImage } = req.query;
+  res.json(
+    skillOrchestrator.recommendSkill({
+      desiredOutput,
+      platform,
+      needsCinematicPlanning: needsCinematicPlanning === 'true',
+      needsReferenceImage: needsReferenceImage === 'true',
+    })
+  );
 });
 
 // Stage 9A — permanent asset storage download/preview. See

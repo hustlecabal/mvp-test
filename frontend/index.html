@@ -8,11 +8,18 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>EVOLINK VIDEO FACTORY</h1>
-    <p class="topbar-sub">Production workspace — read-only preview (Stage 10)</p>
+    <div class="topbar-title">
+      <h1>EVOLINK VIDEO FACTORY</h1>
+      <p class="topbar-sub" id="topbar-sub">Production workspace</p>
+    </div>
+    <nav class="view-switch" aria-label="Workspace">
+      <button type="button" class="view-tab selected" id="tab-production">Production</button>
+      <button type="button" class="view-tab" id="tab-creative">Creative Director</button>
+    </nav>
   </header>
 
-  <div class="workspace">
+  <!-- ================= PRODUCTION WORKSPACE (Stage 10, unchanged) ================= -->
+  <div class="workspace" id="production-view">
     <!-- LEFT: project / scene / shot navigation -->
     <aside class="panel panel-left">
       <section>
@@ -41,6 +48,47 @@
       <section>
         <h2>Budget</h2>
         <div id="budget-panel" class="state-box">Select a project to see its budget.</div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- ================= CREATIVE DIRECTOR WORKSPACE (Stage 11C) ================= -->
+  <div class="workspace" id="creative-view" hidden>
+    <!-- LEFT: creative artifact navigation -->
+    <aside class="panel panel-left">
+      <section>
+        <h2>Project</h2>
+        <div id="creative-project-banner" class="state-box">No project selected — pick one in Production first.</div>
+      </section>
+
+      <section>
+        <h2>Creative Plan</h2>
+        <nav class="creative-nav" id="creative-nav">
+          <button type="button" class="creative-nav-item" data-artifact="brief">Creative Brief</button>
+          <button type="button" class="creative-nav-item" data-artifact="spec">Master Specification</button>
+          <button type="button" class="creative-nav-item" data-artifact="bible">Visual Bible</button>
+          <button type="button" class="creative-nav-item" data-artifact="characters">Characters</button>
+          <button type="button" class="creative-nav-item" data-artifact="locations">Locations</button>
+          <button type="button" class="creative-nav-item" data-artifact="storyboard">Storyboard</button>
+        </nav>
+      </section>
+    </aside>
+
+    <!-- CENTER: current artifact editor -->
+    <main class="panel panel-center">
+      <div id="creative-editor" class="state-box">Select a project in Production, then choose a creative artifact on the left.</div>
+    </main>
+
+    <!-- RIGHT: version history + recommended next step -->
+    <aside class="panel panel-right">
+      <section>
+        <h2>Version</h2>
+        <div id="creative-version-panel" class="state-box">Nothing selected yet.</div>
+      </section>
+
+      <section>
+        <h2>Creative Skills</h2>
+        <div id="creative-skill-panel" class="state-box">Select a shot to see a recommended next step.</div>
       </section>
     </aside>
   </div>
