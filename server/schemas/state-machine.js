@@ -53,6 +53,37 @@ const TRANSITIONS = {
   COMPLETE: [],
 };
 
+// A one-sentence, plain-English explanation of each state. This is the
+// canonical source for that text — docs/architecture/state-machine.md
+// mirrors it for human readers, and get_project_status (Stage 5's MCP
+// tool) reads it directly instead of re-describing states itself.
+const STATE_MEANINGS = {
+  PLANNING: 'Project just created; nothing decided yet.',
+  RESEARCH: 'Gathering facts and background for the topic.',
+  CREATIVE_REVIEW: 'Human reviews research and creative direction so far.',
+  SCRIPTING: 'Writing the script from the approved direction.',
+  SCRIPT_REVIEW: 'Human reviews the script.',
+  VISUAL_DEVELOPMENT: 'Defining the visual bible, characters, and locations.',
+  VISUAL_REVIEW: 'Human reviews the visual direction.',
+  STORYBOARD: 'Breaking the script into scenes and shots.',
+  GENERATION_REVIEW:
+    'Human reviews the full storyboard and shot plan before anything is generated or spent.',
+  CALIBRATION: 'A small, cheap test generation to sanity-check prompts/settings before a full batch.',
+  KEYFRAME_GENERATION: 'Generating still keyframes for approved shots.',
+  KEYFRAME_REVIEW: 'Human reviews generated keyframes.',
+  MOTION_GENERATION: 'Animating approved keyframes into video.',
+  FINAL_REVIEW: 'Human reviews the assembled video.',
+  COMPLETE: 'The project is finished.',
+};
+
+function describeState(state) {
+  return STATE_MEANINGS[state] || 'Unknown state.';
+}
+
+function getNextStates(state) {
+  return TRANSITIONS[state] || [];
+}
+
 function isValidState(state) {
   return STATES.includes(state);
 }
@@ -95,6 +126,9 @@ module.exports = {
   STATES,
   GENERATION_STATES,
   TRANSITIONS,
+  STATE_MEANINGS,
+  describeState,
+  getNextStates,
   isValidState,
   isGenerationState,
   canTransition,

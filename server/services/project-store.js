@@ -65,8 +65,12 @@ function listProjects() {
 // Only these fields can be changed through updateProject. Everything else
 // (like id, createdAt, or the arrays for shots/characters/etc.) is left
 // alone at this stage — later stages will add their own focused update
-// paths for those.
-const UPDATABLE_FIELDS = ['title', 'topic', 'status'];
+// paths for those. Note: "status" is deliberately included here for the
+// existing HTTP PATCH endpoint (Stage 2), but Stage 5's MCP update_project
+// tool never passes status through — state changes go through
+// schemas/state-machine.js's transition() instead, so this whitelist
+// being permissive doesn't let MCP bypass the state machine.
+const UPDATABLE_FIELDS = ['title', 'topic', 'status', 'audience', 'tone', 'creativeMode'];
 
 function updateProject(id, updates = {}) {
   const project = getProject(id);
