@@ -2,6 +2,22 @@
 
 Remotion-powered video generation template.
 
+## Full Production Pipeline
+
+The `openmontage/` directory vendors [OpenMontage](https://github.com/calesthio/OpenMontage) (AGPLv3), a full agentic video-production framework: 12 production pipelines, 100+ tools, and 700+ agent skills for scripting, asset generation, editing, and composition — driven by an AI coding assistant rather than manual editing.
+
+It's a separate local/dev workspace, not part of this repo's Vercel deploy:
+
+```bash
+cd openmontage
+make setup          # installs Python deps, Remotion composer, Piper TTS
+cp .env.example .env  # add API keys for any paid providers you want (all optional)
+```
+
+Then open `openmontage/` in your AI coding assistant and describe the video you want — see `openmontage/README.md` for prompts and pipeline details, or `openmontage/AGENT_GUIDE.md` for the agent operating contract.
+
+Renders land in `openmontage/` output folders; pull the finished file into `src/` here if you want it served through this repo's existing Vercel/Remotion template.
+
 ## Quick Start
 
 ```bash
