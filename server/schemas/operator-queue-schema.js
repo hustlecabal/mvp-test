@@ -41,6 +41,18 @@ const QUEUE_CATEGORIES = [
 // frontend can filter without knowing every category's meaning.
 const QUEUE_STATUSES = ['NEEDS_ATTENTION', 'BLOCKED', 'IN_PROGRESS', 'COMPLETE'];
 
+// Stage 19, Part 5 — an ADDITIVE per-item field distinguishing the
+// readiness of the character/location references this keyframe depends
+// on, independent of the keyframe's own generation-lifecycle `category`
+// above. Deliberately not a new top-level category or priority change —
+// see services/operator-queue-service.js's computeReferenceStatus().
+//   NO_REFERENCE_NEEDED   — this keyframe has no character/location scope
+//   MISSING                — a scoped entity has no reference asset at all
+//   REVIEW_REQUIRED        — every scoped entity's references are still NONE (unreviewed candidates only)
+//   AVAILABLE               — at least one scoped entity resolves to an approved (non-canonical) reference
+//   CANONICAL_AVAILABLE    — every scoped entity that has a resolvable reference resolves via its CANONICAL selection
+const REFERENCE_STATUSES = ['NO_REFERENCE_NEEDED', 'MISSING', 'REVIEW_REQUIRED', 'AVAILABLE', 'CANONICAL_AVAILABLE'];
+
 // Part 4 — 1 (highest) through 9 (lowest). Deliberately a plain integer,
 // not its own enum: priority is a computed ordering key, not a state.
 const MIN_PRIORITY = 1;
@@ -103,6 +115,9 @@ function createQueueItem(overrides = {}) {
     canonicalAssetId: null,
     canonicalAssetApprovalStatus: null,
 
+    // Stage 19, Part 5 — see REFERENCE_STATUSES above.
+    referenceStatus: 'NO_REFERENCE_NEEDED',
+
     createdAt: null,
     updatedAt: null,
   };
@@ -112,6 +127,7 @@ function createQueueItem(overrides = {}) {
 module.exports = {
   QUEUE_CATEGORIES,
   QUEUE_STATUSES,
+  REFERENCE_STATUSES,
   MIN_PRIORITY,
   MAX_PRIORITY,
   createQueueItem,

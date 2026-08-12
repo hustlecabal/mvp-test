@@ -28,6 +28,7 @@ const registerKeyframeGenerationTools = require('./tools/keyframe-generation-too
 const registerKeyframeExecutionTools = require('./tools/keyframe-execution-tools');
 const registerKeyframeHandoffTools = require('./tools/keyframe-handoff-tools');
 const registerOperatorQueueTools = require('./tools/operator-queue-tools');
+const registerReferenceLibraryTools = require('./tools/reference-library-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -50,6 +51,7 @@ function createServer() {
   registerKeyframeExecutionTools(server);
   registerKeyframeHandoffTools(server);
   registerOperatorQueueTools(server);
+  registerReferenceLibraryTools(server);
 
   return server;
 }

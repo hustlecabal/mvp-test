@@ -132,6 +132,75 @@ function resolveEntityName(map, id) {
 }
 
 // ---------------------------------------------------------------------------
+// Stage 19, Part 5 — referenceStatus. Answers, independently of the
+// keyframe's own generation-lifecycle `category`: are the character/
+// location references this keyframe depends on actually ready? Reuses
+// the exact same resolution rules as
+// services/keyframe-prompt-service.js's resolveReferenceForEntity()
+// (canonical preferred, then any other approved, else MISSING/
+// REJECTED_ONLY) but computed here directly from the already-indexed
+// characterById/locationById/assetById Maps — zero extra store reads, so
+// this never changes buildProjectQueue's "exactly one read per store"
+// performance property (Part 13).
+//
+// Worst case wins when a keyframe scopes multiple entities: MISSING >
+// REVIEW_REQUIRED > AVAILABLE > CANONICAL_AVAILABLE — the same "surface
+// the most urgent problem" principle CATEGORY_INFO's own ordering already
+// follows.
+function computeReferenceStatus(keyframe, characterById, locationById, assetById) {
+  const entityIds = [...(keyframe.characterReferences || []), ...(keyframe.locationReferences || [])];
+  if (entityIds.length === 0) return 'NO_REFERENCE_NEEDED';
+
+  let sawMissing = false;
+  let sawReviewRequired = false;
+  let allCanonical = true;
+
+  for (const id of entityIds) {
+    const entity = characterById.get(id) || locationById.get(id);
+    if (!entity || !Array.isArray(entity.referenceAssets) || entity.referenceAssets.length === 0) {
+      sawMissing = true;
+      allCanonical = false;
+      continue;
+    }
+
+    let resolvedAsset = null;
+    let isCanonical = false;
+    if (entity.canonicalReferenceAssetId) {
+      const canonicalAsset = assetById.get(entity.canonicalReferenceAssetId);
+      if (canonicalAsset && canonicalAsset.approvalStatus === 'APPROVED') {
+        resolvedAsset = canonicalAsset;
+        isCanonical = true;
+      }
+    }
+    if (!resolvedAsset) {
+      for (const assetId of entity.referenceAssets) {
+        const asset = assetById.get(assetId);
+        if (asset && asset.approvalStatus === 'APPROVED') {
+          resolvedAsset = asset;
+          break;
+        }
+      }
+    }
+
+    if (resolvedAsset) {
+      if (!isCanonical) allCanonical = false;
+    } else {
+      allCanonical = false;
+      const anyPending = entity.referenceAssets.some((assetId) => {
+        const asset = assetById.get(assetId);
+        return asset && asset.approvalStatus === 'NONE';
+      });
+      if (anyPending) sawReviewRequired = true;
+      else sawMissing = true; // every candidate was rejected (or unresolvable) — same as "no usable reference" for queue purposes
+    }
+  }
+
+  if (sawMissing) return 'MISSING';
+  if (sawReviewRequired) return 'REVIEW_REQUIRED';
+  return allCanonical ? 'CANONICAL_AVAILABLE' : 'AVAILABLE';
+}
+
+// ---------------------------------------------------------------------------
 // Part 2/6/14/15/16/17 — the category decision. Evaluated top-to-bottom;
 // the first matching condition wins. See docs/architecture/operator-
 // queue.md for the full worked-through reasoning behind this exact order
@@ -287,6 +356,8 @@ function buildKeyframeQueueItem({ project, keyframe, scene, shot, pkg, approval,
     approvedAssetCount: approvedAssets.length,
     canonicalAssetId: keyframe.canonicalAssetId || null,
     canonicalAssetApprovalStatus: canonicalAsset ? canonicalAsset.approvalStatus : null,
+
+    referenceStatus: computeReferenceStatus(keyframe, characterById, locationById, assetById),
 
     createdAt: pkg ? pkg.generatedAt : null,
     updatedAt,

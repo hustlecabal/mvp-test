@@ -17,6 +17,9 @@ const generationStore = require('./services/generation-store');
 const keyframeHandoffService = require('./services/keyframe-handoff-service');
 const stateMachine = require('./schemas/state-machine');
 const operatorQueueService = require('./services/operator-queue-service');
+const referenceLibraryService = require('./services/reference-library-service');
+const identityConsistencyReviewStore = require('./services/identity-consistency-review-store');
+const { REFERENCE_ENTITY_TYPES } = require('./schemas/creative-schema');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -713,6 +716,94 @@ app.get('/projects/:id/shot-readiness', (req, res) => {
   const project = projectStore.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   res.json(operatorQueueService.getShotReadiness(req.params.id));
+});
+
+// ================= Stage 19 — Reference Library / Identity Lock / Identity Consistency Review =================
+// Every route below is a thin wrapper over services/reference-library-
+// service.js, services/creative-store.js, and services/
+// identity-consistency-review-store.js — no business logic lives here.
+// PUT /reference-library/... routes always require an explicit assetId
+// from the caller; nothing here ever auto-selects or auto-associates one.
+
+function requireValidEntityType(entityType, res) {
+  if (!REFERENCE_ENTITY_TYPES.includes(entityType)) {
+    res.status(400).json({ error: `"${entityType}" is not a valid reference entity type. Use one of: ${REFERENCE_ENTITY_TYPES.join(', ')}` });
+    return false;
+  }
+  return true;
+}
+
+app.get('/projects/:id/reference-library', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(referenceLibraryService.listReferenceLibrary(req.params.id));
+});
+
+app.get('/projects/:id/reference-library/:entityType/:entityId/identity-lock', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  const lock = referenceLibraryService.getIdentityLock(req.params.id, req.params.entityType, req.params.entityId);
+  if (!lock) return res.status(404).json({ error: 'Entity not found' });
+  res.json(lock);
+});
+
+app.post('/projects/:id/reference-library/:entityType/:entityId/reference-assets', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  const { assetId, updatedBy, changeNote } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+  const entity = creativeStore.addEntityReferenceAsset(req.params.id, req.params.entityType, req.params.entityId, assetId, { updatedBy, changeNote });
+  if (!entity) return res.status(404).json({ error: 'Entity not found' });
+  res.status(201).json(entity);
+});
+
+app.put('/projects/:id/reference-library/:entityType/:entityId/canonical', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  const { assetId, selectedBy, changeNote } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+  const result = creativeStore.selectCanonicalReferenceAsset(req.params.id, req.params.entityType, req.params.entityId, assetId, { selectedBy, changeNote });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result.entity);
+});
+
+app.get('/projects/:id/reference-library/:entityType/:entityId/canonical', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  const result = creativeStore.getCanonicalReferenceAsset(req.params.id, req.params.entityType, req.params.entityId);
+  if (!result) return res.status(404).json({ error: 'Entity not found' });
+  res.json(result);
+});
+
+app.post('/projects/:id/assets/:assetId/identity-review', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const { keyframeId, referenceAssetId, scores, notes, reviewedBy } = req.body || {};
+  let review;
+  try {
+    review = identityConsistencyReviewStore.recordReview(req.params.id, req.params.assetId, { keyframeId, referenceAssetId, scores, notes, reviewedBy });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (!review) return res.status(404).json({ error: 'Project not found' });
+  res.status(201).json(review);
+});
+
+app.get('/projects/:id/assets/:assetId/identity-reviews', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(identityConsistencyReviewStore.listReviews(req.params.id, req.params.assetId));
 });
 
 // Stage 9A — permanent asset storage download/preview. See

@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const projectStore = require('./project-store');
+const timelineStore = require('./timeline-store');
 const creativeSchema = require('../schemas/creative-schema');
 
 // Overridable for tests, same pattern as PROJECT_DATA_DIR/
@@ -214,6 +215,159 @@ function updateStoryboardShot(projectId, shotId, updates = {}, { updatedBy, chan
   return updatedShot;
 }
 
+// ---------------------------------------------------------------------------
+// Stage 19, Part 1/3 — entity-level canonical reference selection. Mirrors
+// services/keyframe-store.js's selectCanonicalKeyframeAsset()/
+// getCanonicalKeyframeAsset() exactly (same validation rules, same
+// "archive the previous selection into history, never overwrite" rule),
+// scoped to a reusable Visual Bible entity (character/location/prop)
+// instead of a single keyframe. Reuses the existing updateVisualBible()
+// (defineArtifact) path for persistence — no new file, no second source
+// of truth for the Visual Bible's own data.
+// ---------------------------------------------------------------------------
+
+// Maps a Stage 19 entity type to where it lives inside the Visual Bible.
+// The ONLY place this mapping is written — every function below goes
+// through it rather than re-deriving array/id-field names inline.
+const ENTITY_TYPE_CONFIG = {
+  CHARACTER: { arrayField: 'characters', idField: 'characterId' },
+  LOCATION: { arrayField: 'locations', idField: 'locationId' },
+  PROP: { arrayField: 'props', idField: 'propId' },
+};
+
+function entityTypeConfig(entityType) {
+  const config = ENTITY_TYPE_CONFIG[entityType];
+  if (!config) {
+    throw new Error(`"${entityType}" is not a valid reference entity type. Use one of: ${Object.keys(ENTITY_TYPE_CONFIG).join(', ')}`);
+  }
+  return config;
+}
+
+// Finds one entity (character/location/prop) by type+id within a
+// project's Visual Bible. Returns { visualBible, config, index, entity },
+// or null if the project/visual bible/entity doesn't exist.
+function findReferenceEntity(projectId, entityType, entityId) {
+  const config = entityTypeConfig(entityType);
+  const bible = visualBible.get(projectId);
+  if (!bible) return null;
+  const list = bible[config.arrayField] || [];
+  const index = list.findIndex((e) => e[config.idField] === entityId);
+  if (index === -1) return null;
+  return { visualBible: bible, config, index, entity: list[index] };
+}
+
+// Appends an assetId to an entity's referenceAssets array (idempotent — a
+// duplicate add is a no-op). This is how a newly generated/uploaded
+// candidate image becomes eligible to be selected canonical for an
+// entity; it never itself changes approval or canonical status. Returns
+// the updated entity, or null if the project/visual bible/entity doesn't
+// exist.
+function addEntityReferenceAsset(projectId, entityType, entityId, assetId, { updatedBy, changeNote } = {}) {
+  const found = findReferenceEntity(projectId, entityType, entityId);
+  if (!found) return null;
+  const { config, index, entity } = found;
+
+  if ((entity.referenceAssets || []).includes(assetId)) {
+    return entity; // already associated — no-op, not an error
+  }
+
+  const bible = visualBible.get(projectId);
+  const list = [...(bible[config.arrayField] || [])];
+  list[index] = { ...entity, referenceAssets: [...(entity.referenceAssets || []), assetId] };
+
+  updateVisualBibleField(projectId, config.arrayField, list, {
+    updatedBy,
+    changeNote: changeNote || `Added a candidate reference asset to ${entityType.toLowerCase()} "${entity.name || entityId}"`,
+  });
+
+  return list[index];
+}
+
+// Small internal helper: updates exactly one array field of the Visual
+// Bible (characters/locations/props) through the existing versioned
+// update path, without a caller having to reassemble the other two
+// arrays it isn't touching.
+function updateVisualBibleField(projectId, arrayField, newArray, { updatedBy, changeNote } = {}) {
+  return visualBible.update(projectId, { [arrayField]: newArray }, { updatedBy, changeNote });
+}
+
+// Selects (or re-selects) the CANONICAL reference asset for one entity.
+// Refuses a REJECTED asset (mirrors keyframe-store.js's identical rule)
+// and refuses an asset that isn't already associated with this entity
+// (via referenceAssets — see addEntityReferenceAsset above) or that
+// doesn't belong to this project — this function never fabricates an
+// association, it only lets a human pick among assets already offered as
+// candidates. Returns { ok: true, entity } or { ok: false, reason }.
+function selectCanonicalReferenceAsset(projectId, entityType, entityId, assetId, { selectedBy, changeNote } = {}) {
+  const found = findReferenceEntity(projectId, entityType, entityId);
+  if (!found) {
+    return { ok: false, reason: `No ${String(entityType).toLowerCase()} found with id "${entityId}" in project "${projectId}"` };
+  }
+  const { config, index, entity } = found;
+
+  const asset = timelineStore.getAsset(projectId, assetId);
+  if (!asset) {
+    return { ok: false, reason: `No asset found with id "${assetId}" in project "${projectId}"` };
+  }
+  if (!(entity.referenceAssets || []).includes(assetId)) {
+    return {
+      ok: false,
+      reason: `Asset "${assetId}" is not one of this ${entityType.toLowerCase()}'s associated reference assets — add it first (addEntityReferenceAsset) before selecting it as canonical.`,
+    };
+  }
+  if (asset.approvalStatus === 'REJECTED') {
+    return { ok: false, reason: `Asset "${assetId}" has been REJECTED and cannot be selected as canonical.` };
+  }
+
+  const history = entity.canonicalReferenceHistory ? [...entity.canonicalReferenceHistory] : [];
+  if (entity.canonicalReferenceAssetId) {
+    history.push({
+      assetId: entity.canonicalReferenceAssetId,
+      selectedAt: entity.canonicalReferenceSelectedAt,
+      selectedBy: entity.canonicalReferenceSelectedBy,
+      changeNote: entity.canonicalReferenceChangeNote || null,
+      supersededAt: new Date().toISOString(),
+    });
+  }
+
+  const updatedEntity = {
+    ...entity,
+    canonicalReferenceAssetId: assetId,
+    canonicalReferenceSelectedAt: new Date().toISOString(),
+    canonicalReferenceSelectedBy: selectedBy || null,
+    canonicalReferenceChangeNote: changeNote || null,
+    canonicalReferenceHistory: history,
+  };
+
+  const bible = visualBible.get(projectId);
+  const list = [...(bible[config.arrayField] || [])];
+  list[index] = updatedEntity;
+  updateVisualBibleField(projectId, config.arrayField, list, { updatedBy: selectedBy, changeNote });
+
+  return { ok: true, entity: updatedEntity };
+}
+
+// Read-only. Returns null only if the project/visual-bible/entity doesn't
+// exist — an entity with no canonical selection yet still returns a real
+// object with canonicalAssetId: null and asset: null, never an error.
+function getCanonicalReferenceAsset(projectId, entityType, entityId) {
+  const found = findReferenceEntity(projectId, entityType, entityId);
+  if (!found) return null;
+  const { entity } = found;
+
+  const asset = entity.canonicalReferenceAssetId ? timelineStore.getAsset(projectId, entity.canonicalReferenceAssetId) : null;
+  return {
+    entityType,
+    entityId,
+    canonicalAssetId: entity.canonicalReferenceAssetId || null,
+    canonicalAssetSelectedAt: entity.canonicalReferenceSelectedAt || null,
+    canonicalAssetSelectedBy: entity.canonicalReferenceSelectedBy || null,
+    canonicalAssetChangeNote: entity.canonicalReferenceChangeNote || null,
+    canonicalAssetHistory: entity.canonicalReferenceHistory || [],
+    asset,
+  };
+}
+
 // Stage 11C — everything a UI needs in one call, so the Creative Director
 // workspace can load with a single request instead of four. Read-only;
 // just calls the four getters above. Returns null if the project itself
@@ -243,4 +397,10 @@ module.exports = {
   addStoryboardShot,
   updateStoryboardShot,
   getCreativeRecord,
+  // Stage 19
+  ENTITY_TYPE_CONFIG,
+  findReferenceEntity,
+  addEntityReferenceAsset,
+  selectCanonicalReferenceAsset,
+  getCanonicalReferenceAsset,
 };

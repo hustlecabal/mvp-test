@@ -140,7 +140,18 @@ function createKeyframePromptPackage(overrides = {}) {
     locationReferences: [],
     propReferences: [],
     // Part 7 — approved assets already satisfying a reference requirement.
+    // Stage 19: each entry may additionally carry `canonical: true/false`
+    // (whether this was the entity's explicitly-selected canonical
+    // reference, vs. some other approved reusable one).
     existingReferenceAssets: [],
+    // Stage 19, Part 4 — every in-scope character/location/prop that could
+    // NOT be resolved to an approved reference, each as
+    // { kind, id, name, reason }, reason one of 'MISSING' | 'REJECTED_ONLY'.
+    // Distinct from `warnings` (human-readable text) — this is the same
+    // information in a structured, programmatically-inspectable form.
+    // Never fabricates a reference; an unresolved entry here always means
+    // no substitute was silently used.
+    unresolvedReferences: [],
     // Part 4/5/6 — arrays: a shot can reference more than one character or
     // location, so each lock is its own array of per-entity entries.
     identityLock: [],

@@ -117,13 +117,42 @@ function findProp(visualBible, propId) {
 // Part 7 — does this entity's requirement already have an APPROVED asset?
 // Same reasoning as keyframe-planner.js's approvedReferenceAsset: a
 // candidate (non-approved) asset never satisfies the requirement.
-function approvedAssetFor(entity) {
-  if (!entity || !Array.isArray(entity.referenceAssets)) return null;
+//
+// Stage 19, Part 1/2 — upgraded to prefer the entity's explicitly-selected
+// CANONICAL reference (services/creative-store.js's
+// selectCanonicalReferenceAsset) over any other approved asset, and to
+// distinguish WHY nothing resolved: 'MISSING' (no reference assets
+// associated with this entity at all) vs 'REJECTED_ONLY' (it has
+// candidates, but every one of them was rejected and none is currently
+// approved) — never silently substituting a rejected reference, never
+// fabricating one. A canonical selection that has since stopped being
+// APPROVED (e.g. re-reviewed and rejected after being made canonical)
+// falls through to the normal approved-scan below rather than being used
+// anyway — the canonical preference is a preference for eligible assets,
+// never an override of the approval gate itself.
+function resolveReferenceForEntity(entity) {
+  if (!entity || !Array.isArray(entity.referenceAssets) || entity.referenceAssets.length === 0) {
+    return { asset: null, canonical: false, status: 'MISSING' };
+  }
+
+  if (entity.canonicalReferenceAssetId) {
+    const canonicalFound = timelineStore.findAssetById(entity.canonicalReferenceAssetId);
+    if (canonicalFound && canonicalFound.asset.approvalStatus === 'APPROVED') {
+      return { asset: canonicalFound.asset, canonical: true, status: 'CANONICAL' };
+    }
+  }
+
+  let sawRejected = false;
   for (const assetId of entity.referenceAssets) {
     const found = timelineStore.findAssetById(assetId);
-    if (found && found.asset.approvalStatus === 'APPROVED') return found.asset;
+    if (!found) continue;
+    if (found.asset.approvalStatus === 'APPROVED') {
+      return { asset: found.asset, canonical: false, status: 'APPROVED_OTHER' };
+    }
+    if (found.asset.approvalStatus === 'REJECTED') sawRejected = true;
   }
-  return null;
+
+  return { asset: null, canonical: false, status: sawRejected ? 'REJECTED_ONLY' : 'MISSING' };
 }
 
 // Part 4 — character identity locks, one entry per in-scope character.
@@ -199,24 +228,41 @@ function buildEnvironmentLock(visualBible, locationIds, warnings) {
 // Part 7 — existing reference assets for every in-scope character/
 // location/prop, plus a warning (never an auto-generated placeholder) for
 // anything still missing an approved reference.
+//
+// Stage 19, Part 2/4 — now also returns `unresolvedReferences`: the same
+// "nothing resolved" cases as `warnings`, but structured
+// ({kind, id, name, reason}) rather than only human-readable text, so a
+// caller (the Keyframe Prompt Package, the Operator Queue) can act on it
+// programmatically. `reason` is 'MISSING' or 'REJECTED_ONLY' — see
+// resolveReferenceForEntity(). Every resolved entry also now carries
+// `canonical: true/false`, and `reason` distinguishes a canonical pick
+// from any other approved one.
 function resolveExistingReferenceAssets(visualBible, { characterIds, locationIds, propIds }, warnings) {
   const entries = [];
+  const unresolvedReferences = [];
 
   function consider(kind, id, entity, assetType) {
     const label = entity && entity.name ? entity.name : id;
-    const asset = approvedAssetFor(entity);
-    if (asset) {
+    const resolved = resolveReferenceForEntity(entity);
+    if (resolved.asset) {
       entries.push({
-        assetId: asset.assetId,
-        type: asset.type || assetType,
+        assetId: resolved.asset.assetId,
+        type: resolved.asset.type || assetType,
         role: `${kind}:${label}`,
         // Stage 16, Part 2 — additive machine-checkable role, alongside the
         // existing free-text `role` label above. Never replaces it.
         roleType: REFERENCE_KIND_TO_ROLE_TYPE[kind] || 'OTHER',
-        reason: 'approved reusable reference',
+        reason: resolved.canonical ? 'canonical reference' : 'approved reusable reference',
+        canonical: resolved.canonical,
       });
     } else {
-      warnings.push(`Approved reference asset not available for ${kind} "${label}".`);
+      const reasonCode = resolved.status; // 'MISSING' | 'REJECTED_ONLY'
+      unresolvedReferences.push({ kind, id, name: label, reason: reasonCode });
+      warnings.push(
+        reasonCode === 'REJECTED_ONLY'
+          ? `Reference for ${kind} "${label}" was rejected and no other approved reference exists — a new candidate is needed.`
+          : `Approved reference asset not available for ${kind} "${label}".`
+      );
     }
   }
 
@@ -224,7 +270,7 @@ function resolveExistingReferenceAssets(visualBible, { characterIds, locationIds
   for (const locationId of locationIds) consider('location', locationId, findLocation(visualBible, locationId), 'location_reference');
   for (const propId of propIds) consider('prop', propId, findProp(visualBible, propId), 'keyframe');
 
-  return entries;
+  return { entries, unresolvedReferences };
 }
 
 function dedupeStrings(list) {
@@ -475,7 +521,11 @@ function resolvePackageFields(projectId, keyframeId) {
   const identityLock = buildIdentityLock(visualBible, characterIds, warnings);
   const wardrobeLock = buildWardrobeLock(visualBible, characterIds);
   const environmentLock = buildEnvironmentLock(visualBible, locationIds, warnings);
-  const existingReferenceAssets = resolveExistingReferenceAssets(visualBible, { characterIds, locationIds, propIds }, warnings);
+  const { entries: existingReferenceAssets, unresolvedReferences } = resolveExistingReferenceAssets(
+    visualBible,
+    { characterIds, locationIds, propIds },
+    warnings
+  );
   const continuityRequirements = resolveContinuity(visualBible, storyboard, shot, keyframe, identityLock, environmentLock);
   const negativeConstraints = resolveNegativeConstraints(masterSpec, visualBible);
 
@@ -517,6 +567,7 @@ function resolvePackageFields(projectId, keyframeId) {
     locationReferences: locationIds,
     propReferences: propIds,
     existingReferenceAssets,
+    unresolvedReferences,
     identityLock,
     wardrobeLock,
     environmentLock,

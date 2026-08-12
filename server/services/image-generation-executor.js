@@ -46,6 +46,12 @@ function buildNormalizedImageRequest(promptPackage, { parameters = {} } = {}) {
       assetId: ref.assetId,
       roleType: ref.roleType || 'OTHER',
       role: ref.role || null,
+      // Stage 19, Part 7 — whether this reference was the entity's
+      // explicitly-selected CANONICAL reference at generation time, vs.
+      // some other approved reusable one. Missing on a pre-Stage-19
+      // package's entries, same "defaults to a safe falsy value, never an
+      // error" rule as roleType above.
+      canonical: ref.canonical || false,
     })),
     recommendedSkill: promptPackage.recommendedSkill,
     parameters,

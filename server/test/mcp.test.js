@@ -49,7 +49,7 @@ async function createTestProject(overrides = {}) {
   return textOf(result);
 }
 
-test('a real MCP client can discover all 66 tools', async () => {
+test('a real MCP client can discover all 76 tools', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
 
@@ -73,10 +73,16 @@ test('a real MCP client can discover all 66 tools', async () => {
   // (Part 5). Stage 14 added the 3 read-only Operator Queue tools
   // (get_operator_queue, get_operator_queue_summary,
   // get_next_operator_action — see docs/architecture/operator-queue.md).
+  // Stage 19 added the 7 Reference Library / Identity Lock / Identity
+  // Consistency Review tools (list_reference_library, get_identity_lock,
+  // add_entity_reference_asset, select_canonical_reference_asset,
+  // get_canonical_reference_asset, record_identity_consistency_review,
+  // list_identity_consistency_reviews).
   // Everything else is unchanged.
-  assert.equal(names.length, 69);
+  assert.equal(names.length, 76);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
+    'add_entity_reference_asset',
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
     'approve_keyframe_generation',
@@ -96,9 +102,11 @@ test('a real MCP client can discover all 66 tools', async () => {
     'get_asset',
     'get_asset_download',
     'get_canonical_keyframe_asset',
+    'get_canonical_reference_asset',
     'get_creative_brief',
     'get_creative_skill',
     'get_generation_status',
+    'get_identity_lock',
     'get_keyframe',
     'get_keyframe_generation_approval',
     'get_keyframe_generation_status',
@@ -120,16 +128,19 @@ test('a real MCP client can discover all 66 tools', async () => {
     'list_assets',
     'list_creative_skills',
     'list_generation_history',
+    'list_identity_consistency_reviews',
     'list_keyframe_generations',
     'list_keyframe_handoffs',
     'list_keyframe_prompt_packages',
     'list_keyframes',
     'list_projects',
+    'list_reference_library',
     'list_scenes',
     'list_shots',
     'poll_generation',
     'prepare_keyframe_execution',
     'record_approval_decision',
+    'record_identity_consistency_review',
     'reject_generated_keyframe',
     'reject_keyframe_generation',
     'request_generation',
@@ -137,6 +148,7 @@ test('a real MCP client can discover all 66 tools', async () => {
     'request_keyframe_generation_approval',
     'run_fixture_keyframe_execution',
     'select_canonical_keyframe_asset',
+    'select_canonical_reference_asset',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',

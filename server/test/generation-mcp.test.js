@@ -71,7 +71,7 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   assert.ok(names.includes('request_generation'));
   assert.ok(names.includes('get_generation_status'));
   assert.ok(names.includes('poll_generation'));
-  assert.equal(names.length, 69);
+  assert.equal(names.length, 76);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

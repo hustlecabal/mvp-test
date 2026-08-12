@@ -68,6 +68,14 @@ const state = {
     // first approved one).
     viewedCanonicalKeyframeId: null,
     viewedCanonicalData: null, // { canonical, candidates: [{asset, source, promptPackageVersion}] }
+
+    // Stage 19 — Reference Library / Identity Lock. Read/write, but every
+    // write (ADD AS CANDIDATE, SELECT AS CANONICAL, SAVE REVIEW) is an
+    // explicit human button click. No batch/automatic generation exists
+    // anywhere in this section.
+    referenceLibrary: null, // { projectId, entities: [...] }
+    expandedReferenceEntity: null, // `${entityType}:${entityId}` currently expanded, or null
+    reviewFormAssetId: null, // which generated asset's score-entry form is open, or null
   },
 
   // Stage 14 — the Operator Queue. A pure control surface: every item's
@@ -757,6 +765,8 @@ function selectCreativeArtifact(key) {
     renderStoryboardView();
   } else if (key === 'keyframes') {
     renderKeyframePlanView();
+  } else if (key === 'references') {
+    loadReferenceLibrary();
   }
 }
 
@@ -2863,6 +2873,302 @@ function renderSkillRecommendationCard(rec) {
   card.appendChild(flags);
 
   return card;
+}
+
+// ============================================================
+// Stage 19 — Reference Library / Identity Lock workspace
+//
+// Every write here (ADD AS CANDIDATE, SELECT AS CANONICAL, SAVE REVIEW) is
+// an explicit human button click that maps 1:1 onto a single REST call.
+// There is no GENERATE / EXECUTE / RUN SKILL / AUTO GENERATE / BATCH
+// GENERATE control anywhere in this section, and no background polling —
+// the server (services/creative-store.js, services/identity-consistency-
+// review-store.js) re-checks every safety condition itself regardless of
+// what this UI computes.
+// ============================================================
+
+async function loadReferenceLibrary() {
+  const container = document.getElementById('creative-editor');
+  showLoading(container);
+  const projectId = state.selectedProjectId;
+  try {
+    const library = await fetchJson(`/projects/${projectId}/reference-library`);
+    state.creative.referenceLibrary = library;
+  } catch {
+    state.creative.referenceLibrary = null;
+  }
+  renderReferenceLibraryView();
+}
+
+function referenceEntityKey(entity) {
+  return `${entity.entityType}:${entity.entityId}`;
+}
+
+function renderReferenceLibraryView() {
+  const container = document.getElementById('creative-editor');
+  container.innerHTML = '';
+
+  const heading = document.createElement('h3');
+  heading.textContent = 'Reference Library';
+  container.appendChild(heading);
+
+  const library = state.creative.referenceLibrary;
+  if (!library) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'Could not load the Reference Library.';
+    container.appendChild(empty);
+    return;
+  }
+
+  if (library.entities.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'No characters, locations, or props exist yet — add them in the Visual Bible first.';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const groupType of ['CHARACTER', 'LOCATION', 'PROP']) {
+    const group = library.entities.filter((e) => e.entityType === groupType);
+    if (group.length === 0) continue;
+
+    const groupHeading = document.createElement('div');
+    groupHeading.className = 'entity-sub';
+    groupHeading.style.marginTop = '16px';
+    groupHeading.textContent = groupType + 'S';
+    container.appendChild(groupHeading);
+
+    for (const entity of group) {
+      container.appendChild(renderReferenceEntityCard(entity));
+    }
+  }
+}
+
+function renderReferenceEntityCard(entity) {
+  const card = document.createElement('div');
+  card.className = 'entity-card';
+
+  const title = document.createElement('div');
+  title.className = 'entity-title';
+  title.textContent = entity.entityName || entity.entityId;
+  card.appendChild(title);
+
+  card.appendChild(infoRow('Entity ID', entity.entityId));
+  card.appendChild(infoRow('Canonical asset', entity.canonicalAssetId || 'None selected'));
+  card.appendChild(infoRow('Approved / Rejected / Pending', `${entity.approvedCount} / ${entity.rejectedCount} / ${entity.pendingCount}`));
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-secondary';
+  const key = referenceEntityKey(entity);
+  const expanded = state.creative.expandedReferenceEntity === key;
+  toggleBtn.textContent = expanded ? 'HIDE DETAILS' : 'INSPECT REFERENCES';
+  toggleBtn.addEventListener('click', () => {
+    state.creative.expandedReferenceEntity = expanded ? null : key;
+    renderReferenceLibraryView();
+  });
+  card.appendChild(toggleBtn);
+
+  if (expanded) {
+    card.appendChild(renderIdentityLockPanel(entity));
+    card.appendChild(renderReferenceAssetsPanel(entity));
+  }
+
+  return card;
+}
+
+function renderIdentityLockPanel(entity) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  const heading = document.createElement('div');
+  heading.className = 'entity-sub';
+  heading.textContent = 'Identity Lock:';
+  panel.appendChild(heading);
+
+  panel.appendChild(infoRow('Identity constraints', entity.identityConstraints));
+  return panel;
+}
+
+// Note: identityConstraints isn't on the Reference Library list entry
+// itself (that comes from get_identity_lock's own derived view) — this
+// panel fetches it lazily the first time it's expanded, then caches it on
+// the entity object so re-expanding doesn't refetch.
+async function ensureIdentityLockLoaded(entity) {
+  if (entity.identityConstraints !== undefined) return;
+  try {
+    const lock = await fetchJson(`/projects/${state.selectedProjectId}/reference-library/${entity.entityType}/${entity.entityId}/identity-lock`);
+    entity.identityConstraints = lock.identityConstraints;
+    entity.wardrobeConstraints = lock.wardrobeConstraints;
+    entity.environmentConstraints = lock.environmentConstraints;
+    entity.continuityNotes = lock.continuityNotes;
+  } catch {
+    entity.identityConstraints = null;
+  }
+  renderReferenceLibraryView();
+}
+
+function renderReferenceAssetsPanel(entity) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (entity.identityConstraints === undefined) {
+    ensureIdentityLockLoaded(entity);
+  }
+
+  const heading = document.createElement('div');
+  heading.className = 'entity-sub';
+  heading.style.marginTop = '16px';
+  heading.textContent = 'Reference assets:';
+  panel.appendChild(heading);
+
+  if (entity.referenceAssets.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No reference assets associated with this entity yet.';
+    panel.appendChild(none);
+    return panel;
+  }
+
+  for (const asset of entity.referenceAssets) {
+    panel.appendChild(renderReferenceAssetCard(entity, asset));
+  }
+
+  return panel;
+}
+
+function renderReferenceAssetCard(entity, asset) {
+  const card = document.createElement('div');
+  card.className = 'entity-card';
+
+  if (asset.storageStatus === 'STORED') {
+    const preview = document.createElement('img');
+    preview.className = 'derived-prompt-box';
+    preview.style.maxWidth = '160px';
+    preview.src = `/assets/${asset.assetId}/preview`;
+    preview.alt = 'Reference asset preview';
+    card.appendChild(preview);
+  }
+
+  card.appendChild(infoRow('Asset ID', asset.assetId));
+  card.appendChild(approvalBadge(asset.approvalStatus));
+  card.appendChild(infoRow('Source', asset.provider));
+  card.appendChild(infoRow('Generation ID', asset.generationId));
+
+  if (asset.canonical) {
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-approved';
+    badge.textContent = 'CANONICAL';
+    card.appendChild(badge);
+  } else if (asset.approvalStatus === 'APPROVED') {
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'btn btn-secondary';
+    selectBtn.textContent = 'SELECT AS CANONICAL';
+    selectBtn.addEventListener('click', async () => {
+      await fetchJson(`/projects/${state.selectedProjectId}/reference-library/${entity.entityType}/${entity.entityId}/canonical`, {
+        method: 'PUT',
+        body: { assetId: asset.assetId, selectedBy: 'Creative Director UI' },
+      });
+      await loadReferenceLibrary();
+    });
+    card.appendChild(selectBtn);
+  }
+
+  if (asset.usedByAssets && asset.usedByAssets.length > 0) {
+    const usedHeading = document.createElement('div');
+    usedHeading.className = 'entity-sub';
+    usedHeading.textContent = `Reused in ${asset.usedByAssets.length} generated asset(s):`;
+    card.appendChild(usedHeading);
+    for (const used of asset.usedByAssets) {
+      const row = document.createElement('div');
+      row.className = 'info-row';
+      row.appendChild(infoRow('Asset', used.assetId));
+      row.appendChild(approvalBadge(used.approvalStatus));
+      const reviewBtn = document.createElement('button');
+      reviewBtn.type = 'button';
+      reviewBtn.className = 'btn btn-secondary';
+      const isOpen = state.creative.reviewFormAssetId === used.assetId;
+      reviewBtn.textContent = isOpen ? 'HIDE REVIEW FORM' : 'SCORE IDENTITY CONSISTENCY';
+      reviewBtn.addEventListener('click', () => {
+        state.creative.reviewFormAssetId = isOpen ? null : used.assetId;
+        renderReferenceLibraryView();
+      });
+      row.appendChild(reviewBtn);
+      card.appendChild(row);
+      if (isOpen) {
+        card.appendChild(renderIdentityReviewForm(used.assetId, asset.assetId));
+      }
+    }
+  }
+
+  return card;
+}
+
+// Stage 19, Part 9 — a lightweight, human-entered score form. NOT computer
+// vision: every field is filled in by a person. Saving a review never
+// changes the generated asset's approvalStatus.
+const REVIEW_DIMENSION_LABELS = {
+  headFaceGeometry: 'Head/face geometry',
+  hairHeadOrnament: 'Hair/head ornament',
+  clothing: 'Clothing',
+  colourPalette: 'Colour palette',
+  eyesFacialCharacteristics: 'Eyes/facial characteristics',
+  distinctiveAccessory: 'Distinctive accessory',
+  silhouette: 'Silhouette',
+  overallIdentityResemblance: 'Overall identity resemblance',
+};
+
+function renderIdentityReviewForm(assetId, referenceAssetId) {
+  const form = document.createElement('div');
+  form.className = 'field-form';
+
+  const inputs = {};
+  for (const [dim, label] of Object.entries(REVIEW_DIMENSION_LABELS)) {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const l = document.createElement('label');
+    l.textContent = `${label} (0-5)`;
+    wrap.appendChild(l);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = '5';
+    wrap.appendChild(input);
+    inputs[dim] = input;
+    form.appendChild(wrap);
+  }
+
+  const notesWrap = document.createElement('div');
+  notesWrap.className = 'field';
+  const notesLabel = document.createElement('label');
+  notesLabel.textContent = 'Notes';
+  notesWrap.appendChild(notesLabel);
+  const notesInput = document.createElement('textarea');
+  notesInput.rows = 3;
+  notesWrap.appendChild(notesInput);
+  form.appendChild(notesWrap);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = 'SAVE REVIEW';
+  saveBtn.addEventListener('click', async () => {
+    const scores = {};
+    for (const [dim, input] of Object.entries(inputs)) {
+      scores[dim] = input.value === '' ? null : Number(input.value);
+    }
+    await fetchJson(`/projects/${state.selectedProjectId}/assets/${assetId}/identity-review`, {
+      method: 'POST',
+      body: { referenceAssetId, scores, notes: notesInput.value || null, reviewedBy: 'Creative Director UI' },
+    });
+    state.creative.reviewFormAssetId = null;
+    renderReferenceLibraryView();
+  });
+  form.appendChild(saveBtn);
+
+  return form;
 }
 
 // ============================================================

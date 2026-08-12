@@ -67,9 +67,23 @@ test('Stage 16: referenceDetails carries assetId/roleType/role for every referen
   const request = buildNormalizedImageRequest(pkg);
   assert.deepEqual(request.referenceAssets, ['asset-1', 'asset-2']);
   assert.deepEqual(request.referenceDetails, [
-    { assetId: 'asset-1', roleType: 'CHARACTER', role: 'character:Mira' },
-    { assetId: 'asset-2', roleType: 'ENVIRONMENT', role: 'location:Lighthouse' },
+    { assetId: 'asset-1', roleType: 'CHARACTER', role: 'character:Mira', canonical: false },
+    { assetId: 'asset-2', roleType: 'ENVIRONMENT', role: 'location:Lighthouse', canonical: false },
   ]);
+});
+
+test('Stage 19: referenceDetails carries the canonical flag through from the source package', () => {
+  const pkg = fixturePackage({
+    existingReferenceAssets: [
+      { assetId: 'asset-1', role: 'character:Mira', roleType: 'CHARACTER', canonical: true },
+      { assetId: 'asset-2', role: 'location:Lighthouse', roleType: 'ENVIRONMENT', canonical: false },
+    ],
+  });
+  const request = buildNormalizedImageRequest(pkg);
+  assert.deepEqual(
+    request.referenceDetails.map((r) => r.canonical),
+    [true, false]
+  );
 });
 
 test('Stage 16: empty references produce empty referenceAssets and referenceDetails arrays, not null', () => {

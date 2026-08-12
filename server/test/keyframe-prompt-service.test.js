@@ -354,6 +354,99 @@ test('Stage 16: multiple simultaneous references each carry their own distinct r
   assert.deepEqual(roleTypes, ['CHARACTER', 'ENVIRONMENT', 'PROP']);
 });
 
+// --- Stage 19, Part 2/4 — canonical-first resolution + unresolvedReferences ------------
+
+test('Stage 19: a canonical reference is preferred over another approved asset, and the entry is marked canonical:true', () => {
+  const { project, keyframe, asset: originalAsset } = buildFixture();
+  const canonicalAsset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  timelineStore.setAssetApprovalStatus(project.id, canonicalAsset.assetId, 'APPROVED');
+
+  const vb = creativeStore.getVisualBible(project.id);
+  creativeStore.updateVisualBible(project.id, {
+    characters: vb.characters.map((c) =>
+      c.characterId === 'char-1' ? { ...c, referenceAssets: [originalAsset.assetId, canonicalAsset.assetId], canonicalReferenceAssetId: canonicalAsset.assetId } : c
+    ),
+  });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  const charEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('character:'));
+  assert.equal(charEntry.assetId, canonicalAsset.assetId);
+  assert.equal(charEntry.canonical, true);
+  assert.equal(charEntry.reason, 'canonical reference');
+  // this fixture's location ("The Lighthouse") has no approved reference at
+  // all (buildFixture()'s own baseline — see test 11), so it's expected to
+  // still appear as unresolved; only the CHARACTER must not be unresolved.
+  assert.ok(!fields.unresolvedReferences.some((r) => r.kind === 'character'));
+});
+
+test('Stage 19: a non-canonical approved asset resolves with canonical:false and reason "approved reusable reference"', () => {
+  const { project, keyframe, asset } = buildFixture();
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  const charEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('character:'));
+  assert.equal(charEntry.assetId, asset.assetId);
+  assert.equal(charEntry.canonical, false);
+  assert.equal(charEntry.reason, 'approved reusable reference');
+});
+
+test('Stage 19: a canonical selection that has since been rejected falls back to another approved asset rather than being used anyway', () => {
+  const { project, keyframe, asset: fallbackAsset } = buildFixture();
+  const rejectedCanonical = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  timelineStore.setAssetApprovalStatus(project.id, rejectedCanonical.assetId, 'REJECTED');
+
+  const vb = creativeStore.getVisualBible(project.id);
+  creativeStore.updateVisualBible(project.id, {
+    characters: vb.characters.map((c) =>
+      c.characterId === 'char-1'
+        ? { ...c, referenceAssets: [rejectedCanonical.assetId, fallbackAsset.assetId], canonicalReferenceAssetId: rejectedCanonical.assetId }
+        : c
+    ),
+  });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  const charEntry = fields.existingReferenceAssets.find((e) => e.role.startsWith('character:'));
+  assert.equal(charEntry.assetId, fallbackAsset.assetId);
+  assert.equal(charEntry.canonical, false);
+});
+
+test('Stage 19: unresolvedReferences distinguishes REJECTED_ONLY from MISSING', () => {
+  const project = newProject();
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
+  const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, characterReferences: ['char-rejected'], locationReferences: ['loc-missing'] });
+  const storyboard = creativeStore.getStoryboard(project.id);
+
+  const rejectedAsset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  timelineStore.setAssetApprovalStatus(project.id, rejectedAsset.assetId, 'REJECTED');
+
+  creativeStore.updateVisualBible(project.id, {
+    characters: [{ characterId: 'char-rejected', name: 'Rex', referenceAssets: [rejectedAsset.assetId] }],
+    locations: [{ locationId: 'loc-missing', name: 'Void', referenceAssets: [] }],
+  });
+
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, sourceShotVersion: storyboard.version });
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+
+  assert.equal(fields.unresolvedReferences.length, 2);
+  const char = fields.unresolvedReferences.find((r) => r.kind === 'character');
+  const loc = fields.unresolvedReferences.find((r) => r.kind === 'location');
+  assert.equal(char.reason, 'REJECTED_ONLY');
+  assert.equal(char.name, 'Rex');
+  assert.equal(loc.reason, 'MISSING');
+  assert.equal(loc.name, 'Void');
+});
+
+test('Stage 19: unresolvedReferences is persisted on the built KeyframePromptPackage itself', () => {
+  const project = newProject();
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
+  const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, characterReferences: ['char-missing'] });
+  const storyboard = creativeStore.getStoryboard(project.id);
+  creativeStore.updateVisualBible(project.id, { characters: [{ characterId: 'char-missing', name: 'Ghost', referenceAssets: [] }] });
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, sourceShotVersion: storyboard.version });
+
+  const pkg = kfp.buildKeyframePromptPackage(project.id, keyframe.keyframeId);
+  assert.equal(pkg.unresolvedReferences.length, 1);
+  assert.equal(pkg.unresolvedReferences[0].reason, 'MISSING');
+});
+
 test('11. a reference with no APPROVED asset produces a warning, and never a fabricated existingReferenceAssets entry', () => {
   const { project, keyframe } = buildFixture();
   const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
