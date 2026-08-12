@@ -110,6 +110,47 @@ test('Stage 16: createImageGenerationTask throws the same clear missing-key erro
   await assert.rejects(() => client.createImageGenerationTask({ model: 'x', prompt: 'x' }), /EVOLINK_API_KEY is not set/);
 });
 
+test('Stage 17: uploadBase64File posts to the files-api host with the Bearer header and returns the parsed response', async () => {
+  process.env.EVOLINK_API_KEY = 'test-key-abc';
+  let capturedHeaders;
+  let capturedBody;
+
+  const fetchImpl = async (url, options) => {
+    capturedHeaders = options.headers;
+    capturedBody = JSON.parse(options.body);
+    assert.equal(url, 'https://files-api.evolink.ai/api/v1/files/upload/base64');
+    return fakeResponse(200, {
+      success: true,
+      code: 200,
+      msg: 'ok',
+      data: { file_id: 'f1', file_url: 'https://files.evolink.ai/uploaded/f1.png', download_url: 'https://files.evolink.ai/uploaded/f1.png', expires_at: '2026-08-15T00:00:00Z' },
+    });
+  };
+
+  const result = await client.uploadBase64File('data:image/png;base64,AAAA', { fileName: 'ref.png', fetchImpl });
+
+  assert.equal(capturedHeaders.Authorization, 'Bearer test-key-abc');
+  assert.equal(capturedBody.base64_data, 'data:image/png;base64,AAAA');
+  assert.equal(capturedBody.file_name, 'ref.png');
+  assert.equal(result.data.file_url, 'https://files.evolink.ai/uploaded/f1.png');
+});
+
+test('Stage 17: uploadBase64File omits file_name/upload_path when not provided', async () => {
+  process.env.EVOLINK_API_KEY = 'test-key-abc';
+  let capturedBody;
+  const fetchImpl = async (url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return fakeResponse(200, { success: true, data: { file_url: 'https://x/y.png' } });
+  };
+  await client.uploadBase64File('data:image/png;base64,AAAA', { fetchImpl });
+  assert.deepEqual(Object.keys(capturedBody), ['base64_data']);
+});
+
+test('Stage 17: uploadBase64File throws the same clear missing-key error as every other EvoLink call', async () => {
+  delete process.env.EVOLINK_API_KEY;
+  await assert.rejects(() => client.uploadBase64File('data:image/png;base64,AAAA'), /EVOLINK_API_KEY is not set/);
+});
+
 test('getCredits calls the safe, non-generation account endpoint', async () => {
   process.env.EVOLINK_API_KEY = 'test-key-abc';
   const fetchImpl = async (url) => {
