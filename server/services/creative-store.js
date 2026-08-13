@@ -383,6 +383,20 @@ function getCreativeRecord(projectId) {
   };
 }
 
+// Stage 22B-Part-2 — resolves the project that owns a storyboard shot,
+// scanning every project the same way keyframe-store.js's
+// findKeyframeById does. Used by REST routes that are addressed by shotId
+// alone (e.g. GET /shots/:shotId/video-prompt-packages), read-only.
+function findProjectByShotId(shotId) {
+  for (const project of projectStore.listProjects()) {
+    const storyboard = storyboardArtifact.get(project.id);
+    if (storyboard && storyboard.shots.some((s) => s.shotId === shotId)) {
+      return project;
+    }
+  }
+  return null;
+}
+
 module.exports = {
   CREATIVE_DATA_DIR,
   getCreativeBrief: creativeBrief.get,
@@ -397,6 +411,7 @@ module.exports = {
   addStoryboardShot,
   updateStoryboardShot,
   getCreativeRecord,
+  findProjectByShotId,
   // Stage 19
   ENTITY_TYPE_CONFIG,
   findReferenceEntity,

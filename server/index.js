@@ -21,6 +21,7 @@ const referenceLibraryService = require('./services/reference-library-service');
 const identityConsistencyReviewStore = require('./services/identity-consistency-review-store');
 const { REFERENCE_ENTITY_TYPES } = require('./schemas/creative-schema');
 const generationModelRegistry = require('./services/generation-model-registry');
+const videoPromptService = require('./services/video-prompt-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -513,6 +514,49 @@ app.get('/projects/:id/keyframe-prompt-packages', (req, res) => {
 
   const { shotId, sceneId, status } = req.query;
   res.json(keyframePromptService.listKeyframePromptPackages(req.params.id, { shotId, sceneId, status }));
+});
+
+// Stage 22B-Part-2 — Video Prompt Packaging. See
+// docs/architecture/video-prompt-package.md. Every route below is a thin
+// wrapper over services/video-prompt-service.js. Nothing here can generate
+// a video, call EvoLink or Google, execute a skill, spend a credit, create
+// a generation job, or create/change a generation approval or
+// canonical-asset selection. provider/model are never defaulted here —
+// the caller must supply them explicitly.
+
+app.get('/keyframes/:keyframeId/video-prompt-package', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const pkg = videoPromptService.getVideoPromptPackage(found.project.id, req.params.keyframeId);
+  if (!pkg) return res.status(404).json({ error: 'No video prompt package has been built for this keyframe yet' });
+  res.json(pkg);
+});
+
+app.post('/keyframes/:keyframeId/video-prompt-package', (req, res) => {
+  const found = keyframeStore.findKeyframeById(req.params.keyframeId);
+  if (!found) return res.status(404).json({ error: 'Keyframe not found' });
+
+  const { provider, model, requiresReferenceImages, creativeSpecification, executionParameters, updatedBy, changeNote } = req.body || {};
+  const result = videoPromptService.buildVideoPromptPackage(found.project.id, req.params.keyframeId, {
+    provider,
+    model,
+    requiresReferenceImages,
+    creativeSpecification,
+    executionParameters,
+    updatedBy,
+    changeNote,
+  });
+  if (!result.ok) return res.status(409).json(result);
+  res.json(result);
+});
+
+app.get('/shots/:shotId/video-prompt-packages', (req, res) => {
+  const project = creativeStore.findProjectByShotId(req.params.shotId);
+  if (!project) return res.status(404).json({ error: 'Shot not found' });
+
+  const { sceneId, status } = req.query;
+  res.json(videoPromptService.listVideoPromptPackages(project.id, { shotId: req.params.shotId, sceneId, status }));
 });
 
 // Stage 13B — Controlled Keyframe Generation. See docs/architecture/

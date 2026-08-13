@@ -84,8 +84,14 @@ test('a real MCP client can discover all 76 tools', async () => {
   // docs/architecture/generation-model-registry.md. Neither generates,
   // submits, approves, or spends credits; they only inspect the in-memory
   // registry.
+  // Stage 22B-Part-2 added the 3 Video Prompt Packaging tools
+  // (build_video_prompt_package, get_video_prompt_package,
+  // list_video_prompt_packages — see
+  // docs/architecture/video-prompt-package.md). Building a package never
+  // generates a video, calls a provider, spends a credit, creates a
+  // generation job, or creates an approval.
   // Everything else is unchanged.
-  assert.equal(names.length, 78);
+  assert.equal(names.length, 81);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'add_entity_reference_asset',
@@ -94,6 +100,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'approve_keyframe_generation',
     'archive_asset',
     'build_keyframe_prompt_package',
+    'build_video_prompt_package',
     'cancel_keyframe_handoff',
     'create_keyframe',
     'create_keyframe_handoff',
@@ -131,6 +138,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_shot_history',
     'get_skill_compatibility',
     'get_storyboard',
+    'get_video_prompt_package',
     'get_visual_bible',
     'list_assets',
     'list_creative_skills',
@@ -145,6 +153,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_reference_library',
     'list_scenes',
     'list_shots',
+    'list_video_prompt_packages',
     'poll_generation',
     'prepare_keyframe_execution',
     'record_approval_decision',

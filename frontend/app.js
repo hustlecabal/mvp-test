@@ -43,6 +43,14 @@ const state = {
     viewedPackageKeyframeId: null,
     viewedPackage: null,
 
+    // Stage 22B-Part-2 — Video Prompt Packaging. Read-only inspection
+    // only: this panel can only VIEW an already-built VideoPromptPackage
+    // (built via MCP/REST by an operator). There is deliberately no
+    // BUILD/GENERATE/APPROVE control here yet — see
+    // docs/architecture/video-prompt-package.md.
+    viewedVideoPackageKeyframeId: null,
+    viewedVideoPackage: null,
+
     // Stage 13B — Controlled Keyframe Generation. Read/write, but every
     // write here (request/approve/reject generation approval, GENERATE
     // KEYFRAME, approve/reject the result) is an explicit human button
@@ -1834,6 +1842,7 @@ function renderKeyframeList(container, plan) {
       }
 
       card.appendChild(renderPromptPackageControls(kf));
+      card.appendChild(renderVideoPromptPackageControls(kf));
       card.appendChild(renderKeyframeGenerationControls(kf));
       card.appendChild(renderKeyframeHandoffControls(kf));
       card.appendChild(renderCanonicalAssetControls(kf));
@@ -2004,6 +2013,176 @@ function renderPromptPackagePanel(pkg) {
   negHeading.textContent = 'Negative constraints:';
   panel.appendChild(negHeading);
   panel.appendChild(infoRow('Negative constraints', (pkg.negativeConstraints || []).join('; ')));
+
+  const derivedLabel = document.createElement('div');
+  derivedLabel.className = 'recommended-next-step-label';
+  derivedLabel.style.marginTop = '16px';
+  derivedLabel.textContent = 'DERIVED PROMPT — composed from the fields above, not a separate source of truth';
+  panel.appendChild(derivedLabel);
+
+  const promptBox = document.createElement('pre');
+  promptBox.className = 'derived-prompt-box';
+  promptBox.textContent = pkg.prompt || '(no prompt sections resolved yet)';
+  panel.appendChild(promptBox);
+
+  return panel;
+}
+
+// --- Video Prompt Package inspection (Stage 22B-Part-2) -----------------------------
+//
+// Read-only: this section can only VIEW an already-built VideoPromptPackage
+// (built out-of-band via MCP/REST — see docs/architecture/video-prompt-package.md).
+// There is deliberately NO GENERATE VIDEO, NO APPROVE, NO credit control,
+// and NO provider/model selector here — building a package still requires
+// an explicit provider/model, which this minimal inspection surface does
+// not yet offer a way to choose.
+function renderVideoPromptPackageControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const viewBtn = document.createElement('button');
+  viewBtn.type = 'button';
+  viewBtn.className = 'btn btn-secondary';
+  viewBtn.textContent = 'VIEW VIDEO PACKAGE';
+  viewBtn.addEventListener('click', async () => {
+    if (state.creative.viewedVideoPackageKeyframeId === kf.keyframeId) {
+      state.creative.viewedVideoPackageKeyframeId = null;
+      state.creative.viewedVideoPackage = null;
+      renderKeyframePlanView();
+      return;
+    }
+    viewBtn.disabled = true;
+    viewBtn.textContent = 'Loading…';
+    try {
+      const pkg = await fetchJson(`/keyframes/${kf.keyframeId}/video-prompt-package`).catch(() => null);
+      state.creative.viewedVideoPackageKeyframeId = kf.keyframeId;
+      state.creative.viewedVideoPackage = pkg;
+      renderKeyframePlanView();
+    } catch {
+      viewBtn.disabled = false;
+      viewBtn.textContent = 'VIEW VIDEO PACKAGE';
+    }
+  });
+  box.appendChild(viewBtn);
+
+  if (state.creative.viewedVideoPackageKeyframeId === kf.keyframeId) {
+    box.appendChild(renderVideoPromptPackagePanel(state.creative.viewedVideoPackage));
+  }
+
+  return box;
+}
+
+// The full VideoPromptPackage display: shot/keyframe/canonical-asset
+// lineage, provider/model with its recorded verification snapshot
+// (verificationStatus/productionReady/requestSchemaVerified — never
+// re-derived here, only shown as recorded at build time), the
+// model-agnostic creative specification vs. execution parameters
+// distinction, package version/CURRENT-STALE, source versions, and
+// reference lineage. Nothing in this panel can be edited.
+function renderVideoPromptPackagePanel(pkg) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!pkg) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'No video prompt package has been built for this keyframe yet.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'shot-meta';
+  statusRow.appendChild(statusBadge(pkg.status));
+  statusRow.appendChild(document.createTextNode(` Version ${displayValue(pkg.version)}`));
+  panel.appendChild(statusRow);
+
+  if (pkg.warnings && pkg.warnings.length > 0) {
+    const warnBox = document.createElement('div');
+    warnBox.className = 'budget-warning';
+    warnBox.textContent = pkg.warnings.join(' ');
+    panel.appendChild(warnBox);
+  }
+
+  const lineageLabel = document.createElement('div');
+  lineageLabel.className = 'recommended-next-step-label';
+  lineageLabel.textContent = 'LINEAGE — canonical keyframe input';
+  panel.appendChild(lineageLabel);
+
+  const lineageList = document.createElement('div');
+  lineageList.className = 'info-list';
+  lineageList.appendChild(infoRow('Scene', pkg.sceneId));
+  lineageList.appendChild(infoRow('Shot', pkg.shotId));
+  lineageList.appendChild(infoRow('Keyframe', pkg.keyframeId));
+  lineageList.appendChild(infoRow('Canonical keyframe asset', pkg.canonicalKeyframeAssetId));
+  lineageList.appendChild(infoRow('Source shot version', pkg.sourceShotVersion));
+  lineageList.appendChild(infoRow('Source keyframe plan version', pkg.sourceKeyframePlanVersion));
+  lineageList.appendChild(infoRow('Source image prompt package', pkg.sourceKeyframePromptPackageId ? `${pkg.sourceKeyframePromptPackageId} (v${pkg.sourceKeyframePromptPackageVersion})` : null));
+  panel.appendChild(lineageList);
+
+  const modelLabel = document.createElement('div');
+  modelLabel.className = 'recommended-next-step-label';
+  modelLabel.textContent = 'PROVIDER / MODEL — explicitly selected, never auto-chosen';
+  panel.appendChild(modelLabel);
+
+  const modelList = document.createElement('div');
+  modelList.className = 'info-list';
+  modelList.appendChild(infoRow('Provider', pkg.provider));
+  modelList.appendChild(infoRow('Model', pkg.model));
+  const verification = pkg.modelVerification || {};
+  modelList.appendChild(infoRow('Verification status', verification.verificationStatus));
+  modelList.appendChild(infoRow('Production ready', verification.productionReady));
+  modelList.appendChild(infoRow('Request schema verified', verification.requestSchemaVerified));
+  panel.appendChild(modelList);
+
+  const specLabel = document.createElement('div');
+  specLabel.className = 'recommended-next-step-label';
+  specLabel.textContent = 'CREATIVE SPECIFICATION — intent, provider-agnostic';
+  panel.appendChild(specLabel);
+
+  const spec = pkg.creativeSpecification || {};
+  const specList = document.createElement('div');
+  specList.className = 'info-list';
+  specList.appendChild(infoRow('Subject', pkg.subject));
+  specList.appendChild(infoRow('Atmosphere', pkg.atmosphere));
+  specList.appendChild(infoRow('Camera', spec.camera));
+  specList.appendChild(infoRow('Subject motion', spec.subjectMotion));
+  specList.appendChild(infoRow('Environment motion', spec.environmentMotion));
+  specList.appendChild(infoRow('Composition', spec.composition));
+  specList.appendChild(infoRow('Lighting', spec.lighting));
+  specList.appendChild(infoRow('Pacing', spec.pacing));
+  specList.appendChild(infoRow('Continuity', (spec.continuity || []).join('; ')));
+  specList.appendChild(infoRow('Negative constraints', (spec.negativeConstraints || []).join('; ')));
+  panel.appendChild(specList);
+
+  const execLabel = document.createElement('div');
+  execLabel.className = 'recommended-next-step-label';
+  execLabel.textContent = 'EXECUTION PARAMETERS — provider-facing knobs';
+  panel.appendChild(execLabel);
+
+  const exec = pkg.executionParameters || {};
+  const execList = document.createElement('div');
+  execList.className = 'info-list';
+  execList.appendChild(infoRow('Duration', exec.duration));
+  execList.appendChild(infoRow('Resolution', exec.resolution));
+  execList.appendChild(infoRow('Aspect ratio', exec.aspectRatio));
+  execList.appendChild(infoRow('FPS', exec.fps));
+  panel.appendChild(execList);
+
+  const refHeading = document.createElement('div');
+  refHeading.className = 'entity-sub';
+  refHeading.textContent = 'Reference lineage:';
+  panel.appendChild(refHeading);
+  if ((pkg.referenceLineage || []).length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'None.';
+    panel.appendChild(none);
+  } else {
+    for (const ref of pkg.referenceLineage) {
+      panel.appendChild(infoRow(ref.role || ref.roleType, ref.assetId));
+    }
+  }
 
   const derivedLabel = document.createElement('div');
   derivedLabel.className = 'recommended-next-step-label';
