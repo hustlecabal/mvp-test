@@ -16,6 +16,7 @@
       <button type="button" class="view-tab selected" id="tab-production">Production</button>
       <button type="button" class="view-tab" id="tab-creative">Creative Director</button>
       <button type="button" class="view-tab" id="tab-queue">Operator Queue</button>
+      <button type="button" class="view-tab" id="tab-models">Generation Models</button>
     </nav>
   </header>
 
@@ -126,6 +127,43 @@
         <div id="queue-shot-readiness" class="state-box">Select a project to see shot readiness.</div>
       </section>
     </aside>
+  </div>
+
+  <!-- ================= GENERATION MODELS (Stage 22B-Part-1) =================
+       Read-only discovery over server/services/generation-model-registry.js.
+       No generation button exists anywhere in this view, and no control here
+       triggers a network call to EvoLink or Google — see
+       docs/architecture/generation-model-registry.md. -->
+  <div class="workspace" id="models-view" hidden>
+    <aside class="panel panel-left">
+      <section>
+        <h2>Filter</h2>
+        <div id="models-filter-panel" class="state-box">
+          <label>Provider
+            <select id="models-filter-provider">
+              <option value="">All providers</option>
+              <option value="evolink">EvoLink</option>
+              <option value="google">Google</option>
+            </select>
+          </label>
+          <label>Modality
+            <select id="models-filter-modality">
+              <option value="">All modalities</option>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+            </select>
+          </label>
+          <label>
+            <input type="checkbox" id="models-filter-production-ready" />
+            Production-ready only
+          </label>
+        </div>
+      </section>
+    </aside>
+
+    <main class="panel panel-center">
+      <div id="models-list" class="state-box">Loading…</div>
+    </main>
   </div>
 
   <script src="app.js"></script>

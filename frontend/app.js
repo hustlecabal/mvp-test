@@ -666,17 +666,21 @@ function switchView(view) {
   const productionView = document.getElementById('production-view');
   const creativeView = document.getElementById('creative-view');
   const queueView = document.getElementById('queue-view');
+  const modelsView = document.getElementById('models-view');
   const tabProduction = document.getElementById('tab-production');
   const tabCreative = document.getElementById('tab-creative');
   const tabQueue = document.getElementById('tab-queue');
+  const tabModels = document.getElementById('tab-models');
   const sub = document.getElementById('topbar-sub');
 
   productionView.hidden = view !== 'production';
   creativeView.hidden = view !== 'creative';
   queueView.hidden = view !== 'queue';
+  modelsView.hidden = view !== 'models';
   tabProduction.classList.toggle('selected', view === 'production');
   tabCreative.classList.toggle('selected', view === 'creative');
   tabQueue.classList.toggle('selected', view === 'queue');
+  tabModels.classList.toggle('selected', view === 'models');
 
   if (view === 'creative') {
     sub.textContent = 'Creative Director — pre-generation planning workspace';
@@ -684,6 +688,9 @@ function switchView(view) {
   } else if (view === 'queue') {
     sub.textContent = 'Operator Queue — what needs attention next';
     onEnterQueueView();
+  } else if (view === 'models') {
+    sub.textContent = 'Generation Models — read-only capability catalogue';
+    onEnterModelsView();
   } else {
     sub.textContent = 'Production workspace';
   }
@@ -3463,6 +3470,117 @@ function renderShotReadinessPanel(readiness) {
   }
 }
 
+// Stage 22B-Part-1 — Generation Models workspace (read-only capability
+// registry discovery). Every fetch below is a GET/POST to one of the
+// four /generation-models* REST endpoints (server/index.js), which are
+// themselves thin wrappers over services/generation-model-registry.js.
+// There is deliberately NO generate/submit/approve control anywhere in
+// this section, and no control here can trigger a provider call — see
+// docs/architecture/generation-model-registry.md.
+
+const modelsViewState = { loaded: false };
+
+function onEnterModelsView() {
+  if (!modelsViewState.loaded) {
+    modelsViewState.loaded = true;
+    document.getElementById('models-filter-provider').addEventListener('change', loadGenerationModels);
+    document.getElementById('models-filter-modality').addEventListener('change', loadGenerationModels);
+    document.getElementById('models-filter-production-ready').addEventListener('change', loadGenerationModels);
+  }
+  loadGenerationModels();
+}
+
+async function loadGenerationModels() {
+  const container = document.getElementById('models-list');
+  container.textContent = 'Loading…';
+
+  const provider = document.getElementById('models-filter-provider').value;
+  const modality = document.getElementById('models-filter-modality').value;
+  const productionReadyOnly = document.getElementById('models-filter-production-ready').checked;
+
+  const params = new URLSearchParams();
+  if (provider) params.set('provider', provider);
+  if (modality) params.set('modality', modality);
+  if (productionReadyOnly) params.set('productionReadyOnly', 'true');
+
+  try {
+    const res = await fetch(`/generation-models?${params.toString()}`);
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    const models = await res.json();
+    renderGenerationModelsList(container, models);
+  } catch (err) {
+    showError(container, loadGenerationModels);
+  }
+}
+
+function verificationBadgeClass(status) {
+  if (status === 'SAFE_FOR_PRODUCTION') return 'badge badge-approved';
+  if (status === 'REQUEST_SCHEMA_VERIFIED') return 'badge badge-pending';
+  return 'badge badge-none';
+}
+
+function capabilitySummary(model) {
+  const c = model.capabilities;
+  const parts = [];
+  if (c.textToImage) parts.push('text-to-image');
+  if (c.imageToImage) parts.push('image-to-image');
+  if (c.textToVideo) parts.push('text-to-video');
+  if (c.imageToVideo) parts.push('image-to-video');
+  if (c.referenceImages === true) {
+    parts.push(c.maxReferenceImages != null ? `reference (max ${c.maxReferenceImages})` : 'reference');
+  } else if (c.referenceImages === false) {
+    parts.push('no reference support');
+  }
+  if (c.firstFrame) parts.push('first-frame');
+  if (c.lastFrame) parts.push('last-frame');
+  if (c.audio) parts.push('audio');
+  return parts.length > 0 ? parts.join(', ') : 'capabilities not yet confirmed';
+}
+
+function priceSummary(model) {
+  if (!model.pricing.priceKnown) return 'price unknown';
+  return `$${model.pricing.startingPrice} / ${model.pricing.unit.replace('per_', '')}`;
+}
+
+function renderGenerationModelsList(container, models) {
+  container.innerHTML = '';
+  if (!models || models.length === 0) {
+    showEmpty(container, 'No models match the current filters.');
+    return;
+  }
+
+  for (const model of models) {
+    const card = document.createElement('div');
+    card.className = 'entity-card';
+
+    const title = document.createElement('h3');
+    title.textContent = `${model.displayName || model.model} (${model.provider})`;
+    card.appendChild(title);
+
+    card.appendChild(infoRow('Model ID', model.model));
+    card.appendChild(infoRow('Modality', model.modality));
+
+    const verBadge = document.createElement('span');
+    verBadge.className = verificationBadgeClass(model.verificationStatus);
+    verBadge.textContent = model.verificationStatus;
+    card.appendChild(verBadge);
+
+    const readyBadge = document.createElement('span');
+    readyBadge.className = model.productionReady ? 'badge badge-approved' : 'badge badge-none';
+    readyBadge.textContent = model.productionReady ? 'PRODUCTION READY' : 'NOT PRODUCTION READY';
+    card.appendChild(readyBadge);
+
+    card.appendChild(infoRow('Capabilities', capabilitySummary(model)));
+    card.appendChild(infoRow('Starting price', priceSummary(model)));
+
+    if (model.notes) {
+      card.appendChild(infoRow('Notes', model.notes));
+    }
+
+    container.appendChild(card);
+  }
+}
+
 // --- init ------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3471,6 +3589,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tab-production').addEventListener('click', () => switchView('production'));
   document.getElementById('tab-creative').addEventListener('click', () => switchView('creative'));
   document.getElementById('tab-queue').addEventListener('click', () => switchView('queue'));
+  document.getElementById('tab-models').addEventListener('click', () => switchView('models'));
 
   document.querySelectorAll('.creative-nav-item').forEach((btn) => {
     btn.addEventListener('click', () => selectCreativeArtifact(btn.dataset.artifact));

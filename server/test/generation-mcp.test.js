@@ -71,7 +71,9 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   assert.ok(names.includes('request_generation'));
   assert.ok(names.includes('get_generation_status'));
   assert.ok(names.includes('poll_generation'));
-  assert.equal(names.length, 76);
+  // Stage 22B-Part-1 added 2 more read-only tools (list_generation_models,
+  // find_generation_models) — see docs/architecture/generation-model-registry.md.
+  assert.equal(names.length, 78);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

@@ -20,6 +20,7 @@ const operatorQueueService = require('./services/operator-queue-service');
 const referenceLibraryService = require('./services/reference-library-service');
 const identityConsistencyReviewStore = require('./services/identity-consistency-review-store');
 const { REFERENCE_ENTITY_TYPES } = require('./schemas/creative-schema');
+const generationModelRegistry = require('./services/generation-model-registry');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -896,6 +897,44 @@ app.get('/assets/:assetId/preview', (req, res) => {
   streamFile(req, res, fullPath, {
     contentType: asset.storage.contentType || 'video/mp4',
   });
+});
+
+// ================= Stage 22B-Part-1 — Generation Model Capability Registry =================
+// Every route below is a thin wrapper over services/generation-model-registry.js
+// — no registry logic lives here. Every one is read-only: nothing below
+// generates, submits, approves, or spends a credit. See
+// docs/architecture/generation-model-registry.md.
+
+app.get('/generation-models', (req, res) => {
+  const { provider, modality, productionReadyOnly, verificationStatus } = req.query;
+  res.json(
+    generationModelRegistry.listModels({
+      provider: provider || undefined,
+      modality: modality || undefined,
+      productionReadyOnly: productionReadyOnly === 'true' ? true : undefined,
+      verificationStatus: verificationStatus || undefined,
+    })
+  );
+});
+
+app.get('/generation-models/:provider/:model', (req, res) => {
+  const entry = generationModelRegistry.getModel(req.params.provider, req.params.model);
+  if (!entry) return res.status(404).json({ error: 'No matching model in the registry' });
+  res.json(entry);
+});
+
+app.post('/generation-models/search', (req, res) => {
+  const { requirements, sortByPrice } = req.body || {};
+  const results = sortByPrice
+    ? generationModelRegistry.cheapestSatisfying(requirements || {})
+    : generationModelRegistry.findModelsSatisfying(requirements || {});
+  res.json(results);
+});
+
+app.post('/generation-models/validate', (req, res) => {
+  const { provider, model, requirements } = req.body || {};
+  if (!provider || !model) return res.status(400).json({ error: 'provider and model are required' });
+  res.json(generationModelRegistry.validateModelSelection({ provider, model, requirements: requirements || {} }));
 });
 
 // If a client sends broken JSON (e.g. a typo'd request body), express.json()

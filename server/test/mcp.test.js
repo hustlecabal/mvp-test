@@ -78,8 +78,14 @@ test('a real MCP client can discover all 76 tools', async () => {
   // add_entity_reference_asset, select_canonical_reference_asset,
   // get_canonical_reference_asset, record_identity_consistency_review,
   // list_identity_consistency_reviews).
+  // Stage 22B-Part-1 added 2 read-only discovery tools over the new
+  // generation-model-registry.js capability catalogue
+  // (list_generation_models, find_generation_models) — see
+  // docs/architecture/generation-model-registry.md. Neither generates,
+  // submits, approves, or spends credits; they only inspect the in-memory
+  // registry.
   // Everything else is unchanged.
-  assert.equal(names.length, 76);
+  assert.equal(names.length, 78);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'add_entity_reference_asset',
@@ -97,6 +103,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'create_storyboard_scene',
     'create_storyboard_shot',
     'estimate_generation',
+    'find_generation_models',
     'generate_keyframe',
     'get_approval_status',
     'get_asset',
@@ -128,6 +135,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_assets',
     'list_creative_skills',
     'list_generation_history',
+    'list_generation_models',
     'list_identity_consistency_reviews',
     'list_keyframe_generations',
     'list_keyframe_handoffs',

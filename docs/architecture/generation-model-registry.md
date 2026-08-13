@@ -467,7 +467,7 @@ on your approval per the original Stage 22 plan.
 
 ---
 
-## Safety Statement
+## Safety Statement (Stage 22B-Part-0 investigation)
 
 - Real EvoLink generation calls made: **0**
 - Real Google API calls made: **0**
@@ -475,3 +475,268 @@ on your approval per the original Stage 22 plan.
 - Generation jobs created: **0**
 - Production source files modified: **0** (this document only)
 - Real smoke-test project (`9b6a78b3-7238-4469-8280-5c4281216343`) modified: **NO**
+
+---
+
+---
+
+# Part 2 — Implementation (Stage 22B-Part-1)
+
+Everything below documents what was actually built, once Part 0's investigation
+was approved. The investigation above (Sections A–M) is the historical record
+of *why* — this section is the record of *what got built and how it behaves*.
+
+## N. Catalogue (as implemented)
+
+`server/services/generation-model-registry.js` — 34 entries: 22 EvoLink video,
+6 EvoLink image, 6 Google (3 image, 3 video). Every entry's
+`verificationStatus`/`requestSchemaVerified`/`productionReady` combination was
+copied verbatim from this document's own Section E table — the implementation
+was written to match the investigation, never the other way around. A
+module-load-time assertion (`for (const entry of GENERATION_MODEL_REGISTRY) { if
+(!VERIFICATION_STATUSES.includes(...)) throw ... }`) makes an invalid
+verification-status string a load-time crash, not a silent data error.
+
+For the 7 model IDs that already existed in `providers/evolink/evolink-models.js`
+(`seedance-2.5-text-to-video`, `seedance-2.5-image-to-video`,
+`seedance-2.5-reference-to-video`, `seedance-2.5-video-edit`,
+`seedance-2.5-video-extend`, `gpt-image-2`, `gemini-3-pro-image-preview`), the
+registry derives `requestSchemaVerified` and `docsUrl` directly from that file
+(`fromEvolinkModels(key)`) instead of re-typing them — the one deliberate
+point of non-duplication Section J/Part 9 asked for. Every other EvoLink
+model's literal ID string lives only in this registry, since
+`evolink-models.js`'s own stated scope is narrower ("the ONLY place EvoLink
+model identifiers are allowed to appear" — for models it already knows about)
+and forcing the other ~25 catalogue/capability-tier entries into that file
+would have been exactly the "unnecessary coupling" this document's own Section
+J warned against.
+
+`evolink-models.js` and `evolink-image-provider.js`/`evolink-provider.js` were
+**not modified** by this stage.
+
+## O. Capability Semantics (as implemented)
+
+Three-state logic, enforced consistently across every one of the 34 entries:
+
+- **`true`** — confirmed present, sourced from an opened page (see each
+  entry's own `docsUrl`/`notes`).
+- **`false`** — confirmed **absent** for that specific model — an active,
+  sourced finding, never a default. Example: `krea-2-turbo.capabilities.referenceImages
+  === false`, `seedance-2.0-mini-text-to-video.capabilities.referenceImages
+  === false` (that specific endpoint doesn't take references, even though its
+  sibling `seedance-2.0-mini-reference-to-video` does).
+- **`null`** — not verified, OR not applicable to the model's modality (e.g.
+  `audio` on a pure image model, `textToImage` on a pure video model). `null`
+  and `false` are never conflated — a test (`generation-model-registry.test.js`,
+  "unknown capability does not satisfy a true requirement" /  "a confirmed
+  false capability does not satisfy a true requirement") asserts both are
+  rejected by a `true` requirement, and a separate test asserts `false` is
+  satisfied by *either* a confirmed-`false` or an unconfirmed-`null` capability
+  (see Requirement Matching below) — the two states fail identically against a
+  positive requirement but are never merged into one value.
+
+## P. Verification Semantics (as implemented)
+
+`productionReady` is not an independently-set field — it is computed at
+record-construction time as exactly `verificationStatus === 'SAFE_FOR_PRODUCTION'`,
+enforced by a repo-wide test (`productionReady is always exactly
+(verificationStatus === SAFE_FOR_PRODUCTION) for every registry entry`) that
+iterates the whole registry. This makes "is this model allowed to be used" a
+single, un-fakeable boolean derived from one enum, rather than two facts that
+could ever drift apart. Only 3 of the 34 entries carry `SAFE_FOR_PRODUCTION`:
+`evolink/gpt-image-2`, `evolink/wan2.5-image-to-image`,
+`evolink/gemini-3-pro-image-preview` — exactly Section E's own list, verified
+by a dedicated test.
+
+`krea-2-turbo` is the deliberate counter-example kept in both the data and the
+tests: `verificationStatus: 'REQUEST_SCHEMA_VERIFIED'`, `requestSchemaVerified:
+true`, but `productionReady: false` — proving the two facts ("we understand its
+API" vs. "we should use it here") are independent, exactly as Part 3 of the
+implementation instructions required.
+
+## Q. Requirement Matching (as implemented)
+
+`findModelsSatisfying(requirements)` / `isModelCapable(provider, model,
+requirements)` / `validateModelSelection(...)` all route through one shared
+`modelSatisfies(entry, requirements)` function. Per-field behavior:
+
+- **Boolean capability fields** (`textToImage`, `imageToImage`, `textToVideo`,
+  `imageToVideo`, `referenceImages`, `firstFrame`, `lastFrame`, `audio`):
+  - requirement omitted → no constraint
+  - requirement `true` → capability must be exactly `true` (`false` and `null`
+    both fail)
+  - requirement `false` → capability must **not** be `true` (both `false` and
+    `null` pass) — this reads as "not required to be true," the weaker and
+    safer claim, never "confirmed absent," which this function never invents
+- **`minReferenceImages`** — requires a known numeric `maxReferenceImages` at
+  or above the threshold; `null`/missing never satisfies a minimum.
+- **`resolution`** / **`aspectRatio`** — requires the exact string to appear in
+  the model's own known array; a `null` array never satisfies either.
+- **`minDurationSeconds`** / **`maxDurationSeconds`** — requires a known
+  `{ minSeconds, maxSeconds }` range that covers the requested value; a model
+  with no known duration range never satisfies a duration requirement.
+- **`provider`** / **`modality`** — exact match if given.
+
+## R. `cheapestSatisfying` Behaviour (as implemented)
+
+Calls `findModelsSatisfying`, then partitions matches into `priced` (
+`pricing.priceKnown === true`) and `unpriced`, sorts `priced` ascending by
+`pricing.startingPrice`, and returns `[...priced, ...unpriced]`. An
+unknown-priced model is **never** sorted as if its price were `0` — it always
+sorts after every known-priced match, and its own `pricing.priceKnown: false`
+travels with it in the result so a caller can never mistake "we don't know" for
+"this is free" or "this is cheapest." Verified directly by a dedicated test
+(`unknown pricing is never treated as zero/cheapest...`) using
+`seedance-2.0-fast-image-to-video` (the one entry with confirmed schema but
+unconfirmed catalogue price) as the concrete unpriced case.
+
+`cheapestSatisfying` returns data only — it is never called from inside any
+generation-submission code path in this stage (there is no such path yet;
+`VideoGenerationService` doesn't exist). A test asserts calling it (with any
+requirements, including ones matching zero models) never mutates
+`GENERATION_MODEL_REGISTRY`.
+
+## S. Explicit Selection / `validateModelSelection` (as implemented)
+
+Returns `{ allowed, provider, model, reasons: [], warnings: [] }` and **never
+throws** for a normal capability mismatch (verified across every registered
+model with a dedicated test) — it only throws-equivalent (returns
+`allowed: false`) for a genuinely unknown provider/model pair, still without
+throwing a JS exception. Diagnostics distinguish:
+
+- unknown provider/model → one `reasons` entry, nothing else evaluated
+- known but not `requestSchemaVerified` → explicit reason naming that fact
+- known but not `productionReady` → explicit reason naming that fact
+- a required boolean capability that's `null` (unverified) → **its own,
+  distinct reason** ("Required capability unknown (never assumed true) for:
+  ...") — never silently folded into the generic "does not satisfy
+  requirements" reason, so a caller can tell "definitely doesn't support this"
+  apart from "we don't know if it supports this"
+- capability mismatch (confirmed `false`, or requirement otherwise unmet) →
+  generic reason
+- an unconfirmed model-ID string (`modelIdConfirmed: false`) → a `warnings`
+  entry (not a `reasons` entry — it doesn't by itself block `allowed`,
+  matching Section E's distinction between "ID string not confirmed" and
+  "capability not confirmed")
+
+## T. Why the Registry Never Executes Generation
+
+Structural, not just a convention: `generation-model-registry.js` imports
+`../providers/evolink/evolink-models.js` (a pure data file, no HTTP) and
+nothing else outside Node's stdlib — no `evolink-client.js`, no
+`evolink-provider.js`, no `evolink-image-provider.js`, no `fetch`. A test
+statically confirms this (`the registry module never imports a provider HTTP
+client or fetch-capable module`) by scanning the file's own source text for
+those exact `require(...)` calls and for a bare `fetch(`. A second test
+confirms none of the four safety-relevant vocabulary terms
+(`creditLedger`, `reservedCost`, `approvalStatus`, `generationId`) appear
+anywhere in the file, and a third confirms the module's exports contain none
+of `requestGeneration`/`generateKeyframe`/`generateVideo`/
+`createGenerationJob`/`reconcileGenerationCost`/`submit`/`approve`/`reject`.
+There is, today, no code path from this file to any provider — the only way
+that changes is a future, separate, explicitly-authorized stage wiring a
+generation service to *call* `validateModelSelection` before submission (never
+the reverse).
+
+## U. How the Future `VideoPromptPackage` Will Consume This Registry
+
+Per Section J's dependency direction (unchanged by implementation):
+`VideoPromptPackage` resolves its own provider-neutral requirements (modality,
+reference count needed from its resolved input keyframe asset(s), duration/
+resolution from the shot's own creative spec) and hands them to
+`findModelsSatisfying`/`cheapestSatisfying` for advisory information only. The
+actual `provider`+`model` choice is recorded on `VideoGenerationApproval` (not
+yet built) by a human/caller, and the future `video-generation-service.js`
+calls `validateModelSelection({ provider, model, requirements })` as one of
+its `runSafetyChecks()` gates — mirroring exactly how
+`keyframe-generation-service.js`'s existing safety checks already work,
+substituting "is this model registry-valid for what the package needs" for
+what would otherwise be a hardcoded capability assumption. None of this exists
+yet; this section is a forward-looking contract, not a description of code
+that runs today.
+
+## V. How Future Google/EvoLink Adapters Will Consume This Registry
+
+A future `providers/google/google-image-provider.js` /
+`google-video-provider.js` (Stage 22A's Section J) would be registered into
+whatever provider map a generation service uses (mirroring
+`keyframe-generation-service.js`'s `IMAGE_PROVIDERS` map), completely
+independently of this registry — the registry never imports a provider
+adapter, and a provider adapter never imports the registry (no circular
+dependency is possible by construction). The connection between them is
+one level up, in a generation service: look up the chosen model in the
+registry to validate the request is well-formed and capability-appropriate,
+then hand the *request itself* to the provider adapter keyed by `provider`
+string — the registry's `capabilities`/`pricing` data is never passed into an
+adapter's request-building code, and an adapter's request-building code never
+reads from the registry. This is the same separation
+`evolink-image-mapper.js` (API field mapping) already keeps from
+`keyframe-prompt-service.js` (content/package resolution) today.
+
+## W. Tests
+
+53 new tests across 4 files, all passing alongside the existing 855 (908
+total):
+
+- `test/generation-model-registry.test.js` — 36 tests: catalogue completeness,
+  exact/unknown lookup, provider mismatch, capability matching (true/false/
+  unknown), reference-image count requirements, first/last-frame, audio,
+  resolution, duration, aspect-ratio, production-ready/verification-status
+  filtering, `cheapestSatisfying` (known-price ordering + unknown-price
+  handling), cross-provider search, explicit provider filtering, deterministic
+  ordering, no-mutation (including a caught real bug — see Section X),
+  no-network-import, `validateModelSelection` diagnostics, and a safety check
+  that the module exports no job/approval/credit-mutating function.
+- `test/generation-model-registry-api.test.js` — 10 tests: all 4 REST routes,
+  404 on unknown model, 400 on missing provider/model to `/validate`, and two
+  static checks that `index.js`'s registry routes contain no capability/
+  pricing logic or job/approval-creating calls of their own.
+- `test/generation-model-registry-frontend.test.js` — 7 tests: tab/section
+  existence, required render functions, `switchView` routing, no forbidden
+  generate/approve control label, every fetch in the section targets only
+  `/generation-models*`, no `setInterval`/`setTimeout`, no `POST` call from
+  this UI section at all (it only ever `GET`s the list endpoint).
+- `test/mcp.test.js` / `test/generation-mcp.test.js` — updated tool-count
+  assertions (76 → 78) to include the two new discovery tools.
+
+## X. A Real Bug Found and Fixed During Testing
+
+The first implementation of `listModels`/`getModel`/`findModelsSatisfying`
+returned live references into `GENERATION_MODEL_REGISTRY` (plain `.filter()`/
+`.find()`, no cloning). A test ("mutating a returned array/object never
+affects the registry's own state") caught this immediately: mutating a
+returned record's nested `capabilities` field silently corrupted the shared
+module-level array for every subsequent caller. Fixed by adding a
+`clone(value)` helper (`structuredClone`) applied at every query function's
+return boundary, so every caller always receives an independent deep copy.
+This is exactly the kind of defensive-copying gap the instructions' "no
+mutation" test requirement (#23) was designed to catch, and it did.
+
+## Y. Known Limitations (implementation-level, additive to Section K)
+
+- Exactly the same unresolved model-ID/pricing questions from Section K
+  remain unresolved — nothing in the implementation resolved any of them
+  (that was never in scope; only the registry's *shape* was built).
+  `modelIdConfirmed: false` is now a queryable, testable field for every
+  entry Section K flagged as ID-unconfirmed, rather than only a prose note.
+- `durations`/`resolutions`/`aspectRatios` are modeled as a flat
+  `{minSeconds,maxSeconds}` / `string[]` / `string[]` — sufficient for every
+  registry entry so far, but a model with a genuinely discontinuous duration
+  set (e.g. "4s or 8s only, nothing between") would be over-approximated by a
+  min/max range. None of the 34 current entries need that precision; a future
+  entry that does would need a small, additive schema extension.
+- No REST/MCP pagination — `GET /generation-models` returns the full list
+  every time. Fine at 34 entries; would need revisiting well before this grows
+  much further.
+
+## Z. Safety Statement (Stage 22B-Part-1 implementation)
+
+- Real EvoLink generation calls made: **0**
+- Real Google API calls made: **0**
+- Credits spent: **0**
+- Generation jobs created: **0**
+- Approvals created: **0**
+- Provider adapters modified: **0** (`evolink-models.js`, `evolink-image-provider.js`,
+  `evolink-provider.js`, `evolink-client.js` all untouched)
+- Real smoke-test project (`9b6a78b3-7238-4469-8280-5c4281216343`) modified: **NO**
+- Full test suite: **908/908 passing** (855 pre-existing + 53 new)
