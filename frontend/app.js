@@ -51,6 +51,16 @@ const state = {
     viewedVideoPackageKeyframeId: null,
     viewedVideoPackage: null,
 
+    // Stage 22B-Part-3 — Controlled Video Generation. Read/write, but
+    // every write here (request/approve/reject video generation approval,
+    // GENERATE VIDEO) is an explicit human button click — nothing on this
+    // page ever fires automatically. The server (services/video-
+    // generation-service.js) re-checks every safety condition itself
+    // regardless of what this UI computes for its disabled/enabled button
+    // state — see computeVideoGenerationEligibility's own comment.
+    viewedVideoGenerationKeyframeId: null,
+    viewedVideoGenerationData: null, // { videoPkg, approval, eligibility, budget }
+
     // Stage 13B — Controlled Keyframe Generation. Read/write, but every
     // write here (request/approve/reject generation approval, GENERATE
     // KEYFRAME, approve/reject the result) is an explicit human button
@@ -1846,6 +1856,7 @@ function renderKeyframeList(container, plan) {
       card.appendChild(renderKeyframeGenerationControls(kf));
       card.appendChild(renderKeyframeHandoffControls(kf));
       card.appendChild(renderCanonicalAssetControls(kf));
+      card.appendChild(renderVideoGenerationControls(kf));
 
       list.appendChild(card);
     });
@@ -2447,6 +2458,194 @@ function renderKeyframeGenerationHistoryEntry(kf, gen) {
   }
 
   return card;
+}
+
+// --- Controlled Video Generation (Stage 22B-Part-3) ----------------------------------
+//
+// Part 20 — a read/control panel: shows the video prompt package,
+// canonical keyframe, provider/model, verification status, production
+// readiness, approval status, budget status, and eligibility status.
+// Controls: REQUEST APPROVAL / APPROVE / REJECT / GENERATE VIDEO. GENERATE
+// VIDEO is disabled unless the server's own can_generate_video-equivalent
+// eligibility check (fetched fresh, never computed by this file) reports
+// allowed: true — no automatic generation, no automatic approval, no
+// automatic model/provider selection anywhere in this section.
+
+function renderVideoGenerationControls(kf) {
+  const box = document.createElement('div');
+  box.className = 'prompt-package-controls';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'btn btn-secondary';
+  toggleBtn.textContent = 'VIDEO GENERATION';
+  toggleBtn.addEventListener('click', async () => {
+    if (state.creative.viewedVideoGenerationKeyframeId === kf.keyframeId) {
+      state.creative.viewedVideoGenerationKeyframeId = null;
+      state.creative.viewedVideoGenerationData = null;
+      renderKeyframePlanView();
+      return;
+    }
+    await loadVideoGenerationData(kf);
+  });
+  box.appendChild(toggleBtn);
+
+  if (state.creative.viewedVideoGenerationKeyframeId === kf.keyframeId) {
+    box.appendChild(renderVideoGenerationPanel(kf, state.creative.viewedVideoGenerationData));
+  }
+
+  return box;
+}
+
+async function loadVideoGenerationData(kf) {
+  try {
+    const [videoPkg, approval, eligibility, budget] = await Promise.all([
+      fetchJson(`/keyframes/${kf.keyframeId}/video-prompt-package`).catch(() => null),
+      fetchJson(`/shots/${kf.shotId}/video-generation/approval?keyframeId=${kf.keyframeId}`),
+      fetchJson(`/shots/${kf.shotId}/video-generation/eligibility?keyframeId=${kf.keyframeId}`),
+      fetchJson(`/projects/${state.selectedProjectId}/budget`),
+    ]);
+    state.creative.viewedVideoGenerationKeyframeId = kf.keyframeId;
+    state.creative.viewedVideoGenerationData = { videoPkg, approval, eligibility, budget };
+  } catch {
+    state.creative.viewedVideoGenerationKeyframeId = kf.keyframeId;
+    state.creative.viewedVideoGenerationData = null;
+  }
+  renderKeyframePlanView();
+}
+
+function renderVideoGenerationPanel(kf, data) {
+  const panel = document.createElement('div');
+  panel.className = 'prompt-package-panel';
+
+  if (!data) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'Could not load video generation data.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const { videoPkg, approval, eligibility, budget } = data;
+
+  // --- VIDEO PROMPT PACKAGE summary ------------------------------------------
+  const pkgHeading = document.createElement('div');
+  pkgHeading.className = 'entity-sub';
+  pkgHeading.textContent = 'Video prompt package:';
+  panel.appendChild(pkgHeading);
+  if (!videoPkg) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No video prompt package has been built for this keyframe yet.';
+    panel.appendChild(none);
+  } else {
+    panel.appendChild(statusBadge(videoPkg.status));
+    panel.appendChild(infoRow('Canonical keyframe asset', videoPkg.canonicalKeyframeAssetId));
+    panel.appendChild(infoRow('Provider', videoPkg.provider));
+    panel.appendChild(infoRow('Model', videoPkg.model));
+    const verification = videoPkg.modelVerification || {};
+    panel.appendChild(infoRow('Verification status', verification.verificationStatus));
+    panel.appendChild(infoRow('Production ready', verification.productionReady));
+    panel.appendChild(infoRow('Package version', videoPkg.version));
+  }
+
+  // --- BUDGET status ----------------------------------------------------------
+  const budgetHeading = document.createElement('div');
+  budgetHeading.className = 'entity-sub';
+  budgetHeading.style.marginTop = '12px';
+  budgetHeading.textContent = 'Project budget:';
+  panel.appendChild(budgetHeading);
+  panel.appendChild(infoRow('Remaining budget', budget.remainingBudget));
+  panel.appendChild(infoRow('Blocked', budget.blocked));
+
+  // --- GENERATION APPROVAL -----------------------------------------------------
+  const approvalHeading = document.createElement('div');
+  approvalHeading.className = 'entity-sub';
+  approvalHeading.style.marginTop = '12px';
+  approvalHeading.textContent = 'Video generation approval:';
+  panel.appendChild(approvalHeading);
+  panel.appendChild(statusBadge(approval.status));
+  panel.appendChild(infoRow('Estimated cost', approval.estimatedCost));
+  panel.appendChild(infoRow('Requested by', approval.requestedBy));
+  panel.appendChild(infoRow('Approved by', approval.approvedBy));
+
+  const approvalActions = document.createElement('div');
+  approvalActions.className = 'form-actions';
+
+  const requestBtn = document.createElement('button');
+  requestBtn.type = 'button';
+  requestBtn.className = 'btn btn-secondary';
+  requestBtn.textContent = 'REQUEST APPROVAL';
+  requestBtn.disabled = !videoPkg;
+  requestBtn.addEventListener('click', async () => {
+    const costInput = window.prompt('Estimated cost in credits (leave blank if unknown):', approval.estimatedCost != null ? String(approval.estimatedCost) : '');
+    if (costInput === null) return; // cancelled
+    const estimatedCost = costInput.trim() === '' ? undefined : Number(costInput);
+    await fetchJson(`/shots/${kf.shotId}/video-generation/approval`, {
+      method: 'POST',
+      body: { keyframeId: kf.keyframeId, estimatedCost, requestedBy: 'Creative Director UI', reason: 'Requested from the Keyframe Plan workspace' },
+    });
+    await loadVideoGenerationData(kf);
+  });
+  approvalActions.appendChild(requestBtn);
+
+  if (approval.status === 'PENDING') {
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn';
+    approveBtn.textContent = 'APPROVE';
+    approveBtn.addEventListener('click', async () => {
+      await fetchJson(`/shots/${kf.shotId}/video-generation/approval/approve`, { method: 'POST', body: { keyframeId: kf.keyframeId, approvedBy: 'Creative Director UI' } });
+      await loadVideoGenerationData(kf);
+    });
+    approvalActions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'REJECT';
+    rejectBtn.addEventListener('click', async () => {
+      await fetchJson(`/shots/${kf.shotId}/video-generation/approval/reject`, { method: 'POST', body: { keyframeId: kf.keyframeId, decidedBy: 'Creative Director UI' } });
+      await loadVideoGenerationData(kf);
+    });
+    approvalActions.appendChild(rejectBtn);
+  }
+  panel.appendChild(approvalActions);
+
+  // --- ELIGIBILITY + GENERATE VIDEO --------------------------------------------
+  const eligibilityHeading = document.createElement('div');
+  eligibilityHeading.className = 'entity-sub';
+  eligibilityHeading.style.marginTop = '12px';
+  eligibilityHeading.textContent = 'Eligibility:';
+  panel.appendChild(eligibilityHeading);
+  panel.appendChild(infoRow('Allowed', eligibility.allowed));
+  if (!eligibility.allowed) {
+    panel.appendChild(infoRow('Reason', eligibility.reason));
+  }
+
+  const generateBtn = document.createElement('button');
+  generateBtn.type = 'button';
+  generateBtn.className = 'btn';
+  generateBtn.style.marginTop = '12px';
+  generateBtn.textContent = 'GENERATE VIDEO';
+  // Server-fetched eligibility is the ONLY source for this disabled state
+  // — see services/video-generation-service.js's canGenerateVideo(),
+  // which the server independently re-checks in full regardless of
+  // whether this button was ever enabled.
+  generateBtn.disabled = !eligibility.allowed;
+  generateBtn.title = eligibility.allowed ? '' : eligibility.reason;
+  generateBtn.addEventListener('click', async () => {
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating…';
+    try {
+      await fetchJson(`/shots/${kf.shotId}/video-generation`, { method: 'POST', body: { keyframeId: kf.keyframeId } });
+    } finally {
+      await loadVideoGenerationData(kf); // re-renders the whole view, including this button's fresh state
+    }
+  });
+  panel.appendChild(generateBtn);
+
+  return panel;
 }
 
 // --- Human Keyframe Execution Handoff (Stage 13D) -----------------------------------

@@ -119,13 +119,24 @@ Concretely, this means:
 
 This document records the intended DIVISION of responsibility, not a
 claim that every capability is currently exposed on every surface. As of
-Stage 13E, REST does not yet expose Timeline IR scene/shot creation,
-video generation (`request_generation`/`poll_generation`), or generation
-history listing — those remain MCP-only. This is a known gap (see the
-Stage 13D architecture audit, item 18), not a design intention that REST
-should be permanently thinner than MCP. Closing it, if and when it's
-needed, means adding REST routes that call the same existing services —
-never inventing new business logic to do it.
+Stage 13E, REST does not yet expose Timeline IR scene/shot creation, the
+ORIGINAL project-level video generation (`request_generation`/
+`poll_generation`), or generation history listing — those remain
+MCP-only. This is a known gap (see the Stage 13D architecture audit, item
+18), not a design intention that REST should be permanently thinner than
+MCP. Closing it, if and when it's needed, means adding REST routes that
+call the same existing services — never inventing new business logic to
+do it.
+
+Stage 22B-Part-3's NEWER, per-shot Controlled Video Generation pipeline
+(see [video-generation-lifecycle.md](./video-generation-lifecycle.md)) is
+the first place this parity gap was actually closed for video: it exposes
+the identical capability set on both MCP (`mcp/tools/video-generation-
+tools.js`) and REST (`/shots/:shotId/video-generation/*` in `index.js`)
+from day one, both calling the exact same `services/video-generation-
+service.js` and `services/video-generation-approval-store.js` — proof
+that the gap above is a historical artifact of the older pipeline, not a
+structural limitation of REST.
 
 ## Where this leaves an Operator Queue
 

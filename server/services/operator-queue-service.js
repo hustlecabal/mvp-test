@@ -30,6 +30,14 @@ const keyframePromptService = require('./keyframe-prompt-service');
 const keyframeGenerationApprovalStore = require('./keyframe-generation-approval-store');
 const keyframeHandoffService = require('./keyframe-handoff-service');
 const timelineStore = require('./timeline-store');
+// Stage 22B-Part-3, Part 17 — additive video-lifecycle inputs. Read-only,
+// same as every other store this file already reads; this file still
+// never calls generateVideo, request_video_generation_approval, or any
+// other video-mutating function.
+const videoPromptService = require('./video-prompt-service');
+const videoGenerationApprovalStore = require('./video-generation-approval-store');
+const generationStore = require('./generation-store');
+const { ACTIVE_VIDEO_GENERATION_STATUSES } = require('./video-generation-service');
 const { createQueueItem } = require('../schemas/operator-queue-schema');
 
 // Same "in-flight" vocabulary Stage 13E's concurrency guard uses
@@ -278,7 +286,73 @@ function decideCategory({ pkg, approval, activeHandoff, canonicalAsset, unreview
   };
 }
 
-function buildKeyframeQueueItem({ project, keyframe, scene, shot, pkg, approval, handoffsForKeyframe, assetsForKeyframe, characterById, locationById, assetById, budgetBlocked, budgetBlockedReason }) {
+// ---------------------------------------------------------------------------
+// Stage 22B-Part-3, Part 17 — videoStatus, additive alongside
+// computeReferenceStatus above. Only ever meaningful once the keyframe's
+// OWN image pipeline is done (a canonical APPROVED image asset exists) —
+// this deliberately never touches the existing `category`/`priority`
+// decision above it (decideCategory, CATEGORY_INFO), so every existing
+// image-lifecycle test keeps passing unchanged.
+// ---------------------------------------------------------------------------
+function computeVideoStatus({ canonicalAsset, videoPkg, videoApproval, videoJobsForKeyframe, videoAssetsForKeyframe }) {
+  if (!canonicalAsset || canonicalAsset.approvalStatus !== 'APPROVED') {
+    return { videoStatus: 'NOT_APPLICABLE' };
+  }
+
+  const unreviewedVideoAsset = videoAssetsForKeyframe.find((a) => a.approvalStatus === 'NONE');
+  if (unreviewedVideoAsset) {
+    return { videoStatus: 'VIDEO_RETURNED', videoAssetId: unreviewedVideoAsset.assetId, videoAssetApprovalStatus: unreviewedVideoAsset.approvalStatus };
+  }
+
+  const activeVideoJob = videoJobsForKeyframe.find((job) => ACTIVE_VIDEO_GENERATION_STATUSES.includes(job.status));
+  if (activeVideoJob) {
+    return { videoStatus: 'VIDEO_IN_PROGRESS' };
+  }
+
+  const approvedVideoAsset = videoAssetsForKeyframe.find((a) => a.approvalStatus === 'APPROVED');
+  if (approvedVideoAsset) {
+    return { videoStatus: 'VIDEO_APPROVED', videoAssetId: approvedVideoAsset.assetId, videoAssetApprovalStatus: approvedVideoAsset.approvalStatus };
+  }
+
+  if (!videoPkg || videoPkg.status !== 'CURRENT') {
+    return { videoStatus: 'NEEDS_VIDEO_PACKAGE' };
+  }
+
+  const approvalMatchesCurrentPackage =
+    videoApproval &&
+    videoApproval.status === 'APPROVED' &&
+    videoApproval.videoPromptPackageId === videoPkg.packageId &&
+    videoApproval.videoPromptPackageVersion === videoPkg.version &&
+    videoApproval.canonicalKeyframeAssetId === videoPkg.canonicalKeyframeAssetId &&
+    videoApproval.provider === videoPkg.provider &&
+    videoApproval.model === videoPkg.model;
+
+  if (approvalMatchesCurrentPackage) {
+    return { videoStatus: 'VIDEO_READY_FOR_GENERATION' };
+  }
+
+  return { videoStatus: 'VIDEO_READY_FOR_APPROVAL' };
+}
+
+function buildKeyframeQueueItem({
+  project,
+  keyframe,
+  scene,
+  shot,
+  pkg,
+  approval,
+  handoffsForKeyframe,
+  assetsForKeyframe,
+  characterById,
+  locationById,
+  assetById,
+  budgetBlocked,
+  budgetBlockedReason,
+  videoPkg,
+  videoApproval,
+  videoJobsForKeyframe,
+  videoAssetsForKeyframe,
+}) {
   const activeHandoff = handoffsForKeyframe.find((h) => ACTIVE_HANDOFF_STATUSES.includes(h.status)) || null;
   const relevantHandoff = mostRelevantHandoff(handoffsForKeyframe);
 
@@ -359,6 +433,12 @@ function buildKeyframeQueueItem({ project, keyframe, scene, shot, pkg, approval,
 
     referenceStatus: computeReferenceStatus(keyframe, characterById, locationById, assetById),
 
+    ...computeVideoStatus({ canonicalAsset, videoPkg, videoApproval, videoJobsForKeyframe, videoAssetsForKeyframe }),
+    videoPromptPackageId: videoPkg ? videoPkg.packageId : null,
+    videoPromptPackageVersion: videoPkg ? videoPkg.version : null,
+    videoPromptPackageStatus: videoPkg ? videoPkg.status : null,
+    videoGenerationApprovalStatus: videoApproval ? videoApproval.status : null,
+
     createdAt: pkg ? pkg.generatedAt : null,
     updatedAt,
   });
@@ -410,10 +490,26 @@ function buildProjectQueue(projectId) {
   const approvalsByKeyframe = keyframeGenerationApprovalStore.listApprovals(projectId) || {};
   const handoffs = keyframeHandoffService.listHandoffs(projectId) || [];
   const assets = timelineStore.listAssets(projectId) || [];
+  // Stage 22B-Part-3 — bulk video-lifecycle reads, one call each
+  // regardless of keyframe count (Part 26), exactly like every store read
+  // above. Video assets share the SAME `keyframeId` field production-
+  // schema.js's Asset already had for image keyframe assets (Part 16
+  // lineage) — assetsByKeyframe below is therefore explicitly scoped to
+  // type 'keyframe' so this addition can never change what the EXISTING
+  // image-lifecycle decideCategory() above sees (a video asset must never
+  // be mistaken for an unreviewed/approved/canonical IMAGE asset).
+  const videoPackages = videoPromptService.listVideoPromptPackages(projectId) || [];
+  const videoApprovalsByKeyframe = videoGenerationApprovalStore.listApprovals(projectId) || {};
+  const videoJobs = generationStore.listGenerationJobs({ projectId }).filter((job) => job.generationType === 'VIDEO');
 
   const packageByKeyframe = indexById(packages, 'keyframeId');
+  const videoPackageByKeyframe = indexById(videoPackages, 'keyframeId');
   const handoffsByKeyframe = indexByKeyframeId(handoffs);
-  const assetsByKeyframe = indexByKeyframeId(assets);
+  const imageKeyframeAssets = assets.filter((a) => a.type === 'keyframe');
+  const videoAssets = assets.filter((a) => a.type === 'video');
+  const assetsByKeyframe = indexByKeyframeId(imageKeyframeAssets);
+  const videoAssetsByKeyframe = indexByKeyframeId(videoAssets);
+  const videoJobsByKeyframe = indexByKeyframeId(videoJobs);
   const assetById = indexById(assets, 'assetId');
   const characterById = indexById(visualBible.characters || [], 'characterId');
   const locationById = indexById(visualBible.locations || [], 'locationId');
@@ -448,6 +544,10 @@ function buildProjectQueue(projectId) {
         assetById,
         budgetBlocked,
         budgetBlockedReason,
+        videoPkg: videoPackageByKeyframe.get(keyframe.keyframeId) || null,
+        videoApproval: videoApprovalsByKeyframe[keyframe.keyframeId] || null,
+        videoJobsForKeyframe: videoJobsByKeyframe.get(keyframe.keyframeId) || [],
+        videoAssetsForKeyframe: videoAssetsByKeyframe.get(keyframe.keyframeId) || [],
       })
     );
   }

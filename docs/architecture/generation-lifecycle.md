@@ -7,6 +7,17 @@ image, eventually) actually flows through the system, end to end — from
 Code: `server/services/generation-store.js`, `generation-service.js`,
 `generation-poller.js`; MCP tools in `server/mcp/tools/generation-tools.js`.
 
+**This document describes the ORIGINAL, project-level video pipeline**
+(one project-wide approval in `project.approvals`, one shot at a time via
+`request_generation`). Stage 22B-Part-3 built a SEPARATE, newer, per-shot
+pipeline — bound to a versioned `VideoPromptPackage`, its own explicit
+`VideoGenerationApproval`, and an exact canonical keyframe asset — that
+reuses this file's Generation Job store and its EvoLink provider adapter,
+but never this file's project-level approval or `requestGeneration()`. See
+[video-generation-lifecycle.md](./video-generation-lifecycle.md) for that
+pipeline; `generation-service.js` itself is kept exactly as-is, untouched,
+purely as reference material for the newer pipeline.
+
 ## What a Generation Job is, and why we need one
 
 Every time we ask a provider (EvoLink, for now) to generate something, we

@@ -22,6 +22,15 @@ const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-approv
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-assets-'));
 const handoffTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-handoffs-'));
+// Stage 22B-Part-3 — operator-queue-service.js now also reads
+// video-prompt-service.js/video-generation-approval-store.js (bulk,
+// read-only). Without isolating these too, every buildProjectQueue() call
+// below (which this file calls constantly) would fall through to their
+// REAL default data dirs and write empty per-project record files into
+// the actual repo's server/data/ — always isolate every store a file
+// under test transitively touches, never just the ones it directly calls.
+const videoPromptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-video-packages-'));
+const videoApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-video-approvals-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
@@ -30,6 +39,8 @@ process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = approvalTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
 process.env.ASSET_STORAGE_DIR = assetsTempDir;
 process.env.KEYFRAME_HANDOFF_DATA_DIR = handoffTempDir;
+process.env.VIDEO_PROMPT_DATA_DIR = videoPromptTempDir;
+process.env.VIDEO_GENERATION_APPROVAL_DATA_DIR = videoApprovalTempDir;
 
 const projectStore = require('../services/project-store');
 const gate = require('../services/approval-gate');

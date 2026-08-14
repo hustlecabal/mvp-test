@@ -18,6 +18,8 @@ const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-ap
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-assets-'));
 const handoffTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-handoffs-'));
+const videoPromptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-video-packages-'));
+const videoApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-mcp-video-approvals-'));
 const envVars = {
   PROJECT_DATA_DIR: projectTempDir,
   CREATIVE_DATA_DIR: creativeTempDir,
@@ -27,6 +29,12 @@ const envVars = {
   GENERATION_JOBS_DATA_DIR: jobsTempDir,
   ASSET_STORAGE_DIR: assetsTempDir,
   KEYFRAME_HANDOFF_DATA_DIR: handoffTempDir,
+  // Stage 22B-Part-3 — operator-queue-service.js (loaded transitively by
+  // the spawned MCP server via its operator-queue tools) now also reads
+  // video-prompt-service.js/video-generation-approval-store.js; isolate
+  // both so this file's calls never fall through to the real repo data.
+  VIDEO_PROMPT_DATA_DIR: videoPromptTempDir,
+  VIDEO_GENERATION_APPROVAL_DATA_DIR: videoApprovalTempDir,
 };
 for (const [key, value] of Object.entries(envVars)) process.env[key] = value;
 

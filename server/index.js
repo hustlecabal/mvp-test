@@ -22,6 +22,8 @@ const identityConsistencyReviewStore = require('./services/identity-consistency-
 const { REFERENCE_ENTITY_TYPES } = require('./schemas/creative-schema');
 const generationModelRegistry = require('./services/generation-model-registry');
 const videoPromptService = require('./services/video-prompt-service');
+const videoGenerationApprovalStore = require('./services/video-generation-approval-store');
+const videoGenerationService = require('./services/video-generation-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -557,6 +559,109 @@ app.get('/shots/:shotId/video-prompt-packages', (req, res) => {
 
   const { sceneId, status } = req.query;
   res.json(videoPromptService.listVideoPromptPackages(project.id, { shotId: req.params.shotId, sceneId, status }));
+});
+
+// Stage 22B-Part-3 — Controlled Video Generation. See docs/architecture/
+// video-generation-lifecycle.md. Every route below is a thin wrapper over
+// services/video-generation-approval-store.js or services/video-
+// generation-service.js — all safety checks (approval binding, canonical
+// asset, model registry, budget, duplicate protection) live in those
+// services, never here. POST /shots/:shotId/video-generation is the only
+// route that can cause a real provider call, and only if that service's
+// checks all pass. A shot can have more than one keyframe, so every route
+// below also requires an explicit `keyframeId` (query for GET, body for
+// POST) naming exactly which keyframe's video is being acted on — never
+// inferred or defaulted.
+//
+// Resolves the owning project via creativeStore.findProjectByShotId() (the
+// same helper video-prompt-packages above already uses), then confirms
+// the given keyframeId genuinely belongs to that shot before delegating.
+function resolveShotKeyframe(shotId, keyframeId) {
+  if (!keyframeId) return { error: 'keyframeId is required' };
+  const project = creativeStore.findProjectByShotId(shotId);
+  if (!project) return { error: 'Shot not found' };
+  const keyframe = keyframeStore.getKeyframe(project.id, keyframeId);
+  if (!keyframe || keyframe.shotId !== shotId) return { error: `Keyframe "${keyframeId}" does not belong to shot "${shotId}"` };
+  return { project, keyframe };
+}
+
+app.post('/shots/:shotId/video-generation/approval', (req, res) => {
+  const { keyframeId, estimatedCost, reason, requestedBy } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+
+  const pkg = videoPromptService.getVideoPromptPackage(resolved.project.id, keyframeId);
+  if (!pkg) return res.status(409).json({ error: 'No video prompt package has been built for this keyframe yet.' });
+
+  const approval = videoGenerationApprovalStore.requestApproval(resolved.project.id, keyframeId, {
+    sceneId: resolved.keyframe.sceneId,
+    shotId: resolved.keyframe.shotId,
+    videoPromptPackageId: pkg.packageId,
+    videoPromptPackageVersion: pkg.version,
+    canonicalKeyframeAssetId: pkg.canonicalKeyframeAssetId,
+    provider: pkg.provider,
+    model: pkg.model,
+    executionParameters: pkg.executionParameters,
+    estimatedCost,
+    reason,
+    requestedBy,
+  });
+  res.json(approval);
+});
+
+app.get('/shots/:shotId/video-generation/approval', (req, res) => {
+  const resolved = resolveShotKeyframe(req.params.shotId, req.query.keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  res.json(videoGenerationApprovalStore.getApproval(resolved.project.id, req.query.keyframeId));
+});
+
+app.post('/shots/:shotId/video-generation/approval/approve', (req, res) => {
+  const { keyframeId, approvedBy } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+
+  const approval = videoGenerationApprovalStore.decideApproval(resolved.project.id, keyframeId, { approve: true, decidedBy: approvedBy });
+  if (!approval) return res.status(409).json({ error: 'No pending video generation approval request to approve.' });
+  res.json(approval);
+});
+
+app.post('/shots/:shotId/video-generation/approval/reject', (req, res) => {
+  const { keyframeId, decidedBy, reason } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+
+  const approval = videoGenerationApprovalStore.decideApproval(resolved.project.id, keyframeId, { approve: false, decidedBy, reason });
+  if (!approval) return res.status(409).json({ error: 'No pending video generation approval request to reject.' });
+  res.json(approval);
+});
+
+app.get('/shots/:shotId/video-generation/eligibility', (req, res) => {
+  const resolved = resolveShotKeyframe(req.params.shotId, req.query.keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  res.json(videoGenerationService.canGenerateVideo(resolved.project.id, req.query.keyframeId));
+});
+
+app.post('/shots/:shotId/video-generation', async (req, res) => {
+  const { keyframeId } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+
+  const result = await videoGenerationService.generateVideo(resolved.project.id, keyframeId);
+  res.json(result);
+});
+
+app.get('/shots/:shotId/video-generation/:generationId', (req, res) => {
+  // The generationId itself is globally unique (services/generation-
+  // store.js), so no keyframeId is required here — but the shot is still
+  // confirmed as a sanity check that the caller has the right URL.
+  const project = creativeStore.findProjectByShotId(req.params.shotId);
+  if (!project) return res.status(404).json({ error: 'Shot not found' });
+
+  const result = videoGenerationService.getVideoGenerationStatus(req.params.generationId);
+  if (!result || result.projectId !== project.id || result.shotId !== req.params.shotId) {
+    return res.status(404).json({ error: `No video generation job found with id "${req.params.generationId}" for shot "${req.params.shotId}"` });
+  }
+  res.json(result);
 });
 
 // Stage 13B — Controlled Keyframe Generation. See docs/architecture/

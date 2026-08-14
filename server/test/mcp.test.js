@@ -90,17 +90,26 @@ test('a real MCP client can discover all 76 tools', async () => {
   // docs/architecture/video-prompt-package.md). Building a package never
   // generates a video, calls a provider, spends a credit, creates a
   // generation job, or creates an approval.
+  // Stage 22B-Part-3 added the 7 Controlled Video Generation tools
+  // (request_video_generation_approval, get_video_generation_approval,
+  // approve_video_generation, reject_video_generation, can_generate_video,
+  // generate_video, get_video_generation_status — see
+  // docs/architecture/video-generation-lifecycle.md). generate_video is
+  // the only one of these that can cause a real provider call, and only
+  // after every safety gate passes.
   // Everything else is unchanged.
-  assert.equal(names.length, 81);
+  assert.equal(names.length, 88);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'add_entity_reference_asset',
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
     'approve_keyframe_generation',
+    'approve_video_generation',
     'archive_asset',
     'build_keyframe_prompt_package',
     'build_video_prompt_package',
+    'can_generate_video',
     'cancel_keyframe_handoff',
     'create_keyframe',
     'create_keyframe_handoff',
@@ -112,6 +121,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'estimate_generation',
     'find_generation_models',
     'generate_keyframe',
+    'generate_video',
     'get_approval_status',
     'get_asset',
     'get_asset_download',
@@ -138,6 +148,8 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_shot_history',
     'get_skill_compatibility',
     'get_storyboard',
+    'get_video_generation_approval',
+    'get_video_generation_status',
     'get_video_prompt_package',
     'get_visual_bible',
     'list_assets',
@@ -160,9 +172,11 @@ test('a real MCP client can discover all 76 tools', async () => {
     'record_identity_consistency_review',
     'reject_generated_keyframe',
     'reject_keyframe_generation',
+    'reject_video_generation',
     'request_generation',
     'request_generation_approval',
     'request_keyframe_generation_approval',
+    'request_video_generation_approval',
     'run_fixture_keyframe_execution',
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
@@ -185,17 +199,24 @@ test('safety boundary: no generation or raw-access tools exist', async () => {
     'raw_api_request',
     'execute_generation',
     'arbitrary_http_request',
-    'generate_video',
     'generate_image',
     'execute_skill',
     'submit_generation',
     // Stage 13B, Part 16 — generate_keyframe itself is a legitimate,
     // safety-gated tool (see keyframe-generation-tools.test.js); these are
-    // the ones that would let a caller bypass its checks.
+    // the ones that would let a caller bypass its checks. Stage 22B-Part-3
+    // adds generate_video as the same kind of legitimate, safety-gated
+    // tool (see video-generation-mcp.test.js) — it is deliberately no
+    // longer in this forbidden list, but every bypass tool below it still
+    // does not exist for the video pipeline either.
     'raw_image_request',
     'raw_http_request',
     'bypass_budget',
     'force_generate',
+    'bypass_approval',
+    'auto_approve_video',
+    'select_video_model',
+    'auto_select_provider',
     // Stage 13D, Part 4 — the handoff is intentionally human-controlled;
     // none of these programmatic-execution tools exist.
     'execute_handoff',

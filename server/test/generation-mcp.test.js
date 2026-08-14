@@ -76,7 +76,12 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // Stage 22B-Part-2 added 3 more (build_video_prompt_package,
   // get_video_prompt_package, list_video_prompt_packages) — see
   // docs/architecture/video-prompt-package.md.
-  assert.equal(names.length, 81);
+  // Stage 22B-Part-3 added 7 more (request_video_generation_approval,
+  // get_video_generation_approval, approve_video_generation,
+  // reject_video_generation, can_generate_video, generate_video,
+  // get_video_generation_status) — see
+  // docs/architecture/video-generation-lifecycle.md.
+  assert.equal(names.length, 88);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

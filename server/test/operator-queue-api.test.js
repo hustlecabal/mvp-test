@@ -15,11 +15,19 @@ const creativeTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-cr
 const keyframeTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-keyframes-'));
 const promptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-packages-'));
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-approvals-'));
+// Stage 22B-Part-3 — operator-queue-service.js now also reads
+// video-prompt-service.js/video-generation-approval-store.js; isolate
+// both so this file's queue calls never fall through to the real repo
+// data (see the identical fix in test/operator-queue-service.test.js).
+const videoPromptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-video-packages-'));
+const videoApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-api-video-approvals-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
 process.env.KEYFRAME_PROMPT_DATA_DIR = promptTempDir;
 process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = approvalTempDir;
+process.env.VIDEO_PROMPT_DATA_DIR = videoPromptTempDir;
+process.env.VIDEO_GENERATION_APPROVAL_DATA_DIR = videoApprovalTempDir;
 
 const app = require('../index');
 const creativeStore = require('../services/creative-store');

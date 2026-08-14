@@ -176,6 +176,14 @@ function createAsset(overrides = {}) {
     generationType: null, // see GENERATION_TYPES ('IMAGE_KEYFRAME' for a keyframe image, 'KEYFRAME' for a human-handoff image — Stage 13D)
     promptPackageId: null,
     promptPackageVersion: null,
+    // Stage 22B-Part-3 — VIDEO lineage, additive alongside the
+    // promptPackageId/Version pair above (which stays scoped to the IMAGE
+    // KeyframePromptPackage). Set only for a video asset produced by
+    // services/video-generation-service.js; stays null for every other
+    // asset type, exactly like keyframeId/promptPackageId do for a
+    // non-keyframe asset.
+    videoPromptPackageId: null,
+    videoPromptPackageVersion: null,
     skillId: null, // Stage 13D — which skill's workflow the human followed, recorded only, never executed
     handoffId: null, // Stage 13D — the execution handoff this asset was ingested through, if any
     parentAssetId: null,
@@ -256,6 +264,16 @@ function createGenerationJob(overrides = {}) {
     keyframeId: null,
     keyframePromptPackageId: null,
     keyframePromptPackageVersion: null,
+    // Stage 22B-Part-3 — set only for a controlled per-shot video
+    // generation (services/video-generation-service.js); stays null for
+    // every legacy project-level video job created by
+    // generation-service.js. generationType stays 'VIDEO' for BOTH kinds
+    // (both produce a 'video' asset) — this pair of fields, not a new
+    // generationType value, is what distinguishes the new controlled
+    // pipeline from the old one, mirroring exactly how keyframeId already
+    // distinguishes an IMAGE_KEYFRAME job from a legacy one above.
+    videoPromptPackageId: null,
+    videoPromptPackageVersion: null,
     // Defaults to 'VIDEO' so every job created by the existing
     // generation-service.js (which never sets this field) is
     // unambiguously a video job, exactly as before this stage existed.

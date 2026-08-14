@@ -92,9 +92,15 @@ test('all 3 video prompt-packaging tools are discoverable', async () => {
 });
 
 test('no generate/approve/submit-style tool exists for video prompt packaging itself', async () => {
+  // Stage 22B-Part-3 legitimately added generate_video/
+  // approve_video_generation/request_video_generation_approval as their
+  // own, separately safety-gated tools (mcp/tools/video-generation-
+  // tools.js) — this file only confirms the PACKAGING tools tested here
+  // (mcp/tools/video-prompt-tools.js) never grew a shortcut around them;
+  // see video-generation-mcp.test.js for that layer's own coverage.
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  for (const forbidden of ['generate_video', 'approve_video_generation', 'submit_video_generation', 'request_video_generation', 'request_video_generation_approval']) {
+  for (const forbidden of ['submit_video_generation', 'request_video_generation']) {
     assert.ok(!names.includes(forbidden), `${forbidden} must not exist`);
   }
 });

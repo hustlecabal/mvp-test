@@ -53,6 +53,43 @@ const QUEUE_STATUSES = ['NEEDS_ATTENTION', 'BLOCKED', 'IN_PROGRESS', 'COMPLETE']
 //   CANONICAL_AVAILABLE    — every scoped entity that has a resolvable reference resolves via its CANONICAL selection
 const REFERENCE_STATUSES = ['NO_REFERENCE_NEEDED', 'MISSING', 'REVIEW_REQUIRED', 'AVAILABLE', 'CANONICAL_AVAILABLE'];
 
+// Stage 22B-Part-3, Part 17 — an ADDITIVE per-item field reporting the
+// video-generation lifecycle for this keyframe, independent of the
+// keyframe's own image-generation `category`/`priority` above. Exactly
+// the same additive pattern as REFERENCE_STATUSES: never a new top-level
+// category, never a priority change, computed only from data that already
+// exists elsewhere (services/video-prompt-service.js,
+// services/video-generation-approval-store.js, services/generation-
+// store.js, services/timeline-store.js) — see
+// services/operator-queue-service.js's computeVideoStatus().
+//   NOT_APPLICABLE            — no canonical APPROVED image asset yet, so
+//                                there is nothing to animate (the image
+//                                pipeline itself is not COMPLETE)
+//   NEEDS_VIDEO_PACKAGE       — image is COMPLETE but no CURRENT video
+//                                prompt package exists yet
+//   VIDEO_READY_FOR_APPROVAL  — a CURRENT video prompt package exists but
+//                                no matching APPROVED generation approval
+//   VIDEO_READY_FOR_GENERATION — an APPROVED approval exists and matches
+//                                the current package/canonical asset/
+//                                provider/model (canGenerateVideo-eligible,
+//                                modulo budget)
+//   VIDEO_IN_PROGRESS         — an active (REQUESTED/SUBMITTED/PROCESSING)
+//                                video generation job exists
+//   VIDEO_RETURNED            — a completed video asset exists that has
+//                                not yet been reviewed (approvalStatus NONE)
+//   VIDEO_APPROVED            — a completed video asset exists and has
+//                                been APPROVED — the video track's own
+//                                terminal state
+const VIDEO_STATUSES = [
+  'NOT_APPLICABLE',
+  'NEEDS_VIDEO_PACKAGE',
+  'VIDEO_READY_FOR_APPROVAL',
+  'VIDEO_READY_FOR_GENERATION',
+  'VIDEO_IN_PROGRESS',
+  'VIDEO_RETURNED',
+  'VIDEO_APPROVED',
+];
+
 // Part 4 — 1 (highest) through 9 (lowest). Deliberately a plain integer,
 // not its own enum: priority is a computed ordering key, not a state.
 const MIN_PRIORITY = 1;
@@ -118,6 +155,15 @@ function createQueueItem(overrides = {}) {
     // Stage 19, Part 5 — see REFERENCE_STATUSES above.
     referenceStatus: 'NO_REFERENCE_NEEDED',
 
+    // Stage 22B-Part-3, Part 17 — see VIDEO_STATUSES above.
+    videoStatus: 'NOT_APPLICABLE',
+    videoPromptPackageId: null,
+    videoPromptPackageVersion: null,
+    videoPromptPackageStatus: null, // 'CURRENT' | 'STALE' | null (no video package yet)
+    videoGenerationApprovalStatus: null, // 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | null
+    videoAssetId: null,
+    videoAssetApprovalStatus: null,
+
     createdAt: null,
     updatedAt: null,
   };
@@ -128,6 +174,7 @@ module.exports = {
   QUEUE_CATEGORIES,
   QUEUE_STATUSES,
   REFERENCE_STATUSES,
+  VIDEO_STATUSES,
   MIN_PRIORITY,
   MAX_PRIORITY,
   createQueueItem,

@@ -31,6 +31,7 @@ const registerOperatorQueueTools = require('./tools/operator-queue-tools');
 const registerReferenceLibraryTools = require('./tools/reference-library-tools');
 const registerGenerationModelRegistryTools = require('./tools/generation-model-registry-tools');
 const registerVideoPromptTools = require('./tools/video-prompt-tools');
+const registerVideoGenerationTools = require('./tools/video-generation-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -56,6 +57,7 @@ function createServer() {
   registerReferenceLibraryTools(server);
   registerGenerationModelRegistryTools(server);
   registerVideoPromptTools(server);
+  registerVideoGenerationTools(server);
 
   return server;
 }
