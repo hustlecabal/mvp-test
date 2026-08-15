@@ -28,6 +28,16 @@
 const timelineStore = require('./timeline-store');
 const keyframeStore = require('./keyframe-store');
 const { MATERIAL_SOURCES, VISUAL_TREATMENTS } = require('../schemas/visual-beat-schema');
+// Stage 26.3 — read-only capability/cost catalogue, consumed exactly the way
+// generation-model-registry.js's own comments already document
+// (findModelsSatisfying/cheapestSatisfying: "never executes, never submits,
+// never selects on the caller's behalf"). This is NOT a provider or
+// generation-execution import — it never spends a credit or calls a
+// provider; see the "STAGE 26.3 — EXTENSIONS" block below for exactly how
+// it is used (capability existence + cost-tier signal only, never a
+// provider/model selection).
+const generationModelRegistry = require('./generation-model-registry');
+const { createMaterialResolution, createCandidateResult, createHardGateResult } = require('../schemas/material-resolution-schema');
 
 // ---------------------------------------------------------------------------
 // Which existing Asset `type` values (schemas/production-schema.js's
@@ -374,6 +384,523 @@ function toTimelineShotFields(beat, resolution) {
   return fields;
 }
 
+// =============================================================================
+// STAGE 26.3 — EXTENSIONS. Everything above this line (TREATMENT_TO_ASSET_TYPES,
+// evaluateEligibility, scoreCandidate, compareCandidates, MAX_POSSIBLE_SCORE,
+// resolveVisualBeat, toTimelineShotFields) is UNCHANGED and remains fully
+// backwards compatible — every existing caller/test keeps working exactly as
+// before. resolveMaterial() below is a NEW, ADDITIONAL entry point that
+// extends coverage from the single materialSource resolveVisualBeat()
+// implements (PROJECT_ASSET_REUSE) to all four MATERIAL_SOURCES values, by
+// CALLING resolveVisualBeat() internally rather than duplicating its logic.
+//
+// Ranking here is a strict, ORDERED-PHASE comparison
+// (CREATIVE_FIT -> CONTINUITY -> REUSE -> COST -> COMPLEXITY), never a
+// weighted sum — there is no totalScore anywhere in this file or in
+// schemas/material-resolution-schema.js. Each phase is its own small,
+// independently replaceable function (scoreCreativeFit/scoreContinuity/
+// scoreReuse/scoreCost/scoreComplexity) specifically so the creative-
+// quality/cost trade-off can be retuned later without redesigning the
+// resolver or touching compareCandidates()'s own ordering logic.
+// =============================================================================
+
+// Deterministic-template-eligible treatments — structurally available on
+// demand (no ingested library required, unlike BROLL_LIBRARY) because a
+// deterministic renderer can always be constructed from the beat's own
+// structured fields once one exists. No renderer is built this stage; these
+// candidates describe a MATERIAL STRATEGY only (see the module-level comment
+// at the top of this file).
+const DETERMINISTIC_TREATMENTS = ['MOTION_GRAPHIC', 'KINETIC_TYPOGRAPHY', 'WHITEBOARD'];
+
+// Same neutral-when-absent, verified-when-checkable convention as
+// evaluateEligibility()'s own identity check above — duplicated here as a
+// small standalone helper (rather than refactoring the existing, tested
+// function) specifically to avoid any risk of altering resolveVisualBeat()'s
+// already-tested behavior.
+function hasIdentityOrContinuityRequirements(beat) {
+  const idr = beat.identityRequirements;
+  const hasIdentity = Boolean(
+    idr && (idr.characterReferences.length > 0 || idr.locationReferences.length > 0 || idr.propReferences.length > 0)
+  );
+  const hasContinuity = Array.isArray(beat.continuityRequirements) && beat.continuityRequirements.length > 0;
+  return hasIdentity || hasContinuity;
+}
+
+// The specific "identified subject" case correction #3 of the Stage 26.3
+// design review calls out: B-roll cannot stand in for a NAMED character.
+// locationReferences/propReferences alone do not trigger this — B-roll can
+// plausibly represent a generic location/prop (scored low on continuity
+// instead, never hard-gated — see scoreContinuity below).
+function hasCharacterIdentity(beat) {
+  return Boolean(beat.identityRequirements && beat.identityRequirements.characterReferences && beat.identityRequirements.characterReferences.length > 0);
+}
+
+// Whether `visualTreatment` is even a candidate worth generating for this
+// beat: either it's the beat's own stated treatment, or the beat's author
+// has explicitly listed it as an acceptable fallback. A candidate class
+// whose treatment satisfies neither is simply never instantiated — not
+// reported as a hard-gate rejection, exactly like the existing
+// resolveVisualBeat()'s own "no existing-asset path for this treatment"
+// short-circuit never enumerates irrelevant assets one by one.
+function beatAllowsTreatment(beat, visualTreatment) {
+  return beat.visualTreatment === visualTreatment || (Array.isArray(beat.fallbackStrategy) && beat.fallbackStrategy.includes(visualTreatment));
+}
+
+// Capability requirements only — schemas/generation-model-registry.js's own
+// requirement shape (modality/textToImage/textToVideo/referenceImages/
+// minDurationSeconds/...). NEVER a provider or model name (Stage 26.3
+// requirement #7 / #6 of the design review) — provider/model selection is an
+// explicit later, downstream concern.
+function buildModelRequirements(beat, visualTreatment) {
+  const requirements = { modality: visualTreatment === 'AI_VIDEO' ? 'video' : 'image' };
+  if (visualTreatment === 'AI_VIDEO') {
+    requirements.textToVideo = true;
+  } else {
+    requirements.textToImage = true;
+  }
+  if (hasIdentityOrContinuityRequirements(beat)) {
+    requirements.referenceImages = true;
+  }
+  if (visualTreatment === 'AI_VIDEO' && typeof beat.duration === 'number') {
+    requirements.minDurationSeconds = beat.duration;
+  }
+  return requirements;
+}
+
+// ---------------------------------------------------------------------------
+// PHASE B — CREATIVE FIT. 2 = exact match to the beat's own stated
+// visualTreatment (the Director's actual intent). 1 = reached only via
+// beat.fallbackStrategy (an explicitly beat-author-approved substitute, not
+// an invented one). Every candidate reaching this function already passed
+// beatAllowsTreatment(), so 0 should not normally occur.
+// ---------------------------------------------------------------------------
+function scoreCreativeFit(beat, materialSource, visualTreatment) {
+  if (visualTreatment === beat.visualTreatment) return 2;
+  if (Array.isArray(beat.fallbackStrategy) && beat.fallbackStrategy.includes(visualTreatment)) return 1;
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// PHASE C — CONTINUITY. Prefers candidates that preserve identity/
+// environment/visual continuity. For PROJECT_ASSET_REUSE, reuses the
+// existing, untouched scoreCandidate() total EXACTLY as computed by
+// resolveVisualBeat() — never recomputed here — rescaled from its native
+// 0-6 range to a 0-2 range (divide by 3) purely so its MAGNITUDE is
+// comparable to the other classes' 0-1-ish ranges; the relative ORDER a
+// higher old score implies is preserved exactly, nothing about the old
+// scorer's own logic changes.
+// ---------------------------------------------------------------------------
+function scoreContinuity(materialSource, { existingReuseScoreTotal, hasIdentityOrContinuityReqs } = {}) {
+  if (materialSource === 'PROJECT_ASSET_REUSE') {
+    return typeof existingReuseScoreTotal === 'number' ? existingReuseScoreTotal / 3 : 0;
+  }
+  if (!hasIdentityOrContinuityReqs) return 0.5; // neutral-positive: nothing required, nothing to fail
+  if (materialSource === 'GENERATED_NEW') {
+    // The EXISTING KeyframePromptPackage/VideoPromptPackage pipeline already
+    // structurally binds a canonical, APPROVED reference asset before a
+    // generation call is ever built (services/video-prompt-service.js,
+    // services/keyframe-prompt-service.js) — a real, already-built
+    // enforcement mechanism, not an assumption invented by this file.
+    return 1;
+  }
+  if (materialSource === 'BROLL_LIBRARY') return 0; // location/prop-only survivor — unverifiable match
+  return 0.5; // DETERMINISTIC_TEMPLATE with requirements present — coarse neutral
+}
+
+// ---------------------------------------------------------------------------
+// PHASE D — REUSE. Prefers already-existing valid material over unnecessary
+// new creation, independent of cost. Fixed ordinal, not derived from price.
+// ---------------------------------------------------------------------------
+const REUSE_ORDINAL = { PROJECT_ASSET_REUSE: 3, BROLL_LIBRARY: 2, DETERMINISTIC_TEMPLATE: 1, GENERATED_NEW: 0 };
+function scoreReuse(materialSource) {
+  return REUSE_ORDINAL[materialSource] ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// PHASE E — COST. Tie-break only (consulted after creativeFit/continuity/
+// reuse already tied) — never lets a cheap candidate compensate for failing
+// an earlier phase, since candidates are compared lexicographically, not
+// summed. Unknown/unpriced models are NEVER scored as free — reuses
+// generation-model-registry.js's own "unknown price never treated as
+// cheapest" discipline (cheapestSatisfying places unpriced entries last).
+// ---------------------------------------------------------------------------
+const GENERATED_NEW_COST_TIER_SCORE = { BUDGET: 1, STANDARD: 0.5, QUALITY: 0, OTHER: 0 };
+function scoreCost(materialSource, { cheapestModel } = {}) {
+  if (materialSource !== 'GENERATED_NEW') return 2; // zero-cost sources
+  if (!cheapestModel || !cheapestModel.pricing.priceKnown) return 0;
+  return GENERATED_NEW_COST_TIER_SCORE[cheapestModel.costTier] ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// PHASE F — EXECUTION COMPLEXITY. Tie-break only, consulted last. A coarse,
+// static, per-class placeholder — documented as such because no real
+// renderer/generation pipeline exists yet to measure actual complexity
+// (mirrors this file's own existing "DIMENSIONS CURRENTLY UNAVAILABLE"
+// documentation discipline below).
+// ---------------------------------------------------------------------------
+function scoreComplexity(materialSource, visualTreatment) {
+  if (materialSource === 'PROJECT_ASSET_REUSE') return 3;
+  if (materialSource === 'DETERMINISTIC_TEMPLATE' || materialSource === 'BROLL_LIBRARY') return 2;
+  if (materialSource === 'GENERATED_NEW' && visualTreatment === 'STILL_IMAGE') return 1;
+  return 0; // GENERATED_NEW + AI_VIDEO — most complex/highest-risk path
+}
+
+const PHASE_ORDER = ['creativeFit', 'continuity', 'reuse', 'cost', 'complexity'];
+const PHASE_KEY_TO_DECIDING_PHASE = {
+  creativeFit: 'CREATIVE_FIT',
+  continuity: 'CONTINUITY',
+  reuse: 'REUSE',
+  cost: 'COST',
+  complexity: 'COMPLEXITY',
+};
+
+// Strict lexicographic comparison, NOT a weighted sum — each phase is only
+// consulted when every phase before it is exactly tied. `candidate` (a
+// unique string across the whole survivor list — see resolveMaterial()) is
+// the final deterministic tie-break when every named phase ties; it is a
+// stand-in for "CREATED_AT" in DECIDING_PHASES since non-PROJECT_ASSET_REUSE
+// candidates describe a strategy, not a dated record, so there is no literal
+// timestamp to break the tie with — documented here rather than silently
+// assumed.
+//
+// Named compareMaterialCandidates (NOT compareCandidates) deliberately: this
+// file already has its own compareCandidates() above, used internally by the
+// existing, untouched resolveVisualBeat(). Function declarations in the same
+// scope silently override one another in JS by source order — reusing the
+// same name here would have SHADOWED the original and corrupted
+// resolveVisualBeat()'s own PROJECT_ASSET_REUSE ranking, exactly the
+// "existing tests must continue passing unchanged" backward-compatibility
+// break this stage is required to avoid.
+function compareMaterialCandidates(a, b) {
+  for (const phase of PHASE_ORDER) {
+    const diff = (b.phaseScores[phase] ?? 0) - (a.phaseScores[phase] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return a.candidate.localeCompare(b.candidate);
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point. Pure/read-only, exactly like resolveVisualBeat():
+// never creates, mutates, or deletes anything, never calls a provider, never
+// touches approval-gate.js or any approval store. Extends coverage to every
+// MATERIAL_SOURCES value by calling the existing resolveVisualBeat()
+// internally for PROJECT_ASSET_REUSE (never reimplementing it) and adding
+// new, independent hard-gate + phase-scoring logic for the other three.
+//
+// `context.brollSegments` — an OPTIONAL, INJECTABLE array of plain
+// BRollSegment-shaped fixtures ({ segmentId, licensingStatus, ... }), per
+// Stage 26.3 requirement #9. Defaults to `[]`. No B-roll store or ingestion
+// system exists — every real call today passes no context, so BROLL_LIBRARY
+// always resolves to "no library exists yet" in production; the injectable
+// parameter exists solely so the licensing/identity gate LOGIC is unit-
+// testable against fixture data ahead of a future ingestion stage.
+// ---------------------------------------------------------------------------
+function resolveMaterial(projectId, beat, context = {}) {
+  if (!beat || !beat.id) {
+    return createMaterialResolution({
+      beatId: beat ? beat.id : null,
+      status: 'UNRESOLVED',
+      warnings: ['a VisualBeat (with an id) is required'],
+      rationale: 'no beat supplied',
+    });
+  }
+
+  if (!VISUAL_TREATMENTS.includes(beat.visualTreatment)) {
+    return createMaterialResolution({
+      beatId: beat.id,
+      status: 'UNRESOLVED',
+      warnings: [`visualTreatment "${beat.visualTreatment}" is not one of ${VISUAL_TREATMENTS.join(', ')}`],
+      rationale: 'beat.visualTreatment is not set to a recognized value',
+    });
+  }
+
+  // Same existence check resolveVisualBeat() itself performs — checked
+  // independently here (rather than parsing that function's own diagnostic
+  // strings) so this short-circuit is robust to unrelated wording changes.
+  if (timelineStore.listAssets(projectId) === null) {
+    return createMaterialResolution({
+      beatId: beat.id,
+      status: 'UNRESOLVED',
+      warnings: [`no project found with id "${projectId}"`],
+      rationale: 'project not found',
+    });
+  }
+
+  const hardGateResults = [];
+  const survivors = [];
+  const warnings = [];
+
+  const requiresSubjectMotion = Boolean(beat.motionRequirements && beat.motionRequirements.requiresSubjectMotion === true);
+  const motionLevel = beat.motionRequirements ? beat.motionRequirements.motionLevel : null;
+  const exactContentPrimary = DETERMINISTIC_TREATMENTS.includes(beat.visualTreatment);
+  const identityOrContinuity = hasIdentityOrContinuityRequirements(beat);
+  const characterIdentity = hasCharacterIdentity(beat);
+
+  // --- PROJECT_ASSET_REUSE — delegate entirely to the existing, untouched resolver ---
+  const existingReuse = resolveVisualBeat(projectId, beat);
+  for (const diagnostic of existingReuse.diagnostics || []) warnings.push(diagnostic);
+
+  if (existingReuse.decision && existingReuse.decision.selectedAssetId && existingReuse.candidates && existingReuse.candidates.length > 0) {
+    const winner = existingReuse.candidates[0];
+    const candidateId = `PROJECT_ASSET_REUSE+${beat.visualTreatment}`;
+
+    const motionBlocked =
+      (requiresSubjectMotion && (beat.visualTreatment === 'STILL_IMAGE' || DETERMINISTIC_TREATMENTS.includes(beat.visualTreatment))) ||
+      (beat.visualTreatment === 'STILL_IMAGE' && ['MODERATE', 'COMPLEX'].includes(motionLevel));
+
+    if (motionBlocked) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'MOTION_REQUIREMENT_UNSATISFIED',
+          reason: `beat's motion requirements cannot be satisfied by ${beat.visualTreatment}`,
+          eligibleRoles: [],
+        })
+      );
+    } else {
+      hardGateResults.push(createHardGateResult({ candidate: candidateId, allowed: true, eligibleRoles: ['PRIMARY'] }));
+      survivors.push(
+        createCandidateResult({
+          candidate: candidateId,
+          materialSource: 'PROJECT_ASSET_REUSE',
+          visualTreatment: beat.visualTreatment,
+          selectedAssetId: winner.assetId,
+          eligibleRoles: ['PRIMARY'],
+          phaseScores: {
+            creativeFit: scoreCreativeFit(beat, 'PROJECT_ASSET_REUSE', beat.visualTreatment),
+            continuity: scoreContinuity('PROJECT_ASSET_REUSE', { existingReuseScoreTotal: winner.score }),
+            reuse: scoreReuse('PROJECT_ASSET_REUSE'),
+            cost: scoreCost('PROJECT_ASSET_REUSE'),
+            complexity: scoreComplexity('PROJECT_ASSET_REUSE', beat.visualTreatment),
+          },
+        })
+      );
+    }
+  }
+
+  // --- BROLL_LIBRARY — role-scoped (Stage 26.3 correction #3) ---
+  if (beatAllowsTreatment(beat, 'BROLL_CLIP')) {
+    const segments = Array.isArray(context.brollSegments) ? context.brollSegments : [];
+    if (segments.length === 0) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: 'BROLL_LIBRARY+BROLL_CLIP',
+          allowed: false,
+          rejectedBy: 'NO_LIBRARY',
+          reason: 'no B-roll library exists yet',
+          eligibleRoles: [],
+        })
+      );
+    } else {
+      for (const segment of segments) {
+        const segmentCandidateId = `BROLL_LIBRARY+BROLL_CLIP:${segment.segmentId || 'unknown'}`;
+
+        if (segment.licensingStatus !== 'CLEARED') {
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'LICENSING_UNKNOWN',
+              reason: `licensing status "${segment.licensingStatus}" is not CLEARED`,
+              eligibleRoles: [],
+            })
+          );
+          continue;
+        }
+
+        if (characterIdentity) {
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'IDENTITY_REQUIRES_NON_BROLL_PRIMARY',
+              reason: "beat requires a specific character's identity, which B-roll cannot represent as PRIMARY material",
+              eligibleRoles: ['OVERLAY', 'BACKGROUND', 'INSERT'],
+            })
+          );
+          warnings.push(
+            `B-roll segment "${segment.segmentId || 'unknown'}" could satisfy this beat as OVERLAY/BACKGROUND/INSERT material in a future HYBRID composition, but not as PRIMARY`
+          );
+          continue;
+        }
+
+        hardGateResults.push(createHardGateResult({ candidate: segmentCandidateId, allowed: true, eligibleRoles: ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'] }));
+        survivors.push(
+          createCandidateResult({
+            candidate: segmentCandidateId,
+            materialSource: 'BROLL_LIBRARY',
+            visualTreatment: 'BROLL_CLIP',
+            eligibleRoles: ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'],
+            phaseScores: {
+              creativeFit: scoreCreativeFit(beat, 'BROLL_LIBRARY', 'BROLL_CLIP'),
+              continuity: scoreContinuity('BROLL_LIBRARY', { hasIdentityOrContinuityReqs: identityOrContinuity }),
+              reuse: scoreReuse('BROLL_LIBRARY'),
+              cost: scoreCost('BROLL_LIBRARY'),
+              complexity: scoreComplexity('BROLL_LIBRARY'),
+            },
+          })
+        );
+      }
+    }
+  }
+
+  // --- DETERMINISTIC_TEMPLATE — MOTION_GRAPHIC / KINETIC_TYPOGRAPHY / WHITEBOARD ---
+  for (const treatment of DETERMINISTIC_TREATMENTS) {
+    if (!beatAllowsTreatment(beat, treatment)) continue;
+    const candidateId = `DETERMINISTIC_TEMPLATE+${treatment}`;
+
+    if (requiresSubjectMotion) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'MOTION_REQUIREMENT_UNSATISFIED',
+          reason: 'beat requires genuine subject motion, which a deterministic template cannot depict',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    hardGateResults.push(createHardGateResult({ candidate: candidateId, allowed: true, eligibleRoles: ['PRIMARY'] }));
+    survivors.push(
+      createCandidateResult({
+        candidate: candidateId,
+        materialSource: 'DETERMINISTIC_TEMPLATE',
+        visualTreatment: treatment,
+        eligibleRoles: ['PRIMARY'],
+        phaseScores: {
+          creativeFit: scoreCreativeFit(beat, 'DETERMINISTIC_TEMPLATE', treatment),
+          continuity: scoreContinuity('DETERMINISTIC_TEMPLATE', { hasIdentityOrContinuityReqs: identityOrContinuity }),
+          reuse: scoreReuse('DETERMINISTIC_TEMPLATE'),
+          cost: scoreCost('DETERMINISTIC_TEMPLATE'),
+          complexity: scoreComplexity('DETERMINISTIC_TEMPLATE', treatment),
+        },
+      })
+    );
+  }
+
+  // --- GENERATED_NEW — STILL_IMAGE / AI_VIDEO ---
+  for (const treatment of ['STILL_IMAGE', 'AI_VIDEO']) {
+    if (!beatAllowsTreatment(beat, treatment)) continue;
+    const candidateId = `GENERATED_NEW+${treatment}`;
+
+    // Exact on-screen content (numbers/exact text) — AI generation can never
+    // guarantee it (docs/architecture/stage-26.2-visual-production-master-
+    // spec.md, Part 10.1). Only reachable here when the beat's PRIMARY
+    // treatment IS a deterministic one and this treatment is being
+    // considered solely via fallbackStrategy.
+    if (exactContentPrimary && treatment !== beat.visualTreatment) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'EXACT_CONTENT_REQUIRES_DETERMINISTIC',
+          reason: 'beat requires exact on-screen content; AI generation cannot guarantee it',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    if (requiresSubjectMotion && treatment === 'STILL_IMAGE') {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'MOTION_REQUIREMENT_UNSATISFIED',
+          reason: 'beat requires genuine subject motion, which a still image cannot depict',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    if (treatment === 'STILL_IMAGE' && ['MODERATE', 'COMPLEX'].includes(motionLevel)) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'MOTION_REQUIREMENT_UNSATISFIED',
+          reason: 'a still image cannot satisfy a moderate/complex motion requirement',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    const modelRequirements = buildModelRequirements(beat, treatment);
+    const capableModels = generationModelRegistry.findModelsSatisfying(modelRequirements);
+    if (capableModels.length === 0) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'NO_CAPABLE_MODEL',
+          reason: 'no registry model satisfies the derived capability requirements',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    const cheapestModel = generationModelRegistry.cheapestSatisfying(modelRequirements)[0];
+    hardGateResults.push(createHardGateResult({ candidate: candidateId, allowed: true, eligibleRoles: ['PRIMARY'] }));
+    survivors.push(
+      createCandidateResult({
+        candidate: candidateId,
+        materialSource: 'GENERATED_NEW',
+        visualTreatment: treatment,
+        modelRequirements,
+        eligibleRoles: ['PRIMARY'],
+        phaseScores: {
+          creativeFit: scoreCreativeFit(beat, 'GENERATED_NEW', treatment),
+          continuity: scoreContinuity('GENERATED_NEW', { hasIdentityOrContinuityReqs: identityOrContinuity }),
+          reuse: scoreReuse('GENERATED_NEW'),
+          cost: scoreCost('GENERATED_NEW', { cheapestModel }),
+          complexity: scoreComplexity('GENERATED_NEW', treatment),
+        },
+      })
+    );
+  }
+
+  survivors.sort(compareMaterialCandidates);
+
+  if (survivors.length === 0) {
+    return createMaterialResolution({
+      beatId: beat.id,
+      status: 'UNRESOLVED',
+      hardGateResults,
+      warnings,
+      unresolvedRequirements: hardGateResults
+        .filter((g) => !g.allowed)
+        .map((g) => ({ candidate: g.candidate, rejectedBy: g.rejectedBy, reason: g.reason })),
+      rationale: 'no candidate satisfied every hard requirement for this beat',
+    });
+  }
+
+  const winner = survivors[0];
+  const runnerUp = survivors[1];
+  let decidingPhase = 'SOLE_SURVIVOR';
+  if (runnerUp) {
+    const differingPhase = PHASE_ORDER.find((phase) => winner.phaseScores[phase] !== runnerUp.phaseScores[phase]);
+    decidingPhase = differingPhase ? PHASE_KEY_TO_DECIDING_PHASE[differingPhase] : 'CREATED_AT';
+  }
+
+  return createMaterialResolution({
+    beatId: beat.id,
+    status: 'RESOLVED',
+    selectedMaterial: winner,
+    decidingPhase,
+    candidates: survivors,
+    hardGateResults,
+    ranking: survivors.map((c) => c.candidate),
+    warnings,
+    rationale: `selected ${winner.materialSource} (${winner.visualTreatment}) — decided at ${decidingPhase}`,
+  });
+}
+
 module.exports = {
   MATERIAL_SOURCES,
   TREATMENT_TO_ASSET_TYPES,
@@ -381,6 +908,17 @@ module.exports = {
   scoreCandidate,
   resolveVisualBeat,
   toTimelineShotFields,
+  // Stage 26.3 extensions
+  DETERMINISTIC_TREATMENTS,
+  buildModelRequirements,
+  scoreCreativeFit,
+  scoreContinuity,
+  scoreReuse,
+  scoreCost,
+  scoreComplexity,
+  compareCandidates,
+  compareMaterialCandidates,
+  resolveMaterial,
 };
 
 // ---------------------------------------------------------------------------

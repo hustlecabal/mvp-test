@@ -81,6 +81,16 @@ const VISUAL_TREATMENTS = [
   'BROLL_CLIP', // a trimmed segment of licensed/stock footage
   'MOTION_GRAPHIC', // deterministically rendered data-driven visual
   'KINETIC_TYPOGRAPHY', // deterministically rendered animated text
+  'WHITEBOARD', // Stage 26.3 — deterministically rendered progressive-drawing/
+                 // sketch-reveal/handwriting treatment (docs/architecture/
+                 // stage-26.2-visual-production-master-spec.md, Part 11). A
+                 // first-class treatment, never an alias of MOTION_GRAPHIC —
+                 // it pairs with materialSource DETERMINISTIC_TEMPLATE exactly
+                 // like MOTION_GRAPHIC/KINETIC_TYPOGRAPHY do, but is its own
+                 // value so a future dedicated whiteboard renderer (canvas
+                 // drawing order, handwriting, canvas-camera movement) has
+                 // somewhere unambiguous to hang off of. No renderer exists
+                 // yet — this is the decision-layer vocabulary only.
   'HYBRID', // 2+ of the above composited/sequenced within ONE beat — a
              // beat-level composition descriptor only. A single material
              // component's own `visualTreatment` (see createMaterialComponent

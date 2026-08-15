@@ -96,6 +96,7 @@ test('2a. VISUAL_TREATMENTS is the exact approved two-axis vocabulary (visualTre
     'BROLL_CLIP',
     'MOTION_GRAPHIC',
     'KINETIC_TYPOGRAPHY',
+    'WHITEBOARD',
     'HYBRID',
   ]);
 });
