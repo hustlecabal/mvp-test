@@ -46,6 +46,18 @@ const EVOLINK_MODELS = {
     requestSchemaVerified: false,
     docsUrl: 'https://evolink.ai/docs/en/api-manual/video-series/seedance2.5/seedance-2.5-video-extend',
   },
+  // Stage 22B cost-optimisation investigation — full OpenAPI spec opened
+  // directly (evolink.ai/docs/en/api-manual/video-series/seedance1.0/
+  // seedance-1.0-pro-fast-video-generate). Reuses the exact same
+  // image_urls/duration/quality/aspect_ratio field names and single-image
+  // first-frame semantics as seedance-2.5-image-to-video, so task:
+  // 'image-to-video' is correct here too — no new mapper branch needed.
+  'doubao-seedance-1.0-pro-fast': {
+    task: 'image-to-video',
+    endpointPath: '/v1/videos/generations',
+    requestSchemaVerified: true,
+    docsUrl: 'https://evolink.ai/docs/en/api-manual/video-series/seedance1.0/seedance-1.0-pro-fast-video-generate',
+  },
   // Stage 15 opened this model's own dedicated OpenAPI spec page (not just
   // the quickstart's abbreviated example that Stage 6 originally saw) —
   // full request/response field list independently verified, including

@@ -339,6 +339,7 @@ function resolveVideoPackageFields(projectId, keyframeId, options = {}) {
     resolution: executionParamsInput.resolution ?? null,
     aspectRatio: executionParamsInput.aspectRatio ?? null,
     fps: executionParamsInput.fps ?? null,
+    quality: executionParamsInput.quality ?? null,
   });
 
   const actionText = keyframe.visualDescription || (shot && (shot.action || shot.movement || shot.visualDescription)) || null;

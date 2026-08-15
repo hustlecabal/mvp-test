@@ -20,7 +20,7 @@ const registry = require('../services/generation-model-registry');
 
 test('catalogue completeness: every model from the Stage 22B-Part-0 investigation is present', () => {
   const expectedEvolinkVideo = [
-    'seedance-1.0-pro-fast',
+    'doubao-seedance-1.0-pro-fast',
     'seedance-1.5-pro',
     'seedance-2.0-mini-text-to-video',
     'seedance-2.0-mini-image-to-video',
@@ -184,8 +184,8 @@ test('resolution requirement requires the exact value in the model\'s known reso
 test('duration requirements are checked against the model\'s known min/max range', () => {
   assert.equal(registry.isModelCapable('evolink', 'seedance-2.0-reference-to-video', { minDurationSeconds: 10 }), true); // range 4-15
   assert.equal(registry.isModelCapable('evolink', 'seedance-2.0-reference-to-video', { minDurationSeconds: 20 }), false);
-  // seedance-1.0-pro-fast has unknown duration range -> never satisfies a duration requirement
-  assert.equal(registry.isModelCapable('evolink', 'seedance-1.0-pro-fast', { minDurationSeconds: 4 }), false);
+  // grok-imagine-video has unknown duration range -> never satisfies a duration requirement
+  assert.equal(registry.isModelCapable('evolink', 'grok-imagine-video', { minDurationSeconds: 4 }), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -218,9 +218,11 @@ test('verificationStatus filtering matches only that exact tier', () => {
   const catalogueOnly = registry.listModels({ verificationStatus: 'CATALOGUE_AVAILABLE' });
   assert.ok(catalogueOnly.length > 0);
   assert.ok(catalogueOnly.every((m) => m.verificationStatus === 'CATALOGUE_AVAILABLE'));
-  // Seedance 1.0 Pro Fast, Grok, Kling's exact-id sibling assumptions etc. must never be upgraded
-  assert.ok(catalogueOnly.some((m) => m.model === 'seedance-1.0-pro-fast'));
+  // Grok, Kling's exact-id sibling assumptions etc. must never be upgraded
+  assert.ok(catalogueOnly.some((m) => m.model === 'grok-imagine-video'));
   assert.ok(!catalogueOnly.some((m) => m.model === 'gpt-image-2'));
+  // seedance-1.0-pro-fast was upgraded off CATALOGUE_AVAILABLE once its schema was independently opened
+  assert.ok(!catalogueOnly.some((m) => m.model === 'doubao-seedance-1.0-pro-fast'));
 });
 
 test('krea-2-turbo is REQUEST_SCHEMA_VERIFIED but explicitly NOT productionReady', () => {
@@ -232,7 +234,7 @@ test('krea-2-turbo is REQUEST_SCHEMA_VERIFIED but explicitly NOT productionReady
 
 test('catalogue-tier models are never silently marked production-ready', () => {
   const neverProductionReady = [
-    ['evolink', 'seedance-1.0-pro-fast'],
+    ['evolink', 'doubao-seedance-1.0-pro-fast'],
     ['evolink', 'grok-imagine-video'],
     ['evolink', 'wan-2.5-video'],
     ['evolink', 'kling-3.0'],
@@ -375,11 +377,21 @@ test('validateModelSelection returns allowed:false with reasons for an unknown m
 test('validateModelSelection flags a not-schema-verified model even if capabilities would otherwise match', () => {
   const result = registry.validateModelSelection({
     provider: 'evolink',
-    model: 'seedance-1.0-pro-fast',
+    model: 'grok-imagine-video',
     requirements: { modality: 'video' },
   });
   assert.equal(result.allowed, false);
   assert.ok(result.reasons.some((r) => /requestSchemaVerified/.test(r) || /not.*schema/i.test(r)));
+});
+
+test('validateModelSelection allows doubao-seedance-1.0-pro-fast for a plain image-to-video requirement (schema-verified, capability-matched, but still not productionReady)', () => {
+  const result = registry.validateModelSelection({
+    provider: 'evolink',
+    model: 'doubao-seedance-1.0-pro-fast',
+    requirements: { modality: 'video', imageToVideo: true },
+  });
+  assert.equal(result.allowed, false); // not productionReady yet — no real generation has proven it
+  assert.ok(result.reasons.some((r) => /productionReady/.test(r)));
 });
 
 test('validateModelSelection flags an unverified required capability distinctly, never assuming it true', () => {

@@ -87,9 +87,16 @@ function createVideoCreativeSpecification(overrides = {}) {
 function createVideoExecutionParameters(overrides = {}) {
   const base = {
     duration: null, // seconds
-    resolution: null, // e.g. "720p", "1080p", "4K"
+    resolution: null, // e.g. "720p", "1080p", "4K" — informational; see `quality` for the field EvoLink's mapper actually reads
     aspectRatio: null, // e.g. "16:9"
     fps: null,
+    // Stage 22B cost-optimisation fix: providers/evolink/evolink-mapper.js
+    // reads `parameters.quality` (EvoLink's own video field name), never
+    // `parameters.resolution` — that mismatch meant an explicitly-requested
+    // resolution silently never reached the real request. Additive: no
+    // existing field renamed or removed, every caller that never sets this
+    // still gets `quality: null`, same as before.
+    quality: null, // EvoLink's own video resolution enum, e.g. "480p"/"720p"/"1080p"
   };
   return withDefaults(base, overrides);
 }

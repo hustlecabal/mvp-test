@@ -195,12 +195,28 @@ function seedance20Tier(tier, resolutions, pricePerSecond) {
 const evolinkVideoModels = [
   record({
     provider: 'evolink',
-    model: 'seedance-1.0-pro-fast',
+    model: 'doubao-seedance-1.0-pro-fast',
     modality: 'video',
     displayName: 'Seedance 1.0 Pro Fast',
-    verificationStatus: 'CATALOGUE_AVAILABLE',
+    modelIdConfirmed: true,
+    verificationStatus: 'REQUEST_SCHEMA_VERIFIED',
+    capabilities: {
+      textToVideo: true,
+      imageToVideo: true,
+      referenceImages: false, // confirmed: single-image first-frame conditioning only, no multi-image identity/style guidance
+      maxReferenceImages: 1,
+      firstFrame: true,
+      lastFrame: false, // structurally impossible — max 1 image accepted, last-frame needs a 2nd
+      durations: { minSeconds: 2, maxSeconds: 12 },
+      resolutions: ['480p', '720p', '1080p'],
+      aspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive', 'keep_ratio'],
+    },
     pricing: priced('per_second', 0.006),
-    notes: 'Cheapest EvoLink video line item found; capabilities not independently confirmed against any dedicated page.',
+    requestSchemaVerified: true,
+    docsUrl: 'https://evolink.ai/docs/en/api-manual/video-series/seedance1.0/seedance-1.0-pro-fast-video-generate',
+    notes:
+      'Cheapest EvoLink video line item found. Full OpenAPI 3.1.0 spec independently opened (Stage 22B cost-optimisation investigation) — real model ID confirmed as "doubao-seedance-1.0-pro-fast" ' +
+      '(previously recorded here, unconfirmed, as "seedance-1.0-pro-fast" — that string was never a real EvoLink model ID; fixed as a concrete defect once the primary source was actually opened).',
   }),
   record({
     provider: 'evolink',
