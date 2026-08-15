@@ -82,17 +82,48 @@ test('every write in the section is an explicit fetchJson POST tied to a click h
   const js = readFrontend('app.js');
   const section = getVideoGenerationSection(js);
   const postCalls = section.match(/method:\s*['"]POST['"]/g) || [];
-  // REQUEST APPROVAL, APPROVE, REJECT, GENERATE VIDEO = 4 POST calls.
-  assert.equal(postCalls.length, 4, `expected exactly 4 POST calls (request/approve/reject/generate), found ${postCalls.length}`);
+  // REQUEST APPROVAL, ACKNOWLEDGE UNKNOWN COST (Stage 23), APPROVE, REJECT,
+  // GENERATE VIDEO, APPROVE VIDEO (Stage 23), REJECT VIDEO (Stage 23) = 7.
+  assert.equal(postCalls.length, 7, `expected exactly 7 POST calls (request/acknowledge-cost/approve/reject/generate/approve-video/reject-video), found ${postCalls.length}`);
   assert.doesNotMatch(section, /\bwindow\.onload\b|\bDOMContentLoaded\b/);
 });
 
-test('the Video Generation section only fetches video-generation/video-prompt-package/budget endpoints', () => {
+test('the Video Generation section only fetches video-generation/video-prompt-package/budget/generation-models endpoints', () => {
   const js = readFrontend('app.js');
   const section = getVideoGenerationSection(js);
   const fetchCalls = section.match(/fetchJson\(`?[^)]*\)/g) || [];
   assert.ok(fetchCalls.length > 0, 'expected at least one fetchJson call in this section');
   for (const call of fetchCalls) {
-    assert.match(call, /\/video-generation|\/video-prompt-package|\/budget/, `unexpected fetch target: ${call}`);
+    assert.match(call, /\/video-generation|\/video-prompt-package|\/budget|\/generation-models/, `unexpected fetch target: ${call}`);
+  }
+});
+
+// --- Stage 23: video review section --------------------------------------------------
+
+test('app.js implements renderVideoReviewSection, wired into the Video Generation panel', () => {
+  const js = readFrontend('app.js');
+  assert.match(js, /function renderVideoReviewSection/);
+  const section = getVideoGenerationSection(js);
+  assert.match(section, /renderVideoReviewSection\(kf, data\.latestGeneration\)/);
+});
+
+test('the video player src is always the existing generic /assets/:id/preview endpoint, never a raw provider URL', () => {
+  const js = readFrontend('app.js');
+  assert.match(js, /player\.src\s*=\s*`\/assets\/\$\{asset\.assetId\}\/preview`/);
+});
+
+test('APPROVE VIDEO / REJECT VIDEO are only enabled while the asset approvalStatus is NONE, and always require assetId', () => {
+  const js = readFrontend('app.js');
+  const section = getVideoGenerationSection(js);
+  assert.match(section, /asset\.approvalStatus === 'NONE'/);
+  assert.match(section, /assetId:\s*asset\.assetId,\s*approve:\s*true/);
+  assert.match(section, /assetId:\s*asset\.assetId,\s*approve:\s*false/);
+});
+
+test('the Video Generation section never hardcodes a model name', () => {
+  const js = readFrontend('app.js');
+  const section = getVideoGenerationSection(js);
+  for (const hardcoded of ['seedance-2.5', 'seedance-1.0', 'doubao-seedance']) {
+    assert.doesNotMatch(section, new RegExp(hardcoded), `must not hardcode the model id "${hardcoded}"`);
   }
 });

@@ -43,13 +43,22 @@ const state = {
     viewedPackageKeyframeId: null,
     viewedPackage: null,
 
-    // Stage 22B-Part-2 — Video Prompt Packaging. Read-only inspection
-    // only: this panel can only VIEW an already-built VideoPromptPackage
-    // (built via MCP/REST by an operator). There is deliberately no
-    // BUILD/GENERATE/APPROVE control here yet — see
-    // docs/architecture/video-prompt-package.md.
+    // Stage 22B-Part-2 — Video Prompt Packaging. Stage 23 added the model
+    // selector below; this panel can now BUILD a package too, but never
+    // GENERATE or APPROVE anything — those remain the separate Video
+    // Generation panel's job. See docs/architecture/video-prompt-package.md.
     viewedVideoPackageKeyframeId: null,
     viewedVideoPackage: null,
+
+    // Stage 23 — explicit human model selection for building/rebuilding a
+    // VideoPromptPackage. availableVideoModels is fetched fresh from
+    // GET /generation-models?modality=video every time the build form
+    // opens — the registry is the only source of truth for what models
+    // exist; nothing here is hardcoded to Seedance or any other model.
+    // The human must pick provider+model explicitly; there is no default.
+    videoBuildFormOpen: false,
+    availableVideoModels: null,
+    videoBuildForm: { provider: null, model: null, duration: 5, quality: '720p', aspectRatio: 'adaptive' },
 
     // Stage 22B-Part-3 — Controlled Video Generation. Read/write, but
     // every write here (request/approve/reject video generation approval,
@@ -2059,6 +2068,7 @@ function renderVideoPromptPackageControls(kf) {
     if (state.creative.viewedVideoPackageKeyframeId === kf.keyframeId) {
       state.creative.viewedVideoPackageKeyframeId = null;
       state.creative.viewedVideoPackage = null;
+      state.creative.videoBuildFormOpen = false;
       renderKeyframePlanView();
       return;
     }
@@ -2078,9 +2088,216 @@ function renderVideoPromptPackageControls(kf) {
 
   if (state.creative.viewedVideoPackageKeyframeId === kf.keyframeId) {
     box.appendChild(renderVideoPromptPackagePanel(state.creative.viewedVideoPackage));
+
+    const buildToggleBtn = document.createElement('button');
+    buildToggleBtn.type = 'button';
+    buildToggleBtn.className = 'btn btn-secondary';
+    buildToggleBtn.style.marginTop = '8px';
+    buildToggleBtn.textContent = state.creative.videoBuildFormOpen
+      ? 'CANCEL'
+      : state.creative.viewedVideoPackage
+        ? 'REBUILD VIDEO PACKAGE (choose a model)'
+        : 'BUILD VIDEO PACKAGE (choose a model)';
+    buildToggleBtn.addEventListener('click', async () => {
+      if (state.creative.videoBuildFormOpen) {
+        state.creative.videoBuildFormOpen = false;
+        renderKeyframePlanView();
+        return;
+      }
+      state.creative.videoBuildFormOpen = true;
+      renderKeyframePlanView();
+      if (!state.creative.availableVideoModels) {
+        state.creative.availableVideoModels = await fetchJson('/generation-models?modality=video').catch(() => []);
+        renderKeyframePlanView();
+      }
+    });
+    box.appendChild(buildToggleBtn);
+
+    if (state.creative.videoBuildFormOpen) {
+      box.appendChild(renderVideoModelBuildForm(kf));
+    }
   }
 
   return box;
+}
+
+// Stage 23 — explicit model selection + package build. Groups registry
+// entries by their human-supplied costTier (BUDGET/STANDARD/QUALITY/OTHER
+// — see generation-model-registry.js; never derived from price here or
+// anywhere else). The human must click a model row to select it; nothing
+// is pre-selected. Submitting calls the EXISTING POST /keyframes/:id/
+// video-prompt-package endpoint — this form adds no new server logic, it
+// only exposes what that endpoint already accepted.
+const COST_TIER_ORDER = ['BUDGET', 'STANDARD', 'QUALITY', 'OTHER'];
+const COST_TIER_LABELS = { BUDGET: 'Budget', STANDARD: 'Standard', QUALITY: 'Quality', OTHER: 'Other / unclassified' };
+
+function renderVideoModelBuildForm(kf) {
+  const form = document.createElement('div');
+  form.className = 'prompt-package-panel';
+
+  const heading = document.createElement('div');
+  heading.className = 'recommended-next-step-label';
+  heading.textContent = 'SELECT A MODEL — from the generation model registry, never defaulted';
+  form.appendChild(heading);
+
+  const models = state.creative.availableVideoModels;
+  if (!models) {
+    const loading = document.createElement('div');
+    loading.className = 'state-box';
+    loading.textContent = 'Loading models…';
+    form.appendChild(loading);
+    return form;
+  }
+  if (models.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No video models found in the registry.';
+    form.appendChild(none);
+    return form;
+  }
+
+  const selected = state.creative.videoBuildForm;
+  const byTier = new Map();
+  for (const m of models) {
+    const tier = m.costTier || 'OTHER';
+    if (!byTier.has(tier)) byTier.set(tier, []);
+    byTier.get(tier).push(m);
+  }
+
+  for (const tier of COST_TIER_ORDER) {
+    const tierModels = byTier.get(tier);
+    if (!tierModels || tierModels.length === 0) continue;
+
+    const tierLabel = document.createElement('div');
+    tierLabel.className = 'entity-sub';
+    tierLabel.style.marginTop = '10px';
+    tierLabel.textContent = `${COST_TIER_LABELS[tier]}:`;
+    form.appendChild(tierLabel);
+
+    for (const m of tierModels) {
+      form.appendChild(renderVideoModelOption(kf, m, selected.provider === m.provider && selected.model === m.model));
+    }
+  }
+
+  const paramsLabel = document.createElement('div');
+  paramsLabel.className = 'recommended-next-step-label';
+  paramsLabel.style.marginTop = '12px';
+  paramsLabel.textContent = 'GENERATION PARAMETERS';
+  form.appendChild(paramsLabel);
+
+  form.appendChild(renderVideoBuildParamInput('Duration (seconds)', 'duration', 'number'));
+  form.appendChild(renderVideoBuildParamInput('Quality (e.g. 480p / 720p / 1080p)', 'quality', 'text'));
+  form.appendChild(renderVideoBuildParamInput('Aspect ratio (e.g. adaptive / 16:9)', 'aspectRatio', 'text'));
+
+  const submitBtn = document.createElement('button');
+  submitBtn.type = 'button';
+  submitBtn.className = 'btn';
+  submitBtn.style.marginTop = '12px';
+  submitBtn.textContent = 'BUILD PACKAGE WITH THIS MODEL';
+  submitBtn.disabled = !selected.provider || !selected.model;
+  submitBtn.title = submitBtn.disabled ? 'Select a model first' : '';
+  submitBtn.addEventListener('click', async () => {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Building…';
+    try {
+      const result = await fetchJson(`/keyframes/${kf.keyframeId}/video-prompt-package`, {
+        method: 'POST',
+        body: {
+          provider: selected.provider,
+          model: selected.model,
+          executionParameters: {
+            duration: selected.duration ? Number(selected.duration) : undefined,
+            quality: selected.quality || undefined,
+            aspectRatio: selected.aspectRatio || undefined,
+          },
+        },
+      });
+      state.creative.viewedVideoPackage = result.package || result;
+      state.creative.videoBuildFormOpen = false;
+      // A rebuild invalidates any previously-viewed approval/eligibility —
+      // force a fresh fetch next time that panel opens.
+      if (state.creative.viewedVideoGenerationKeyframeId === kf.keyframeId) {
+        state.creative.viewedVideoGenerationData = null;
+      }
+    } finally {
+      renderKeyframePlanView();
+    }
+  });
+  form.appendChild(submitBtn);
+
+  return form;
+}
+
+function renderVideoBuildParamInput(label, field, type) {
+  const row = document.createElement('div');
+  row.className = 'form-row';
+
+  const l = document.createElement('label');
+  l.textContent = label;
+  row.appendChild(l);
+
+  const input = document.createElement('input');
+  input.type = type;
+  input.value = state.creative.videoBuildForm[field] ?? '';
+  input.addEventListener('input', () => {
+    state.creative.videoBuildForm[field] = input.value;
+  });
+  row.appendChild(input);
+
+  return row;
+}
+
+// One selectable model row. Shows exactly the fields Stage 23 requires:
+// provider/model/modality/verificationStatus/productionReady/reference
+// capability/duration-resolution where known/starting price where
+// known/observed real cost where we have real evidence. Never invents a
+// price — an unpriced model explicitly says "Cost unknown", not $0 or a
+// blank.
+function renderVideoModelOption(kf, m, isSelected) {
+  const row = document.createElement('div');
+  row.className = isSelected ? 'entity-card entity-card-selected' : 'entity-card';
+  row.style.cursor = 'pointer';
+  row.style.marginTop = '4px';
+
+  const title = document.createElement('div');
+  title.className = 'entity-title';
+  title.textContent = `${m.displayName || m.model} (${m.provider}/${m.model})`;
+  row.appendChild(title);
+
+  const badges = document.createElement('div');
+  badges.className = 'shot-meta';
+  badges.appendChild(statusBadge(m.verificationStatus));
+  if (m.productionReady) {
+    const b = document.createElement('span');
+    b.className = 'badge badge-approved';
+    b.textContent = 'Production ready';
+    badges.appendChild(b);
+  }
+  row.appendChild(badges);
+
+  const list = document.createElement('div');
+  list.className = 'info-list';
+  list.appendChild(infoRow('Reference-image capable', m.capabilities ? m.capabilities.referenceImages : null));
+  list.appendChild(infoRow('Image-to-video capable', m.capabilities ? m.capabilities.imageToVideo : null));
+  const durations = m.capabilities && m.capabilities.durations;
+  list.appendChild(infoRow('Duration range', durations ? `${durations.minSeconds}-${durations.maxSeconds}s` : null));
+  const resolutions = m.capabilities && m.capabilities.resolutions;
+  list.appendChild(infoRow('Resolutions', resolutions ? resolutions.join(', ') : null));
+  list.appendChild(
+    infoRow('Starting price', m.pricing && m.pricing.priceKnown ? `$${m.pricing.startingPrice}/${m.pricing.unit}` : 'Cost unknown — explicit acknowledgement required')
+  );
+  if (m.observedCost != null) {
+    list.appendChild(infoRow('Observed real cost', `${m.observedCost} credits (${m.observedCostBasis || 'basis not recorded'})`));
+  }
+  row.appendChild(list);
+
+  row.addEventListener('click', () => {
+    state.creative.videoBuildForm.provider = m.provider;
+    state.creative.videoBuildForm.model = m.model;
+    renderKeyframePlanView();
+  });
+
+  return row;
 }
 
 // The full VideoPromptPackage display: shot/keyframe/canonical-asset
@@ -2505,8 +2722,16 @@ async function loadVideoGenerationData(kf) {
       fetchJson(`/shots/${kf.shotId}/video-generation/eligibility?keyframeId=${kf.keyframeId}`),
       fetchJson(`/projects/${state.selectedProjectId}/budget`),
     ]);
+    // Cost display (Stage 23): the registry's known price / observed real
+    // cost for the package's own chosen model, fetched separately since
+    // videoPkg only records provider/model strings, not pricing.
+    const modelInfo = videoPkg ? await fetchJson(`/generation-models/${videoPkg.provider}/${videoPkg.model}`).catch(() => null) : null;
+    // Stage 23 — the most recent video generation for this keyframe, to
+    // review (player + approve/reject) once it has completed.
+    const generations = await fetchJson(`/shots/${kf.shotId}/video-generations?keyframeId=${kf.keyframeId}`).catch(() => []);
+    const latestGeneration = generations.length ? generations[generations.length - 1] : null;
     state.creative.viewedVideoGenerationKeyframeId = kf.keyframeId;
-    state.creative.viewedVideoGenerationData = { videoPkg, approval, eligibility, budget };
+    state.creative.viewedVideoGenerationData = { videoPkg, approval, eligibility, budget, modelInfo, latestGeneration };
   } catch {
     state.creative.viewedVideoGenerationKeyframeId = kf.keyframeId;
     state.creative.viewedVideoGenerationData = null;
@@ -2526,7 +2751,7 @@ function renderVideoGenerationPanel(kf, data) {
     return panel;
   }
 
-  const { videoPkg, approval, eligibility, budget } = data;
+  const { videoPkg, approval, eligibility, budget, modelInfo } = data;
 
   // --- VIDEO PROMPT PACKAGE summary ------------------------------------------
   const pkgHeading = document.createElement('div');
@@ -2547,6 +2772,22 @@ function renderVideoGenerationPanel(kf, data) {
     panel.appendChild(infoRow('Verification status', verification.verificationStatus));
     panel.appendChild(infoRow('Production ready', verification.productionReady));
     panel.appendChild(infoRow('Package version', videoPkg.version));
+
+    // Stage 23 — cost information for the chosen model. Never invents a
+    // price: an unpriced model shows the exact required-acknowledgement
+    // text, never a blank or a $0.
+    panel.appendChild(infoRow('Cost tier', modelInfo ? modelInfo.costTier : null));
+    panel.appendChild(
+      infoRow(
+        'Known starting price',
+        modelInfo && modelInfo.pricing && modelInfo.pricing.priceKnown
+          ? `$${modelInfo.pricing.startingPrice}/${modelInfo.pricing.unit}`
+          : 'Cost unknown — explicit acknowledgement required'
+      )
+    );
+    if (modelInfo && modelInfo.observedCost != null) {
+      panel.appendChild(infoRow('Observed real cost (historical, not a guarantee)', `${modelInfo.observedCost} credits (${modelInfo.observedCostBasis || 'basis not recorded'})`));
+    }
   }
 
   // --- BUDGET status ----------------------------------------------------------
@@ -2568,6 +2809,25 @@ function renderVideoGenerationPanel(kf, data) {
   panel.appendChild(infoRow('Estimated cost', approval.estimatedCost));
   panel.appendChild(infoRow('Requested by', approval.requestedBy));
   panel.appendChild(infoRow('Approved by', approval.approvedBy));
+
+  // Stage 23 — EvoLink gives no pre-submission price quote, so estimatedCost
+  // is very often null. video-generation-service.js's budget check refuses
+  // to proceed on an unset cost unless a human has explicitly acknowledged
+  // it — this control is the only thing that satisfies that requirement.
+  if (approval.status !== 'NONE' && approval.estimatedCost == null) {
+    panel.appendChild(infoRow('Unknown cost acknowledged', approval.unknownCostAcknowledged));
+    if (!approval.unknownCostAcknowledged) {
+      const ackBtn = document.createElement('button');
+      ackBtn.type = 'button';
+      ackBtn.className = 'btn btn-secondary';
+      ackBtn.textContent = 'ACKNOWLEDGE UNKNOWN COST';
+      ackBtn.addEventListener('click', async () => {
+        await fetchJson(`/shots/${kf.shotId}/video-generation/approval/acknowledge-unknown-cost`, { method: 'POST', body: { keyframeId: kf.keyframeId, acknowledgedBy: 'Creative Director UI' } });
+        await loadVideoGenerationData(kf);
+      });
+      panel.appendChild(ackBtn);
+    }
+  }
 
   const approvalActions = document.createElement('div');
   approvalActions.className = 'form-actions';
@@ -2645,7 +2905,97 @@ function renderVideoGenerationPanel(kf, data) {
   });
   panel.appendChild(generateBtn);
 
+  panel.appendChild(renderVideoReviewSection(kf, data.latestGeneration));
+
   return panel;
+}
+
+// Stage 23 — human review of the most recent completed video: player +
+// full lineage/cost metadata + APPROVE/REJECT. The asset always starts at
+// approvalStatus NONE (never auto-approved) — this section is the only
+// thing that ever changes it, and only on an explicit click.
+function renderVideoReviewSection(kf, generation) {
+  const section = document.createElement('div');
+  section.style.marginTop = '16px';
+
+  const heading = document.createElement('div');
+  heading.className = 'entity-sub';
+  heading.textContent = 'Video review:';
+  section.appendChild(heading);
+
+  if (!generation) {
+    const none = document.createElement('div');
+    none.className = 'state-box';
+    none.textContent = 'No video has been generated for this keyframe yet.';
+    section.appendChild(none);
+    return section;
+  }
+
+  section.appendChild(statusBadge(generation.status));
+
+  if (generation.status !== 'COMPLETED' || !generation.asset) {
+    section.appendChild(infoRow('Generation status', generation.status));
+    if (generation.error) section.appendChild(infoRow('Error', generation.error.message || JSON.stringify(generation.error)));
+    return section;
+  }
+
+  const asset = generation.asset;
+
+  if (asset.storage && asset.storage.status === 'STORED') {
+    const player = document.createElement('video');
+    player.className = 'derived-prompt-box';
+    player.style.maxWidth = '360px';
+    player.controls = true;
+    player.src = `/assets/${asset.assetId}/preview`;
+    section.appendChild(player);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'info-list';
+  list.appendChild(infoRow('Provider', generation.provider));
+  list.appendChild(infoRow('Model', generation.model));
+  list.appendChild(infoRow('Duration', generation.parameters ? generation.parameters.duration : null));
+  list.appendChild(infoRow('Quality', generation.parameters ? generation.parameters.quality : null));
+  list.appendChild(infoRow('Aspect ratio', generation.parameters ? generation.parameters.aspectRatio : null));
+  list.appendChild(infoRow('Actual credits reserved', generation.reservedCost));
+  list.appendChild(infoRow('Generation ID', generation.id));
+  list.appendChild(infoRow('Provider task ID', generation.providerTaskId));
+  list.appendChild(infoRow('Source keyframe asset', generation.canonicalKeyframeAssetId));
+  list.appendChild(infoRow('Source video prompt package', generation.videoPromptPackageId ? `${generation.videoPromptPackageId} (v${generation.videoPromptPackageVersion})` : null));
+  list.appendChild(infoRow('Reference asset IDs', (generation.references || []).map((r) => r.assetId).join(', ')));
+  list.appendChild(infoRow('Storage status', asset.storage ? asset.storage.status : null));
+  section.appendChild(list);
+
+  section.appendChild(approvalBadge(asset.approvalStatus));
+
+  if (asset.approvalStatus === 'NONE') {
+    const reviewActions = document.createElement('div');
+    reviewActions.className = 'form-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn';
+    approveBtn.textContent = 'APPROVE VIDEO';
+    approveBtn.addEventListener('click', async () => {
+      await fetchJson(`/shots/${kf.shotId}/video-generation/review`, { method: 'POST', body: { keyframeId: kf.keyframeId, assetId: asset.assetId, approve: true, decidedBy: 'Creative Director UI' } });
+      await loadVideoGenerationData(kf);
+    });
+    reviewActions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'REJECT VIDEO';
+    rejectBtn.addEventListener('click', async () => {
+      await fetchJson(`/shots/${kf.shotId}/video-generation/review`, { method: 'POST', body: { keyframeId: kf.keyframeId, assetId: asset.assetId, approve: false, decidedBy: 'Creative Director UI' } });
+      await loadVideoGenerationData(kf);
+    });
+    reviewActions.appendChild(rejectBtn);
+
+    section.appendChild(reviewActions);
+  }
+
+  return section;
 }
 
 // --- Human Keyframe Execution Handoff (Stage 13D) -----------------------------------
@@ -3786,6 +4136,18 @@ function renderQueueRow(item) {
     card.appendChild(infoRow('Handoff', item.handoffId ? `${item.handoffStatus} (${item.handoffId})` : 'None'));
     card.appendChild(infoRow('Assets', `${item.approvedAssetCount} / ${item.assetCount} approved`));
     card.appendChild(infoRow('Canonical', item.canonicalAssetId ? `${item.canonicalAssetApprovalStatus} (${item.canonicalAssetId})` : 'Not selected'));
+    // Stage 23 — video lifecycle status, additive alongside the image
+    // fields above. NOT_APPLICABLE (the image pipeline itself isn't
+    // COMPLETE yet) is deliberately not shown — nothing useful to report.
+    if (item.videoStatus && item.videoStatus !== 'NOT_APPLICABLE') {
+      card.appendChild(infoRow('Video', item.videoAssetId ? `${item.videoStatus} (${item.videoAssetId})` : item.videoStatus));
+      if (item.videoStatus === 'VIDEO_RETURNED' || item.videoStatus === 'VIDEO_REJECTED') {
+        const videoBanner = document.createElement('div');
+        videoBanner.className = 'budget-warning';
+        videoBanner.textContent = item.videoStatus === 'VIDEO_RETURNED' ? 'VIDEO NEEDS REVIEW' : 'VIDEO WAS REJECTED — rebuild/regenerate to try again';
+        card.appendChild(videoBanner);
+      }
+    }
     // Part 14 — the frozen-vs-current package banner, only shown when a
     // handoff's frozen version has drifted from the live package.
     if (item.handoffId && item.handoffPromptPackageVersion != null && item.promptPackageVersion != null && item.handoffPromptPackageVersion !== item.promptPackageVersion) {

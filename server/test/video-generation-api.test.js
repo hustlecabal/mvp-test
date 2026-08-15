@@ -236,6 +236,37 @@ test('GET /shots/:shotId/video-generation/:generationId 404s for an unknown gene
   assert.equal(res.status, 404);
 });
 
+// --- Stage 23: GET /shots/:shotId/video-generations (list, with asset) -----------------
+
+test('GET /shots/:shotId/video-generations lists jobs for a keyframe with the resulting asset attached', async () => {
+  const { project, shot, keyframe } = buildFixture();
+  const videoAsset = timelineStore.addAsset(project.id, { type: 'video', keyframeId: keyframe.keyframeId, sceneId: shot.sceneId, shotId: shot.shotId, approvalStatus: 'NONE' });
+  const job = generationStore.createGenerationJob({
+    projectId: project.id,
+    sceneId: shot.sceneId,
+    shotId: shot.shotId,
+    keyframeId: keyframe.keyframeId,
+    generationType: 'VIDEO',
+    provider: GOOD_PROVIDER,
+    model: GOOD_MODEL,
+    status: 'COMPLETED',
+    assetId: videoAsset.assetId,
+  });
+
+  const res = await fetch(`${baseUrl}/shots/${shot.shotId}/video-generations?keyframeId=${keyframe.keyframeId}`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.length, 1);
+  assert.equal(body[0].id, job.id);
+  assert.equal(body[0].asset.assetId, videoAsset.assetId);
+});
+
+test('GET /shots/:shotId/video-generations 404s without a keyframeId', async () => {
+  const { shot } = buildFixture();
+  const res = await fetch(`${baseUrl}/shots/${shot.shotId}/video-generations`);
+  assert.equal(res.status, 404);
+});
+
 // --- safety: no video-generation REST call other than a fully-eligible
 // POST /video-generation can ever create a job -----------------------------------------
 

@@ -666,6 +666,17 @@ app.post('/shots/:shotId/video-generation', async (req, res) => {
   res.json(result);
 });
 
+// Stage 23 — lists every video generation job (with its resulting asset,
+// if any) for one keyframe, newest included, so a client can find the
+// most recent completed video to review without already knowing its
+// generationId. Read-only; thin wrapper over videoGenerationService.
+// listVideoGenerations, which was already exported but had no route.
+app.get('/shots/:shotId/video-generations', (req, res) => {
+  const resolved = resolveShotKeyframe(req.params.shotId, req.query.keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  res.json(videoGenerationService.listVideoGenerations(resolved.project.id, req.query.keyframeId));
+});
+
 app.get('/shots/:shotId/video-generation/:generationId', (req, res) => {
   // The generationId itself is globally unique (services/generation-
   // store.js), so no keyframeId is required here — but the shot is still
