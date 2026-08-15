@@ -190,6 +190,91 @@ test('videoStatus is VIDEO_APPROVED once the video asset is approved', () => {
   assert.equal(item.videoAssetId, videoAsset.assetId);
 });
 
+// --- Stage 23: VIDEO_REJECTED ------------------------------------------------------
+
+test('videoStatus is VIDEO_REJECTED when every video asset for the keyframe has been rejected', () => {
+  const { project, keyframe } = buildCompleteKeyframeFixture();
+  const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  approveVideo(project, keyframe, built.package);
+  const videoAsset = timelineStore.addAsset(project.id, {
+    type: 'video',
+    keyframeId: keyframe.keyframeId,
+    sceneId: keyframe.sceneId,
+    shotId: keyframe.shotId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    approvalStatus: 'NONE',
+  });
+  timelineStore.setAssetApprovalStatus(project.id, videoAsset.assetId, 'REJECTED');
+
+  const item = itemFor(oq.buildProjectQueue(project.id), keyframe.keyframeId);
+  assert.equal(item.videoStatus, 'VIDEO_REJECTED');
+  assert.equal(item.videoAssetId, videoAsset.assetId);
+  assert.equal(item.videoAssetApprovalStatus, 'REJECTED');
+});
+
+test('videoStatus prefers an unreviewed video asset over an older rejected one from a prior attempt', () => {
+  const { project, keyframe } = buildCompleteKeyframeFixture();
+  const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  approveVideo(project, keyframe, built.package);
+  const firstAttempt = timelineStore.addAsset(project.id, {
+    type: 'video',
+    keyframeId: keyframe.keyframeId,
+    sceneId: keyframe.sceneId,
+    shotId: keyframe.shotId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    approvalStatus: 'NONE',
+  });
+  timelineStore.setAssetApprovalStatus(project.id, firstAttempt.assetId, 'REJECTED');
+  // A second, later generation attempt for the same keyframe, still unreviewed.
+  const secondAttempt = timelineStore.addAsset(project.id, {
+    type: 'video',
+    keyframeId: keyframe.keyframeId,
+    sceneId: keyframe.sceneId,
+    shotId: keyframe.shotId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    approvalStatus: 'NONE',
+  });
+
+  const item = itemFor(oq.buildProjectQueue(project.id), keyframe.keyframeId);
+  assert.equal(item.videoStatus, 'VIDEO_RETURNED', 'an unreviewed asset always takes priority over an older rejected one');
+  assert.equal(item.videoAssetId, secondAttempt.assetId);
+});
+
+test('a rejected video asset does not delete or hide the underlying generation job', () => {
+  const { project, keyframe } = buildCompleteKeyframeFixture();
+  const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  approveVideo(project, keyframe, built.package);
+  const job = generationStore.createGenerationJob({
+    projectId: project.id,
+    shotId: keyframe.shotId,
+    keyframeId: keyframe.keyframeId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    canonicalKeyframeAssetId: built.package.canonicalKeyframeAssetId,
+    generationType: 'VIDEO',
+    provider: GOOD_PROVIDER,
+    model: GOOD_MODEL,
+    status: 'COMPLETED',
+  });
+  const videoAsset = timelineStore.addAsset(project.id, {
+    type: 'video',
+    keyframeId: keyframe.keyframeId,
+    sceneId: keyframe.sceneId,
+    shotId: keyframe.shotId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    approvalStatus: 'NONE',
+  });
+  timelineStore.setAssetApprovalStatus(project.id, videoAsset.assetId, 'REJECTED');
+
+  oq.buildProjectQueue(project.id);
+  assert.ok(generationStore.getGenerationJob(job.id), 'the job must still exist after rejection');
+  assert.ok(timelineStore.getAsset(project.id, videoAsset.assetId), 'the rejected asset must still exist');
+});
+
 test('a video asset never contaminates the existing IMAGE unreviewedAsset/canonicalAsset logic', () => {
   const { project, keyframe } = buildCompleteKeyframeFixture();
   const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });

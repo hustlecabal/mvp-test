@@ -314,6 +314,19 @@ function computeVideoStatus({ canonicalAsset, videoPkg, videoApproval, videoJobs
     return { videoStatus: 'VIDEO_APPROVED', videoAssetId: approvedVideoAsset.assetId, videoAssetApprovalStatus: approvedVideoAsset.approvalStatus };
   }
 
+  // Stage 23 — every video asset that has ever completed for this keyframe
+  // is REJECTED (the NONE/APPROVED checks above already ruled those out,
+  // and ASSET_APPROVAL_STATUSES only has those three values — so anything
+  // left here must be REJECTED). Picks the most recently created one, same
+  // "last wins" convention as this function's own updatedAt computation
+  // elsewhere in this file. Never deletes anything — a human can still
+  // rebuild the package/re-approve/regenerate to try again.
+  const rejectedVideoAssets = videoAssetsForKeyframe.filter((a) => a.approvalStatus === 'REJECTED');
+  if (rejectedVideoAssets.length > 0) {
+    const mostRecentRejected = rejectedVideoAssets.at(-1);
+    return { videoStatus: 'VIDEO_REJECTED', videoAssetId: mostRecentRejected.assetId, videoAssetApprovalStatus: mostRecentRejected.approvalStatus };
+  }
+
   if (!videoPkg || videoPkg.status !== 'CURRENT') {
     return { videoStatus: 'NEEDS_VIDEO_PACKAGE' };
   }

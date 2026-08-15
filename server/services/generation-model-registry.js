@@ -61,6 +61,17 @@ const EVOLINK_MODELS = require('../providers/evolink/evolink-models');
 
 const VERIFICATION_STATUSES = ['CATALOGUE_AVAILABLE', 'CAPABILITY_VERIFIED', 'REQUEST_SCHEMA_VERIFIED', 'SAFE_FOR_PRODUCTION'];
 
+// Stage 23 — explicit, human-supplied metadata, never derived from
+// `pricing.startingPrice` or anything else at read time. A tier is only
+// ever assigned here as a deliberate editorial judgment (e.g. "this is the
+// cheapest option we've actually proven end-to-end"), never computed by a
+// formula — that was an explicit Stage 23 decision, specifically to avoid
+// an arbitrary classification that reshuffles itself every time a model is
+// added or a price changes. `OTHER` is the default for every entry that
+// has not been given an explicit tier — it is never silently inferred as
+// BUDGET/STANDARD/QUALITY from price.
+const COST_TIERS = ['BUDGET', 'STANDARD', 'QUALITY', 'OTHER'];
+
 // Small helper: builds the two fields this registry derives from
 // evolink-models.js for the 7 model IDs that already exist there, instead
 // of re-typing requestSchemaVerified/docsUrl a second time. Returns null if
@@ -98,6 +109,19 @@ function record(overrides) {
     requestSchemaVerified: false,
     docsUrl: null,
     notes: null,
+
+    // Stage 23 — see COST_TIERS' own comment above for why this is
+    // human-supplied metadata, never a computed field.
+    costTier: 'OTHER',
+
+    // Stage 23 — a REAL credits_reserved value from an actual completed
+    // generation (never a catalogue price, never an estimate). null unless
+    // this project has genuinely run that exact model at least once.
+    // observedCostBasis records the exact request shape the observation was
+    // made under (duration/resolution/aspectRatio) so a caller never
+    // mistakes one configuration's cost for another's.
+    observedCost: null,
+    observedCostBasis: null,
   };
   const merged = {
     ...base,
@@ -214,6 +238,9 @@ const evolinkVideoModels = [
     pricing: priced('per_second', 0.006),
     requestSchemaVerified: true,
     docsUrl: 'https://evolink.ai/docs/en/api-manual/video-series/seedance1.0/seedance-1.0-pro-fast-video-generate',
+    costTier: 'BUDGET',
+    observedCost: 4.5,
+    observedCostBasis: '5s / 720p / adaptive aspect ratio, real generation, Stage 23 cost-optimisation validation',
     notes:
       'Cheapest EvoLink video line item found. Full OpenAPI 3.1.0 spec independently opened (Stage 22B cost-optimisation investigation) — real model ID confirmed as "doubao-seedance-1.0-pro-fast" ' +
       '(previously recorded here, unconfirmed, as "seedance-1.0-pro-fast" — that string was never a real EvoLink model ID; fixed as a concrete defect once the primary source was actually opened).',
@@ -238,6 +265,9 @@ const evolinkVideoModels = [
     capabilities: { textToVideo: true, imageToVideo: false, referenceImages: false, maxReferenceImages: 0 },
     pricing: priced('per_second', null),
     ...fromEvolinkModels('seedance-2.5-text-to-video'),
+    costTier: 'QUALITY',
+    observedCost: 100.45,
+    observedCostBasis: '5s / 720p / adaptive aspect ratio, real generation, real smoke-test project',
     notes: 'This is the exact model used for the real smoke-test project generation (Stage 6).',
   }),
   record({
@@ -249,6 +279,9 @@ const evolinkVideoModels = [
     capabilities: { textToVideo: false, imageToVideo: true, referenceImages: false, maxReferenceImages: 0 },
     pricing: priced('per_second', null),
     ...fromEvolinkModels('seedance-2.5-image-to-video'),
+    costTier: 'QUALITY',
+    observedCost: 100.45,
+    observedCostBasis: '5s / 720p / adaptive aspect ratio, real generation, Stage 22B real-generation validation',
   }),
   record({
     provider: 'evolink',
@@ -534,6 +567,9 @@ for (const entry of GENERATION_MODEL_REGISTRY) {
   if (!VERIFICATION_STATUSES.includes(entry.verificationStatus)) {
     throw new Error(`Invalid verificationStatus "${entry.verificationStatus}" for ${entry.provider}/${entry.model}`);
   }
+  if (!COST_TIERS.includes(entry.costTier)) {
+    throw new Error(`Invalid costTier "${entry.costTier}" for ${entry.provider}/${entry.model}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -705,6 +741,7 @@ function validateModelSelection({ provider, model, requirements = {} } = {}) {
 
 module.exports = {
   VERIFICATION_STATUSES,
+  COST_TIERS,
   GENERATION_MODEL_REGISTRY,
   listModels,
   getModel,

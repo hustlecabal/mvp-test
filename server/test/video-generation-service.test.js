@@ -650,3 +650,65 @@ test('performance: canGenerateVideo does not scale its store reads with unrelate
   assert.equal(result.allowed, true);
   assert.ok(elapsedMs < 200, `canGenerateVideo took ${elapsedMs}ms with 50 unrelated keyframes present — expected O(1) w.r.t. unrelated keyframes`);
 });
+
+// ===========================================================================
+// Stage 23 — approveGeneratedVideo / rejectGeneratedVideo. Human review of
+// a COMPLETED video asset, entirely separate from the VIDEO_GENERATION_
+// APPROVAL that authorized generating it in the first place. Mirrors
+// keyframe-generation-service.test.js's own approve/reject-image coverage.
+// ===========================================================================
+
+async function generateOneVideo() {
+  const { project, keyframe, asset: canonicalAsset, pkg } = buildEligibleFixture();
+  const result = await vgs.generateVideo(project.id, keyframe.keyframeId, {
+    providers: TEST_PROVIDERS,
+    resolveReferenceImpl: fakeResolveReferenceImpl,
+    intervalMs: 1,
+    sleepImpl: () => Promise.resolve(),
+  });
+  assert.equal(result.status, 'COMPLETED');
+  return { project, keyframe, canonicalAsset, pkg, assetId: result.assetId };
+}
+
+test('approveGeneratedVideo: sets the video asset approvalStatus to APPROVED and never touches the canonical keyframe image', async () => {
+  const { project, keyframe, canonicalAsset, assetId } = await generateOneVideo();
+  const canonicalBefore = timelineStore.getAsset(project.id, canonicalAsset.assetId);
+
+  const result = vgs.approveGeneratedVideo(project.id, keyframe.keyframeId, assetId, { approvedBy: 'tester' });
+  assert.equal(result.ok, true);
+  assert.equal(result.asset.approvalStatus, 'APPROVED');
+
+  const canonicalAfter = timelineStore.getAsset(project.id, canonicalAsset.assetId);
+  assert.deepEqual(canonicalAfter, canonicalBefore, 'approving the video must never change the canonical keyframe image asset');
+});
+
+test('rejectGeneratedVideo: sets the video asset approvalStatus to REJECTED, never deletes the asset or job', async () => {
+  const { project, keyframe, assetId } = await generateOneVideo();
+
+  const result = vgs.rejectGeneratedVideo(project.id, keyframe.keyframeId, assetId, { decidedBy: 'tester', reason: 'not good enough' });
+  assert.equal(result.ok, true);
+  assert.equal(result.asset.approvalStatus, 'REJECTED');
+  assert.ok(timelineStore.getAsset(project.id, assetId), 'the rejected asset must still exist');
+  assert.equal(vgs.listVideoGenerations(project.id, keyframe.keyframeId).length, 1, 'the rejected generation job must still exist');
+});
+
+test('approveGeneratedVideo: rejects an assetId that does not belong to the given keyframe', async () => {
+  const { project, assetId } = await generateOneVideo();
+  const { keyframe: otherKeyframe } = buildFixture();
+  const result = vgs.approveGeneratedVideo(project.id, otherKeyframe.keyframeId, assetId, {});
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /No generated video asset/);
+});
+
+test('approveGeneratedVideo: rejects an assetId that is not a video asset (e.g. the canonical keyframe image itself)', async () => {
+  const { project, keyframe, canonicalAsset } = await generateOneVideo();
+  const result = vgs.approveGeneratedVideo(project.id, keyframe.keyframeId, canonicalAsset.assetId, {});
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /No generated video asset/);
+});
+
+test('rejectGeneratedVideo: rejects a nonexistent assetId', async () => {
+  const { project, keyframe } = await generateOneVideo();
+  const result = vgs.rejectGeneratedVideo(project.id, keyframe.keyframeId, '00000000-0000-0000-0000-000000000000', {});
+  assert.equal(result.ok, false);
+});

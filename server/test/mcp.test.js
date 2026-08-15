@@ -97,13 +97,21 @@ test('a real MCP client can discover all 76 tools', async () => {
   // docs/architecture/video-generation-lifecycle.md). generate_video is
   // the only one of these that can cause a real provider call, and only
   // after every safety gate passes.
+  // Stage 23 added 3 tools: acknowledge_video_unknown_cost (exposes the
+  // pre-existing but previously-unreachable acknowledgeUnknownCost store
+  // function), approve_generated_video and reject_generated_video (human
+  // review of a completed video asset, mirroring approve_generated_keyframe/
+  // reject_generated_keyframe). None of these generate, approve a
+  // generation request, or select a canonical asset.
   // Everything else is unchanged.
-  assert.equal(names.length, 88);
+  assert.equal(names.length, 91);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
+    'acknowledge_video_unknown_cost',
     'add_entity_reference_asset',
     'analyze_shot_keyframes',
     'approve_generated_keyframe',
+    'approve_generated_video',
     'approve_keyframe_generation',
     'approve_video_generation',
     'archive_asset',
@@ -171,6 +179,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'record_approval_decision',
     'record_identity_consistency_review',
     'reject_generated_keyframe',
+    'reject_generated_video',
     'reject_keyframe_generation',
     'reject_video_generation',
     'request_generation',

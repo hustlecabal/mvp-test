@@ -411,6 +411,50 @@ test('validateModelSelection never throws for any registered model, even with em
 });
 
 // ---------------------------------------------------------------------------
+// Stage 23 — costTier / observedCost. Explicit, human-supplied metadata,
+// never derived from pricing.startingPrice or anything else at read time.
+// ---------------------------------------------------------------------------
+
+test('every registry entry has a costTier from the fixed COST_TIERS vocabulary, defaulting to OTHER', () => {
+  for (const entry of registry.GENERATION_MODEL_REGISTRY) {
+    assert.ok(registry.COST_TIERS.includes(entry.costTier), `${entry.provider}/${entry.model} has an invalid costTier "${entry.costTier}"`);
+  }
+});
+
+test('costTier is OTHER by default for a model with no explicit tier assigned', () => {
+  const entry = registry.getModel('evolink', 'seedance-2.0-mini-image-to-video');
+  assert.equal(entry.costTier, 'OTHER');
+});
+
+test('observedCost/observedCostBasis are null by default, and set only for models this project has actually run', () => {
+  const untested = registry.getModel('evolink', 'seedance-2.0-mini-image-to-video');
+  assert.equal(untested.observedCost, null);
+  assert.equal(untested.observedCostBasis, null);
+
+  const proven = registry.getModel('evolink', 'doubao-seedance-1.0-pro-fast');
+  assert.equal(proven.costTier, 'BUDGET');
+  assert.equal(proven.observedCost, 4.5);
+  assert.ok(proven.observedCostBasis);
+
+  const seedance25 = registry.getModel('evolink', 'seedance-2.5-image-to-video');
+  assert.equal(seedance25.costTier, 'QUALITY');
+  assert.equal(seedance25.observedCost, 100.45);
+  assert.ok(seedance25.observedCostBasis);
+});
+
+test('costTier/observedCost never affect capability matching or cheapestSatisfying ordering', () => {
+  const requirements = { modality: 'video', imageToVideo: true };
+  const before = registry.cheapestSatisfying(requirements).map((m) => `${m.provider}/${m.model}`);
+  // Sanity: doubao-seedance-1.0-pro-fast (BUDGET, cheapest known price) must
+  // still sort ahead of seedance-2.5-image-to-video (QUALITY, unpriced) on
+  // price alone — tier is metadata, never a sort key.
+  const doubaoIndex = before.indexOf('evolink/doubao-seedance-1.0-pro-fast');
+  const seedance25Index = before.indexOf('evolink/seedance-2.5-image-to-video');
+  assert.ok(doubaoIndex !== -1 && seedance25Index !== -1);
+  assert.ok(doubaoIndex < seedance25Index, 'cheapestSatisfying must still sort by price, not by costTier');
+});
+
+// ---------------------------------------------------------------------------
 // Safety: this module cannot create generation jobs or touch credit state.
 // ---------------------------------------------------------------------------
 

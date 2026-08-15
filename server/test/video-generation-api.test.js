@@ -250,3 +250,71 @@ test('no video-generation REST call other than POST /video-generation creates a 
 
   assert.equal(generationStore.listGenerationJobs({ projectId: project.id }).length, before);
 });
+
+// --- Stage 23: POST /shots/:shotId/video-generation/approval/acknowledge-unknown-cost --
+
+test('POST .../acknowledge-unknown-cost records the acknowledgement on the existing approval', async () => {
+  const { shot, keyframe } = buildFixture();
+  await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/approval`, { keyframeId: keyframe.keyframeId });
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/approval/acknowledge-unknown-cost`, { keyframeId: keyframe.keyframeId, acknowledgedBy: 'tester' });
+  assert.equal(res.status, 200);
+  const approval = await res.json();
+  assert.equal(approval.unknownCostAcknowledged, true);
+  assert.equal(approval.unknownCostAcknowledgedBy, 'tester');
+});
+
+test('POST .../acknowledge-unknown-cost 404s without a keyframeId', async () => {
+  const { shot } = buildFixture();
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/approval/acknowledge-unknown-cost`, {});
+  assert.equal(res.status, 404);
+});
+
+// --- Stage 23: POST /shots/:shotId/video-generation/review ------------------------------
+// Uses a manually-created 'video' type asset (never a real provider call)
+// to test the review route's own delegation to videoGenerationService.
+// approveGeneratedVideo/rejectGeneratedVideo — exactly this file's existing
+// safety convention (no real generation anywhere in this file).
+
+function addFakeVideoAsset(project, keyframe) {
+  return timelineStore.addAsset(project.id, { type: 'video', keyframeId: keyframe.keyframeId, sceneId: keyframe.sceneId, shotId: keyframe.shotId, approvalStatus: 'NONE' });
+}
+
+test('POST /shots/:shotId/video-generation/review approves a video asset', async () => {
+  const { project, shot, keyframe } = buildFixture();
+  const videoAsset = addFakeVideoAsset(project, keyframe);
+
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/review`, { keyframeId: keyframe.keyframeId, assetId: videoAsset.assetId, approve: true, decidedBy: 'tester' });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.asset.approvalStatus, 'APPROVED');
+});
+
+test('POST /shots/:shotId/video-generation/review rejects a video asset', async () => {
+  const { project, shot, keyframe } = buildFixture();
+  const videoAsset = addFakeVideoAsset(project, keyframe);
+
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/review`, { keyframeId: keyframe.keyframeId, assetId: videoAsset.assetId, approve: false, decidedBy: 'tester', reason: 'bad take' });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.asset.approvalStatus, 'REJECTED');
+});
+
+test('POST /shots/:shotId/video-generation/review 400s without an assetId', async () => {
+  const { shot, keyframe } = buildFixture();
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/review`, { keyframeId: keyframe.keyframeId, approve: true });
+  assert.equal(res.status, 400);
+});
+
+test('POST /shots/:shotId/video-generation/review 409s for a non-video asset (the canonical keyframe image)', async () => {
+  const { shot, keyframe, asset } = buildFixture();
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/review`, { keyframeId: keyframe.keyframeId, assetId: asset.assetId, approve: true });
+  assert.equal(res.status, 409);
+});
+
+test('POST /shots/:shotId/video-generation/review 404s without a keyframeId', async () => {
+  const { shot } = buildFixture();
+  const res = await postJson(`${baseUrl}/shots/${shot.shotId}/video-generation/review`, { assetId: 'x', approve: true });
+  assert.equal(res.status, 404);
+});

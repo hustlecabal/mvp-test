@@ -496,6 +496,38 @@ async function generateVideo(
   return normalizeJobToResult(job);
 }
 
+// ===========================================================================
+// Stage 23 — human review after generation. Never automatic (Part 14's own
+// comment already establishes a generated video asset always starts at
+// approvalStatus 'NONE' and is never auto-canonical). Mirrors keyframe-
+// generation-service.js's approveGeneratedKeyframe/rejectGeneratedKeyframe
+// exactly, minus the image-only keyframeStore.setKeyframeGenerationStatus
+// call — video has no equivalent per-keyframe generation-status field;
+// operator-queue-service.js's computeVideoStatus derives videoStatus
+// entirely from the asset's own approvalStatus + job status, so setting
+// that one field is the complete, sufficient state transition.
+// ===========================================================================
+function approveGeneratedVideo(projectId, keyframeId, assetId, { approvedBy } = {}) {
+  const asset = timelineStore.getAsset(projectId, assetId);
+  if (!asset || asset.keyframeId !== keyframeId || asset.type !== 'video') {
+    return { ok: false, reason: `No generated video asset "${assetId}" found for keyframe "${keyframeId}".` };
+  }
+  timelineStore.setAssetApprovalStatus(projectId, assetId, 'APPROVED');
+  return { ok: true, asset: timelineStore.getAsset(projectId, assetId) };
+}
+
+function rejectGeneratedVideo(projectId, keyframeId, assetId, { decidedBy, reason } = {}) {
+  const asset = timelineStore.getAsset(projectId, assetId);
+  if (!asset || asset.keyframeId !== keyframeId || asset.type !== 'video') {
+    return { ok: false, reason: `No generated video asset "${assetId}" found for keyframe "${keyframeId}".` };
+  }
+  timelineStore.setAssetApprovalStatus(projectId, assetId, 'REJECTED');
+  // The rejected attempt is never deleted: the asset record and its
+  // generation job both remain exactly as they are, permanently visible in
+  // list_video_generations / the asset's own history.
+  return { ok: true, asset: timelineStore.getAsset(projectId, assetId) };
+}
+
 module.exports = {
   PROVIDERS,
   ACTIVE_VIDEO_GENERATION_STATUSES,
@@ -503,6 +535,8 @@ module.exports = {
   generateVideo,
   getVideoGenerationStatus,
   listVideoGenerations,
+  approveGeneratedVideo,
+  rejectGeneratedVideo,
   // exported for focused unit testing
   runSafetyChecks,
   checkVideoBudget,

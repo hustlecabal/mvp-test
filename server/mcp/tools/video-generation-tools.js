@@ -166,6 +166,59 @@ function register(server) {
   );
 
   server.registerTool(
+    'acknowledge_video_unknown_cost',
+    {
+      title: 'Acknowledge an unknown video generation cost',
+      description:
+        'Records an explicit human acknowledgement that the current VIDEO_GENERATION_APPROVAL has no estimatedCost ' +
+        '(EvoLink gives no pre-submission price quote for video). Required by video-generation-service.js\'s budget ' +
+        'check before generation can proceed whenever estimatedCost is unset — never invents a cost, never changes ' +
+        'the approval decision itself.',
+      inputSchema: { projectId: z.string(), keyframeId: z.string(), acknowledgedBy: z.string().optional() },
+    },
+    async ({ projectId, keyframeId, acknowledgedBy }) => {
+      requireKeyframe(projectId, keyframeId);
+      const approval = videoGenerationApprovalStore.acknowledgeUnknownCost(projectId, keyframeId, { acknowledgedBy });
+      if (!approval) {
+        return jsonResult({ ok: false, reason: 'No video generation approval exists for this keyframe yet.' });
+      }
+      return jsonResult({ ok: true, approval });
+    }
+  );
+
+  server.registerTool(
+    'approve_generated_video',
+    {
+      title: 'Approve a completed video asset',
+      description:
+        'Records an explicit human APPROVED decision on one generated video asset\'s own approvalStatus — separate ' +
+        'from, and not satisfied by, approving the VIDEO_GENERATION_APPROVAL that authorized generating it. A video ' +
+        'asset always starts at approvalStatus NONE and is never automatically approved; this is the only thing ' +
+        'that changes it. Never re-selects a canonical asset and never generates anything.',
+      inputSchema: { projectId: z.string(), keyframeId: z.string(), assetId: z.string(), approvedBy: z.string().optional() },
+    },
+    async ({ projectId, keyframeId, assetId, approvedBy }) => {
+      requireKeyframe(projectId, keyframeId);
+      return jsonResult(videoGenerationService.approveGeneratedVideo(projectId, keyframeId, assetId, { approvedBy }));
+    }
+  );
+
+  server.registerTool(
+    'reject_generated_video',
+    {
+      title: 'Reject a completed video asset',
+      description:
+        'Records an explicit human REJECTED decision on one generated video asset\'s own approvalStatus. The ' +
+        'rejected asset and its generation job are never deleted — both remain permanently visible for history/audit.',
+      inputSchema: { projectId: z.string(), keyframeId: z.string(), assetId: z.string(), decidedBy: z.string().optional(), reason: z.string().optional() },
+    },
+    async ({ projectId, keyframeId, assetId, decidedBy, reason }) => {
+      requireKeyframe(projectId, keyframeId);
+      return jsonResult(videoGenerationService.rejectGeneratedVideo(projectId, keyframeId, assetId, { decidedBy, reason }));
+    }
+  );
+
+  server.registerTool(
     'get_video_generation_status',
     {
       title: "Get a video generation job's current stored status",

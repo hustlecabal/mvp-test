@@ -38,6 +38,7 @@ for (const [key, value] of Object.entries(envVars)) process.env[key] = value;
 
 const projectStore = require('../services/project-store');
 const generationStore = require('../services/generation-store');
+const timelineStore = require('../services/timeline-store');
 
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
@@ -88,7 +89,7 @@ async function seedVideoReadyKeyframe(project) {
 
 // --- discoverability ---------------------------------------------------------------
 
-test('all 7 video generation tools are discoverable', async () => {
+test('all 10 video generation tools are discoverable', async () => {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
   for (const name of [
@@ -99,6 +100,9 @@ test('all 7 video generation tools are discoverable', async () => {
     'can_generate_video',
     'generate_video',
     'get_video_generation_status',
+    'acknowledge_video_unknown_cost',
+    'approve_generated_video',
+    'reject_generated_video',
   ]) {
     assert.ok(names.includes(name), `${name} must be registered`);
   }
@@ -247,4 +251,62 @@ test('request/get/approve/reject/can_generate_video calls never create a generat
   await call('can_generate_video', { projectId: project.id, keyframeId: keyframe.keyframeId });
 
   assert.equal(generationStore.listGenerationJobs({ projectId: project.id }).length, before);
+});
+
+// --- Stage 23: acknowledge_video_unknown_cost --------------------------------------
+
+test('acknowledge_video_unknown_cost records the acknowledgement without changing the approval decision', async () => {
+  const project = createProject();
+  const { keyframe } = await seedVideoReadyKeyframe(project);
+  await call('request_video_generation_approval', { projectId: project.id, keyframeId: keyframe.keyframeId });
+
+  const result = textOf(await call('acknowledge_video_unknown_cost', { projectId: project.id, keyframeId: keyframe.keyframeId, acknowledgedBy: 'claude' }));
+  assert.equal(result.ok, true);
+  assert.equal(result.approval.unknownCostAcknowledged, true);
+  assert.equal(result.approval.unknownCostAcknowledgedBy, 'claude');
+  assert.equal(result.approval.status, 'PENDING', 'acknowledging cost must never itself approve/reject anything');
+});
+
+test('acknowledge_video_unknown_cost reports ok:false when no approval has ever been requested', async () => {
+  const project = createProject();
+  const { keyframe } = await seedVideoReadyKeyframe(project);
+  const result = textOf(await call('acknowledge_video_unknown_cost', { projectId: project.id, keyframeId: keyframe.keyframeId }));
+  assert.equal(result.ok, false);
+});
+
+// --- Stage 23: approve_generated_video / reject_generated_video --------------------
+// Uses a manually-created 'video' type asset on disk (never a real
+// provider call, and generate_video is never exercised through this
+// spawned-server file — see the comment above generate_video's own tests).
+
+function addFakeVideoAsset(project, keyframe) {
+  return timelineStore.addAsset(project.id, { type: 'video', keyframeId: keyframe.keyframeId, sceneId: keyframe.sceneId, shotId: keyframe.shotId, approvalStatus: 'NONE' });
+}
+
+test('approve_generated_video sets the video asset approvalStatus to APPROVED', async () => {
+  const project = createProject();
+  const { keyframe } = await seedVideoReadyKeyframe(project);
+  const videoAsset = addFakeVideoAsset(project, keyframe);
+
+  const result = textOf(await call('approve_generated_video', { projectId: project.id, keyframeId: keyframe.keyframeId, assetId: videoAsset.assetId, approvedBy: 'claude' }));
+  assert.equal(result.ok, true);
+  assert.equal(result.asset.approvalStatus, 'APPROVED');
+});
+
+test('reject_generated_video sets the video asset approvalStatus to REJECTED, and the asset/job are never deleted', async () => {
+  const project = createProject();
+  const { keyframe } = await seedVideoReadyKeyframe(project);
+  const videoAsset = addFakeVideoAsset(project, keyframe);
+
+  const result = textOf(await call('reject_generated_video', { projectId: project.id, keyframeId: keyframe.keyframeId, assetId: videoAsset.assetId, decidedBy: 'claude', reason: 'bad take' }));
+  assert.equal(result.ok, true);
+  assert.equal(result.asset.approvalStatus, 'REJECTED');
+  assert.ok(timelineStore.getAsset(project.id, videoAsset.assetId), 'the rejected asset must still exist');
+});
+
+test('approve_generated_video reports ok:false for a non-video asset (the canonical keyframe image)', async () => {
+  const project = createProject();
+  const { keyframe, assetId: canonicalAssetId } = await seedVideoReadyKeyframe(project);
+  const result = textOf(await call('approve_generated_video', { projectId: project.id, keyframeId: keyframe.keyframeId, assetId: canonicalAssetId }));
+  assert.equal(result.ok, false);
 });

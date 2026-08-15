@@ -78,8 +78,16 @@ const REFERENCE_STATUSES = ['NO_REFERENCE_NEEDED', 'MISSING', 'REVIEW_REQUIRED',
 //   VIDEO_RETURNED            — a completed video asset exists that has
 //                                not yet been reviewed (approvalStatus NONE)
 //   VIDEO_APPROVED            — a completed video asset exists and has
-//                                been APPROVED — the video track's own
-//                                terminal state
+//                                been APPROVED — one of the video track's
+//                                two terminal states
+//   VIDEO_REJECTED            — Stage 23. every video asset for this
+//                                keyframe that has ever completed is
+//                                REJECTED (none NONE/APPROVED/in-flight) —
+//                                the video track's other terminal state.
+//                                Never deletes anything: a human can still
+//                                rebuild the package/re-approve/regenerate
+//                                to try again, exactly like a rejected
+//                                keyframe image.
 const VIDEO_STATUSES = [
   'NOT_APPLICABLE',
   'NEEDS_VIDEO_PACKAGE',
@@ -88,6 +96,7 @@ const VIDEO_STATUSES = [
   'VIDEO_IN_PROGRESS',
   'VIDEO_RETURNED',
   'VIDEO_APPROVED',
+  'VIDEO_REJECTED',
 ];
 
 // Part 4 — 1 (highest) through 9 (lowest). Deliberately a plain integer,

@@ -635,6 +635,22 @@ app.post('/shots/:shotId/video-generation/approval/reject', (req, res) => {
   res.json(approval);
 });
 
+// Stage 23 — exposes the existing videoGenerationApprovalStore.acknowledgeUnknownCost
+// (present since Stage 22B-Part-3 but never reachable outside a direct
+// script call). Never invents a cost, never changes the approval status
+// itself — only records that a human explicitly acknowledged an unknown
+// estimatedCost, exactly mirroring approval-gate.js's own UNKNOWN_COST_
+// REQUIRES_EXPLICIT_APPROVAL policy for the project-level ledger.
+app.post('/shots/:shotId/video-generation/approval/acknowledge-unknown-cost', (req, res) => {
+  const { keyframeId, acknowledgedBy } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+
+  const approval = videoGenerationApprovalStore.acknowledgeUnknownCost(resolved.project.id, keyframeId, { acknowledgedBy });
+  if (!approval) return res.status(409).json({ error: 'No video generation approval exists for this keyframe yet.' });
+  res.json(approval);
+});
+
 app.get('/shots/:shotId/video-generation/eligibility', (req, res) => {
   const resolved = resolveShotKeyframe(req.params.shotId, req.query.keyframeId);
   if (resolved.error) return res.status(404).json({ error: resolved.error });
@@ -661,6 +677,27 @@ app.get('/shots/:shotId/video-generation/:generationId', (req, res) => {
   if (!result || result.projectId !== project.id || result.shotId !== req.params.shotId) {
     return res.status(404).json({ error: `No video generation job found with id "${req.params.generationId}" for shot "${req.params.shotId}"` });
   }
+  res.json(result);
+});
+
+// Stage 23 — human review of a completed video asset. Mirrors POST
+// /keyframes/:keyframeId/approval's shape exactly (the existing image-asset
+// review route), but delegates to videoGenerationService.approveGeneratedVideo/
+// rejectGeneratedVideo since a video asset has no keyframe-generation-status
+// field to update (see that service's own comment on why). Never generates,
+// never re-selects a canonical asset, never touches the approved canonical
+// KEYFRAME image — this only ever changes the VIDEO asset's own approvalStatus.
+app.post('/shots/:shotId/video-generation/review', (req, res) => {
+  const { keyframeId, assetId, approve, decidedBy, reason } = req.body || {};
+  const resolved = resolveShotKeyframe(req.params.shotId, keyframeId);
+  if (resolved.error) return res.status(404).json({ error: resolved.error });
+  if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+  const result = approve
+    ? videoGenerationService.approveGeneratedVideo(resolved.project.id, keyframeId, assetId, { approvedBy: decidedBy })
+    : videoGenerationService.rejectGeneratedVideo(resolved.project.id, keyframeId, assetId, { decidedBy, reason });
+
+  if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json(result);
 });
 

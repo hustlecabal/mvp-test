@@ -81,7 +81,9 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // reject_video_generation, can_generate_video, generate_video,
   // get_video_generation_status) — see
   // docs/architecture/video-generation-lifecycle.md.
-  assert.equal(names.length, 88);
+  // Stage 23 added 3 more (acknowledge_video_unknown_cost,
+  // approve_generated_video, reject_generated_video).
+  assert.equal(names.length, 91);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {
