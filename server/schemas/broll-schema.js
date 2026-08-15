@@ -149,6 +149,14 @@ function createBrollSegment(overrides = {}) {
     usage: createBrollUsage(usage),
     status: 'ACTIVE', // one of BROLL_STATUSES
     createdAt: new Date().toISOString(),
+    // Stage 26.5B, Part 3 — pre-declared exactly like
+    // production-schema.js's defaultAssetStorage() pre-declares archivedAt
+    // before an asset is ever archived. Stay null until
+    // services/broll-library-service.js's archiveBrollSegment() sets them;
+    // never populated at creation time.
+    archivedAt: null,
+    archivedBy: null,
+    archiveReason: null,
   };
   return withDefaults(base, rest);
 }

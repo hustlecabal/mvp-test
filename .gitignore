@@ -17,6 +17,7 @@ server/data/keyframe-handoffs/*.json
 server/data/identity-consistency-reviews/*.json
 server/data/video-prompt-packages/*.json
 server/data/video-generation-approvals/*.json
+server/data/broll/*.json
 
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.

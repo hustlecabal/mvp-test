@@ -174,7 +174,10 @@ test('12. identical overrides produce structurally identical output (ids/timesta
 
 test('13. createBrollSegment produces exactly the documented top-level and nested field set, nothing more', () => {
   const seg = createBrollSegment();
-  assert.deepEqual(Object.keys(seg).sort(), ['assetId', 'createdAt', 'descriptiveMetadata', 'id', 'licensing', 'media', 'projectId', 'source', 'status', 'usage'].sort());
+  assert.deepEqual(
+    Object.keys(seg).sort(),
+    ['assetId', 'createdAt', 'descriptiveMetadata', 'id', 'licensing', 'media', 'projectId', 'source', 'status', 'usage', 'archivedAt', 'archivedBy', 'archiveReason'].sort()
+  );
   assert.deepEqual(Object.keys(seg.source).sort(), ['type', 'provider', 'originalReference', 'importedAt'].sort());
   assert.deepEqual(Object.keys(seg.media).sort(), ['duration', 'width', 'height', 'fps', 'aspectRatio', 'mimeType', 'fileSize'].sort());
   assert.deepEqual(Object.keys(seg.descriptiveMetadata).sort(), ['title', 'description', 'tags', 'subjects', 'environments', 'actions', 'mood', 'visualStyle'].sort());
