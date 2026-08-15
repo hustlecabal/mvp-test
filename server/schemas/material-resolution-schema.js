@@ -74,7 +74,9 @@ function createCandidateResult(overrides = {}) {
     role: 'PRIMARY',
     materialSource: null,
     visualTreatment: null,
-    selectedAssetId: null, // set only for PROJECT_ASSET_REUSE candidates
+    selectedAssetId: null, // set for PROJECT_ASSET_REUSE candidates, and
+                             // (Stage 26.5B, Part 4) for a real BROLL_LIBRARY
+                             // candidate — the Asset its BRollSegment references
     modelRequirements: null, // set only for GENERATED_NEW candidates —
                                // capability requirements only (see
                                // generation-model-registry.js's own
@@ -83,6 +85,16 @@ function createCandidateResult(overrides = {}) {
     eligibleRoles: ['PRIMARY'], // default reflects "only evaluated as
                                   // PRIMARY this stage," not a claim this
                                   // class can never serve another role
+    // Stage 26.5B, Part 4 — set ONLY for a real BROLL_LIBRARY candidate
+    // sourced from services/broll-library-service.js (never for the
+    // Stage 26.3 context.brollSegments fixture path, and never for any
+    // other materialSource). Full lineage back to the BRollSegment record
+    // and the existing Asset it references — never a duplicated binary/
+    // path, exactly like schemas/broll-schema.js itself never duplicates
+    // one. Shape: { segmentId, assetId, licensing, source, media,
+    // descriptiveMetadata, usage } — each sub-object copied verbatim from
+    // the BRollSegment, nothing re-derived or invented.
+    brollSegment: null,
     phaseScores: {
       creativeFit: null, // Phase B
       continuity: null, // Phase C

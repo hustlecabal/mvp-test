@@ -37,6 +37,13 @@ const { MATERIAL_SOURCES, VISUAL_TREATMENTS } = require('../schemas/visual-beat-
 // it is used (capability existence + cost-tier signal only, never a
 // provider/model selection).
 const generationModelRegistry = require('./generation-model-registry');
+// Stage 26.5B, Part 4 — read-only B-roll candidate SUPPLY only (never
+// selection/ranking; see broll-library-service.js's own header). Not a
+// provider/generation-execution import: getBrollCandidatesForResolution
+// never calls a provider, spends a credit, or mutates anything — it is a
+// plain project-scoped read, exactly like timelineStore/keyframeStore
+// above.
+const brollLibraryService = require('./broll-library-service');
 const { createMaterialResolution, createCandidateResult, createHardGateResult, createBeatGraphResolution, createResolutionSummary } = require('../schemas/material-resolution-schema');
 
 // ---------------------------------------------------------------------------
@@ -685,9 +692,33 @@ function resolveMaterial(projectId, beat, context = {}) {
   }
 
   // --- BROLL_LIBRARY — role-scoped (Stage 26.3 correction #3) ---
+  //
+  // Two candidate SOURCES, evaluated side by side, neither replacing the
+  // other:
+  //
+  //   1. `context.brollSegments` — the ORIGINAL Stage 26.3 fixture
+  //      mechanism, byte-for-byte UNCHANGED (same 'CLEARED' literal, same
+  //      candidate id shape `...:${segment.segmentId}`). Kept exactly as
+  //      it was so every existing Stage 26.3/26.4 regression test keeps
+  //      passing unmodified — this was never a real library, only an
+  //      injectable unit-test fixture, and stays exactly that.
+  //
+  //   2. Stage 26.5B, Part 4 — REAL B-roll library records, read directly
+  //      from services/broll-library-service.js by projectId (no context
+  //      injection required; every real call to resolveMaterial now
+  //      automatically sees whatever B-roll has actually been registered
+  //      for this project). This is the "real B-roll library records"
+  //      integration Part 4 exists to build.
+  //
+  // Both sources feed the SAME hard-gate -> survivors -> ranking pipeline
+  // below — there is only ever one ranking/selection system
+  // (compareMaterialCandidates); this section only decides which
+  // candidates are OFFERED to it.
   if (beatAllowsTreatment(beat, 'BROLL_CLIP')) {
-    const segments = Array.isArray(context.brollSegments) ? context.brollSegments : [];
-    if (segments.length === 0) {
+    const fixtureSegments = Array.isArray(context.brollSegments) ? context.brollSegments : [];
+    const librarySegments = brollLibraryService.getBrollCandidatesForResolution(projectId) || [];
+
+    if (fixtureSegments.length === 0 && librarySegments.length === 0) {
       hardGateResults.push(
         createHardGateResult({
           candidate: 'BROLL_LIBRARY+BROLL_CLIP',
@@ -698,7 +729,8 @@ function resolveMaterial(projectId, beat, context = {}) {
         })
       );
     } else {
-      for (const segment of segments) {
+      // --- Stage 26.3 fixture segments (UNCHANGED) ---
+      for (const segment of fixtureSegments) {
         const segmentCandidateId = `BROLL_LIBRARY+BROLL_CLIP:${segment.segmentId || 'unknown'}`;
 
         if (segment.licensingStatus !== 'CLEARED') {
@@ -737,6 +769,131 @@ function resolveMaterial(projectId, beat, context = {}) {
             materialSource: 'BROLL_LIBRARY',
             visualTreatment: 'BROLL_CLIP',
             eligibleRoles: ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'],
+            phaseScores: {
+              creativeFit: scoreCreativeFit(beat, 'BROLL_LIBRARY', 'BROLL_CLIP'),
+              continuity: scoreContinuity('BROLL_LIBRARY', { hasIdentityOrContinuityReqs: identityOrContinuity }),
+              reuse: scoreReuse('BROLL_LIBRARY'),
+              cost: scoreCost('BROLL_LIBRARY'),
+              complexity: scoreComplexity('BROLL_LIBRARY'),
+            },
+          })
+        );
+      }
+
+      // --- Stage 26.5B, Part 4 — real B-roll library records ---
+      for (const segment of librarySegments) {
+        const segmentCandidateId = `BROLL_LIBRARY+BROLL_CLIP:${segment.id}`;
+        // Requirement #2 — every real B-roll candidate carries its full
+        // lineage: the segment id, the referenced Asset id, and every
+        // metadata group from schemas/broll-schema.js, untouched. This is
+        // ADDITIVE on CandidateResult (see schemas/material-resolution-
+        // schema.js's brollSegment field) — never replaces
+        // selectedAssetId/eligibleRoles/phaseScores, which every other
+        // materialSource already relies on.
+        const lineage = {
+          segmentId: segment.id,
+          assetId: segment.assetId,
+          licensing: segment.licensing,
+          source: segment.source,
+          media: segment.media,
+          descriptiveMetadata: segment.descriptiveMetadata,
+          usage: segment.usage,
+        };
+
+        // Requirement #3/#4 — only LICENSED is automatically eligible;
+        // UNKNOWN and REJECTED are always a hard fail. Never the same
+        // literal check as the fixture branch above ('CLEARED') — this is
+        // the new, real 4-state vocabulary from schemas/broll-schema.js.
+        if (segment.licensing.status === 'UNKNOWN') {
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'LICENSING_UNKNOWN',
+              reason: 'licensing status "UNKNOWN" can never be automatically eligible',
+              eligibleRoles: [],
+            })
+          );
+          continue;
+        }
+        if (segment.licensing.status === 'REJECTED') {
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'LICENSING_REJECTED',
+              reason: 'licensing status "REJECTED" can never be eligible',
+              eligibleRoles: [],
+            })
+          );
+          continue;
+        }
+        if (segment.licensing.status === 'RESTRICTED') {
+          // Requirement #5 / STOP CONDITION — RESTRICTED must only be
+          // eligible when the VisualBeat EXPLICITLY permits restricted
+          // material. schemas/visual-beat-schema.js currently has no
+          // beat-level field for this (audited at the start of this
+          // stage: no `allowRestrictedBroll`/`licensingPermissions`/
+          // equivalent field exists). Per this stage's explicit
+          // instruction, that gap is never silently invented here —
+          // RESTRICTED stays hard-rejected with its own distinct code
+          // until a future stage adds the field. See this stage's final
+          // report for the exact minimal addition that would be needed.
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'RESTRICTED_PERMISSION_FIELD_MISSING',
+              reason:
+                'licensing status "RESTRICTED" requires an explicit beat-level permission that does not yet exist on VisualBeat (schemas/visual-beat-schema.js) — never silently invented',
+              eligibleRoles: [],
+            })
+          );
+          continue;
+        }
+        if (segment.licensing.status !== 'LICENSED') {
+          // Defensive only — unreachable given schemas/broll-schema.js's
+          // LICENSING_STATUSES, but an unrecognized value must never be
+          // silently treated as eligible.
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'LICENSING_UNKNOWN',
+              reason: `licensing status "${segment.licensing.status}" is not a recognized eligible value`,
+              eligibleRoles: [],
+            })
+          );
+          continue;
+        }
+
+        // Requirement #6 — identical identity-protection rule as the
+        // fixture branch above, never weakened for real records.
+        if (characterIdentity) {
+          hardGateResults.push(
+            createHardGateResult({
+              candidate: segmentCandidateId,
+              allowed: false,
+              rejectedBy: 'IDENTITY_REQUIRES_NON_BROLL_PRIMARY',
+              reason: "beat requires a specific character's identity, which B-roll cannot represent as PRIMARY material",
+              eligibleRoles: ['OVERLAY', 'BACKGROUND', 'INSERT'],
+            })
+          );
+          warnings.push(
+            `B-roll segment "${segment.id}" could satisfy this beat as OVERLAY/BACKGROUND/INSERT material in a future HYBRID composition, but not as PRIMARY`
+          );
+          continue;
+        }
+
+        hardGateResults.push(createHardGateResult({ candidate: segmentCandidateId, allowed: true, eligibleRoles: ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'] }));
+        survivors.push(
+          createCandidateResult({
+            candidate: segmentCandidateId,
+            materialSource: 'BROLL_LIBRARY',
+            visualTreatment: 'BROLL_CLIP',
+            selectedAssetId: segment.assetId, // Requirement #7
+            eligibleRoles: ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'],
+            brollSegment: lineage,
             phaseScores: {
               creativeFit: scoreCreativeFit(beat, 'BROLL_LIBRARY', 'BROLL_CLIP'),
               continuity: scoreContinuity('BROLL_LIBRARY', { hasIdentityOrContinuityReqs: identityOrContinuity }),

@@ -292,9 +292,13 @@ test('11a. services/material-resolution-service.js requires no provider, generat
   // provider, generation-execution, or approval module — the /evolink|
   // generation-service|approval-gate|google/i regex below still guards
   // against those.
+  // Stage 26.5B, Part 4 additive require: ./broll-library-service — a
+  // read-only, project-scoped B-roll SUPPLY (never selection/ranking; see
+  // its own header). Not a provider/generation/approval module either —
+  // the same regex guard below still applies to it.
   assert.deepEqual(
     requires.sort(),
-    ['../schemas/visual-beat-schema', '../schemas/material-resolution-schema', './keyframe-store', './timeline-store', './generation-model-registry'].sort()
+    ['../schemas/visual-beat-schema', '../schemas/material-resolution-schema', './keyframe-store', './timeline-store', './generation-model-registry', './broll-library-service'].sort()
   );
   for (const req of requires) {
     assert.ok(!/evolink|generation-service|approval-gate|google/i.test(req), `unexpected import: ${req}`);

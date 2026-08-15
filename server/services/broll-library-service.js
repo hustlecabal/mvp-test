@@ -60,7 +60,9 @@ function saveLibrary(library) {
 
 // Same "create an empty record the first time it's touched, but only if
 // the project itself exists" rule as keyframeStore.ensurePlan /
-// keyframeHandoffService.ensureRecord.
+// keyframeHandoffService.ensureRecord. Used only by the two WRITE paths
+// below (registerBrollSegment/archiveBrollSegment) — a mutation is exactly
+// when persisting a first-touch empty file is appropriate.
 function ensureLibrary(projectId) {
   if (!projectStore.getProject(projectId)) return null;
   let library = loadLibrary(projectId);
@@ -69,6 +71,21 @@ function ensureLibrary(projectId) {
     saveLibrary(library);
   }
   return library;
+}
+
+// Stage 26.5B, Part 4 — a strictly non-mutating counterpart to
+// ensureLibrary(), for every READ path below. A read (e.g. Material
+// Resolution calling getBrollCandidatesForResolution on every beat it
+// resolves, for every project, whether or not that project has ever
+// registered B-roll) must never have the side effect of writing a new
+// empty library file to disk — that would violate both this service's own
+// "never mutate" reads and, at scale, the resolver's read-only contract.
+// Same null-vs-empty distinction as ensureLibrary: null means the PROJECT
+// doesn't exist; a project that exists but has no library file yet reads
+// as an in-memory `{ projectId, segments: [] }`, never persisted.
+function readLibrary(projectId) {
+  if (!projectStore.getProject(projectId)) return null;
+  return loadLibrary(projectId) || { projectId, segments: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +159,7 @@ function registerBrollSegment(projectId, overrides = {}) {
 // ---------------------------------------------------------------------------
 
 function getBrollSegment(projectId, segmentId) {
-  const library = ensureLibrary(projectId);
+  const library = readLibrary(projectId);
   if (!library) return null;
   return library.segments.find((s) => s.id === segmentId) || null;
 }
@@ -150,7 +167,7 @@ function getBrollSegment(projectId, segmentId) {
 // Same simple array-filter approach as timelineStore.listAssets /
 // keyframeStore.listKeyframes.
 function listBrollSegments(projectId, { status, licensingStatus, sourceType, assetId } = {}) {
-  const library = ensureLibrary(projectId);
+  const library = readLibrary(projectId);
   if (!library) return null;
 
   let segments = library.segments;
@@ -225,13 +242,15 @@ function resolveBrollSegmentForMaterialResolution(projectId, segmentId) {
   return { ok: true, segment };
 }
 
-// The clean, validated candidate set a future Material Resolution
-// integration stage can consume (e.g. to populate
-// context.brollSegments) — every ACTIVE segment for this project, licensing
-// status preserved exactly as registered. This function makes NO
-// eligibility decision (UNKNOWN/RESTRICTED/REJECTED segments are included
-// here too, exactly as registered) — filtering by licensing outcome is
-// Material Resolution's job, not this library's.
+// Stage 26.5B, Part 4 — the clean, validated candidate set
+// services/material-resolution-service.js's resolveMaterial() calls
+// directly (by projectId, on every resolution) to populate real B-roll
+// candidates: every ACTIVE segment for this project, licensing status
+// preserved exactly as registered. This function makes NO eligibility
+// decision (UNKNOWN/RESTRICTED/REJECTED segments are included here too,
+// exactly as registered) — filtering by licensing outcome, identity
+// protection, and ranking all remain Material Resolution's job, never
+// this library's.
 function getBrollCandidatesForResolution(projectId) {
   return listBrollSegments(projectId, { status: 'ACTIVE' });
 }
