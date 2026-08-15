@@ -13,7 +13,12 @@ const crypto = require('crypto');
 
 // Kinds of assets the system knows about. This list is descriptive, not
 // enforced — new types can show up without changing this file.
-const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'video'];
+// Stage 26.7 — 'audio' added additively: a narration/music/SFX clip is an
+// Asset exactly like an image or video (same storage.status lifecycle via
+// services/asset-storage.js, same approvalStatus/version/lineage fields),
+// never a second asset model. See schemas/audio-schema.js's AudioEvent,
+// whose sourceAssetId points at an Asset of this type.
+const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'video', 'audio'];
 
 // Stage 13B, Part 1 — distinguishes a controlled single-image keyframe
 // generation from the existing video generation flow. Every generation
