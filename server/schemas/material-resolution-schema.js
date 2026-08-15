@@ -115,10 +115,71 @@ function createMaterialResolution(overrides = {}) {
   return withDefaults(base, overrides);
 }
 
+// ---------------------------------------------------------------------------
+// Stage 26.4 — the BeatGraph-level aggregate report produced by
+// services/material-resolution-service.js's resolveBeatGraph(). Same
+// computed-snapshot discipline as MaterialResolution above: no
+// versionFields()/history, regenerated fresh on every call, never
+// persisted by this stage (no new store).
+// ---------------------------------------------------------------------------
+const BEAT_GRAPH_RESOLUTION_STATUSES = ['RESOLVED', 'PARTIAL', 'UNRESOLVED'];
+
+// Material-strategy counts only — deliberately NOT a financial estimate.
+// `estimatedGenerationCandidates` and `zeroCostDeterministicCount` count
+// beats by which MATERIAL_SOURCES bucket their selectedMaterial fell into,
+// never a credit/currency amount (see resolveBeatGraph's own comment for
+// exactly which sources count as which).
+function createResolutionSummary(overrides = {}) {
+  const base = {
+    totalBeats: 0,
+    resolvedBeats: 0,
+    unresolvedBeats: 0,
+    existingAssetCount: 0, // selectedMaterial.materialSource === PROJECT_ASSET_REUSE
+    brollCount: 0, // selectedMaterial.materialSource === BROLL_LIBRARY
+    stillImageCount: 0, // selectedMaterial.visualTreatment === STILL_IMAGE, any source
+    motionGraphicCount: 0, // selectedMaterial.visualTreatment === MOTION_GRAPHIC
+    whiteboardCount: 0, // selectedMaterial.visualTreatment === WHITEBOARD
+    kineticTypographyCount: 0, // selectedMaterial.visualTreatment === KINETIC_TYPOGRAPHY
+    aiVideoCount: 0, // selectedMaterial.visualTreatment === AI_VIDEO
+    unresolvedReasons: [], // [{ beatId, rejectedBy: [...] }] — one entry per
+                             // unresolved beat, codes taken directly from its
+                             // own unresolvedRequirements, nothing re-derived
+    estimatedGenerationCandidates: 0, // COUNT of resolved beats whose
+                                        // selectedMaterial.materialSource is
+                                        // GENERATED_NEW — i.e. beats that
+                                        // WOULD require a real, future,
+                                        // gated generation call. Never a cost.
+    zeroCostDeterministicCount: 0, // COUNT of resolved beats whose
+                                     // selectedMaterial.materialSource is
+                                     // PROJECT_ASSET_REUSE, BROLL_LIBRARY, or
+                                     // DETERMINISTIC_TEMPLATE — no provider
+                                     // spend under any of those three sources
+  };
+  return withDefaults(base, overrides);
+}
+
+function createBeatGraphResolution(overrides = {}) {
+  const base = {
+    beatGraphId: null, // schemas/beat-graph-schema.js's BeatGraph has no own
+                         // `id` field (same convention as KeyframePlan — a
+                         // project-scoped singleton keyed by projectId, not
+                         // its own UUID) — this is that BeatGraph's
+                         // `projectId`, passed through, never invented
+    status: null, // one of BEAT_GRAPH_RESOLUTION_STATUSES
+    resolutions: [], // one MaterialResolution per beat, in deterministic order
+    summary: createResolutionSummary(),
+    createdAt: new Date().toISOString(),
+  };
+  return withDefaults(base, overrides);
+}
+
 module.exports = {
   MATERIAL_RESOLUTION_STATUSES,
   DECIDING_PHASES,
+  BEAT_GRAPH_RESOLUTION_STATUSES,
   createHardGateResult,
   createCandidateResult,
   createMaterialResolution,
+  createResolutionSummary,
+  createBeatGraphResolution,
 };

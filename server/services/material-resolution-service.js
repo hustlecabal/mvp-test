@@ -37,7 +37,7 @@ const { MATERIAL_SOURCES, VISUAL_TREATMENTS } = require('../schemas/visual-beat-
 // it is used (capability existence + cost-tier signal only, never a
 // provider/model selection).
 const generationModelRegistry = require('./generation-model-registry');
-const { createMaterialResolution, createCandidateResult, createHardGateResult } = require('../schemas/material-resolution-schema');
+const { createMaterialResolution, createCandidateResult, createHardGateResult, createBeatGraphResolution, createResolutionSummary } = require('../schemas/material-resolution-schema');
 
 // ---------------------------------------------------------------------------
 // Which existing Asset `type` values (schemas/production-schema.js's
@@ -601,15 +601,18 @@ function resolveMaterial(projectId, beat, context = {}) {
       beatId: beat ? beat.id : null,
       status: 'UNRESOLVED',
       warnings: ['a VisualBeat (with an id) is required'],
+      unresolvedRequirements: [{ candidate: null, rejectedBy: 'INVALID_BEAT', reason: 'a VisualBeat (with an id) is required' }],
       rationale: 'no beat supplied',
     });
   }
 
   if (!VISUAL_TREATMENTS.includes(beat.visualTreatment)) {
+    const reason = `visualTreatment "${beat.visualTreatment}" is not one of ${VISUAL_TREATMENTS.join(', ')}`;
     return createMaterialResolution({
       beatId: beat.id,
       status: 'UNRESOLVED',
-      warnings: [`visualTreatment "${beat.visualTreatment}" is not one of ${VISUAL_TREATMENTS.join(', ')}`],
+      warnings: [reason],
+      unresolvedRequirements: [{ candidate: null, rejectedBy: 'INVALID_TREATMENT', reason }],
       rationale: 'beat.visualTreatment is not set to a recognized value',
     });
   }
@@ -618,10 +621,12 @@ function resolveMaterial(projectId, beat, context = {}) {
   // independently here (rather than parsing that function's own diagnostic
   // strings) so this short-circuit is robust to unrelated wording changes.
   if (timelineStore.listAssets(projectId) === null) {
+    const reason = `no project found with id "${projectId}"`;
     return createMaterialResolution({
       beatId: beat.id,
       status: 'UNRESOLVED',
-      warnings: [`no project found with id "${projectId}"`],
+      warnings: [reason],
+      unresolvedRequirements: [{ candidate: null, rejectedBy: 'PROJECT_NOT_FOUND', reason }],
       rationale: 'project not found',
     });
   }
@@ -901,6 +906,104 @@ function resolveMaterial(projectId, beat, context = {}) {
   });
 }
 
+// =============================================================================
+// STAGE 26.4 — BEATGRAPH INTEGRATION. The only new surface this stage adds:
+// resolveBeatGraph() calls the Stage 26.3 resolveMaterial() once per beat and
+// aggregates the results. It does not gate, score, or rank anything itself —
+// every actual decision still comes from resolveMaterial(). Read-only with
+// respect to the BeatGraph (schemas/beat-graph-schema.js) exactly like
+// resolveMaterial() is read-only with respect to the project's stores: beats
+// are only ever iterated and sorted into a NEW array for deterministic
+// presentation order, never mutated, and beatGraph.beats itself is never
+// written to (see resolveBeatGraph's own comment below for the copy-before-
+// sort discipline this requires).
+// =============================================================================
+
+// Counts a resolved beat's selectedMaterial into the aggregate summary.
+// Material-strategy counts only, per Stage 26.4's explicit instruction —
+// never a financial estimate, never a credit amount.
+function tallyResolvedBeat(summary, candidate) {
+  if (candidate.materialSource === 'PROJECT_ASSET_REUSE') summary.existingAssetCount += 1;
+  if (candidate.materialSource === 'BROLL_LIBRARY') summary.brollCount += 1;
+  if (candidate.visualTreatment === 'STILL_IMAGE') summary.stillImageCount += 1;
+  if (candidate.visualTreatment === 'MOTION_GRAPHIC') summary.motionGraphicCount += 1;
+  if (candidate.visualTreatment === 'WHITEBOARD') summary.whiteboardCount += 1;
+  if (candidate.visualTreatment === 'KINETIC_TYPOGRAPHY') summary.kineticTypographyCount += 1;
+  if (candidate.visualTreatment === 'AI_VIDEO') summary.aiVideoCount += 1;
+  if (candidate.materialSource === 'GENERATED_NEW') summary.estimatedGenerationCandidates += 1;
+  if (['PROJECT_ASSET_REUSE', 'BROLL_LIBRARY', 'DETERMINISTIC_TEMPLATE'].includes(candidate.materialSource)) {
+    summary.zeroCostDeterministicCount += 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point. Pure/read-only with respect to EVERY input it
+// touches — BeatGraph, VisualBeat, Storyboard, Timeline IR, Keyframe Plan,
+// Asset Store — exactly like resolveMaterial() already is (it never calls
+// approval-gate.js or any approval store either). Never creates, mutates,
+// or deletes anything; never calls a provider; never spends a credit.
+//
+// `context` — the SAME injectable context resolveMaterial() accepts
+// (`context.brollSegments`, Stage 26.3), passed straight through to every
+// beat's own resolution — one B-roll fixture set for the whole graph.
+// ---------------------------------------------------------------------------
+function resolveBeatGraph(projectId, beatGraph, context = {}) {
+  const beatGraphId = beatGraph && beatGraph.projectId ? beatGraph.projectId : null;
+
+  if (!beatGraph || !Array.isArray(beatGraph.beats)) {
+    return createBeatGraphResolution({
+      beatGraphId,
+      status: 'UNRESOLVED',
+      resolutions: [],
+      summary: createResolutionSummary(),
+    });
+  }
+
+  // Deterministic PRESENTATION order only (Stage 26.4 Part 7) — sorts a NEW
+  // array, never beatGraph.beats itself, so the input BeatGraph is never
+  // mutated. sequence/sceneId are read here purely to order the report;
+  // resolveMaterial() below never receives or consults this ordering, so it
+  // cannot influence which candidate wins for any individual beat.
+  // `id` is the final tie-break specifically so presentation order stays
+  // fully deterministic (Part 7) even for malformed input where `sequence`
+  // isn't unique within a scene — never relying on Array.sort's stability
+  // (which would silently let the INPUT array's own order leak through as
+  // a de facto tie-break, exactly the "beat order influences the result"
+  // failure mode this stage exists to rule out).
+  const orderedBeats = [...beatGraph.beats].sort((a, b) => {
+    const sceneCompare = String(a.sceneId).localeCompare(String(b.sceneId));
+    if (sceneCompare !== 0) return sceneCompare;
+    const sequenceCompare = (a.sequence ?? 0) - (b.sequence ?? 0);
+    if (sequenceCompare !== 0) return sequenceCompare;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const resolutions = orderedBeats.map((beat) => resolveMaterial(projectId, beat, context));
+
+  const summary = createResolutionSummary({ totalBeats: resolutions.length });
+  for (const resolution of resolutions) {
+    if (resolution.status === 'RESOLVED') {
+      summary.resolvedBeats += 1;
+      tallyResolvedBeat(summary, resolution.selectedMaterial);
+    } else {
+      summary.unresolvedBeats += 1;
+      summary.unresolvedReasons.push({
+        beatId: resolution.beatId,
+        rejectedBy: resolution.unresolvedRequirements.map((r) => r.rejectedBy),
+      });
+    }
+  }
+
+  const status =
+    resolutions.length === 0 || summary.unresolvedBeats === 0
+      ? 'RESOLVED'
+      : summary.resolvedBeats === 0
+        ? 'UNRESOLVED'
+        : 'PARTIAL';
+
+  return createBeatGraphResolution({ beatGraphId, status, resolutions, summary });
+}
+
 module.exports = {
   MATERIAL_SOURCES,
   TREATMENT_TO_ASSET_TYPES,
@@ -919,6 +1022,8 @@ module.exports = {
   compareCandidates,
   compareMaterialCandidates,
   resolveMaterial,
+  // Stage 26.4 extension
+  resolveBeatGraph,
 };
 
 // ---------------------------------------------------------------------------

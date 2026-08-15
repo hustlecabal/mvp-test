@@ -9,9 +9,12 @@ const path = require('path');
 const {
   MATERIAL_RESOLUTION_STATUSES,
   DECIDING_PHASES,
+  BEAT_GRAPH_RESOLUTION_STATUSES,
   createHardGateResult,
   createCandidateResult,
   createMaterialResolution,
+  createResolutionSummary,
+  createBeatGraphResolution,
 } = require('../schemas/material-resolution-schema');
 
 // --- 1. Enums ---------------------------------------------------------------
@@ -170,4 +173,47 @@ test('6c. schemas/material-resolution-schema.js does no file I/O — the only re
 test('6d. schemas/material-resolution-schema.js never defines a totalScore property (comments explaining its deliberate absence are fine)', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'schemas', 'material-resolution-schema.js'), 'utf8');
   assert.doesNotMatch(text, /totalScore\s*[:=]/);
+});
+
+// --- 7. Stage 26.4 — BeatGraph-level aggregate report ------------------------------
+
+test('7a. BEAT_GRAPH_RESOLUTION_STATUSES is the exact fixed vocabulary', () => {
+  assert.deepEqual(BEAT_GRAPH_RESOLUTION_STATUSES, ['RESOLVED', 'PARTIAL', 'UNRESOLVED']);
+});
+
+test('7b. createResolutionSummary fills in every field with a safe zero/empty default — material-strategy counts only, never a cost', () => {
+  const summary = createResolutionSummary();
+  assert.equal(summary.totalBeats, 0);
+  assert.equal(summary.resolvedBeats, 0);
+  assert.equal(summary.unresolvedBeats, 0);
+  assert.equal(summary.existingAssetCount, 0);
+  assert.equal(summary.brollCount, 0);
+  assert.equal(summary.stillImageCount, 0);
+  assert.equal(summary.motionGraphicCount, 0);
+  assert.equal(summary.whiteboardCount, 0);
+  assert.equal(summary.kineticTypographyCount, 0);
+  assert.equal(summary.aiVideoCount, 0);
+  assert.deepEqual(summary.unresolvedReasons, []);
+  assert.equal(summary.estimatedGenerationCandidates, 0);
+  assert.equal(summary.zeroCostDeterministicCount, 0);
+  assert.equal('estimatedCost' in summary, false, 'this is a strategy-count summary, never a financial estimate');
+  assert.equal('reservedCredits' in summary, false);
+});
+
+test('7c. createBeatGraphResolution fills in every field with a safe default and no version/history fields', () => {
+  const resolution = createBeatGraphResolution({ beatGraphId: 'proj-1' });
+  assert.equal(resolution.beatGraphId, 'proj-1');
+  assert.equal(resolution.status, null);
+  assert.deepEqual(resolution.resolutions, []);
+  assert.ok(resolution.summary);
+  assert.equal(resolution.summary.totalBeats, 0);
+  assert.ok(resolution.createdAt);
+  assert.equal('version' in resolution, false);
+  assert.equal('history' in resolution, false);
+});
+
+test('7d. createBeatGraphResolution never has a totalScore field, and neither does its nested summary', () => {
+  const resolution = createBeatGraphResolution();
+  assert.equal('totalScore' in resolution, false);
+  assert.equal('totalScore' in resolution.summary, false);
 });
