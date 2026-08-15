@@ -5,8 +5,13 @@
 //
 // Every renderSpec here comes from the ACTUAL Stage 26.3/26.5A/26.5B
 // resolver/executor layer — never manually reconstructed. This covers all
-// 6 RENDERER_TYPES, including the two that are honestly BLOCKED
-// (RENDERER_UNAVAILABLE) through the real pipeline, not just in isolation.
+// 6 RENDERER_TYPES. Stage 26.8C updated test 5: BROLL_CLIP now routes to
+// the real HyperFrames renderer (services/renderers/hyperframes-renderer.js)
+// and genuinely succeeds — it is no longer one of the honestly-blocked
+// cases. Test 6 (an existing video asset placed via ASSET_PLACEMENT/
+// PROJECT_ASSET_REUSE) remains honestly RENDERER_UNAVAILABLE: that route
+// still goes through the Stage 26.8A SVG renderer, which was never given
+// video-decode capability.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,6 +19,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const assetStorageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-render-pipeline-asset-storage-'));
 process.env.ASSET_STORAGE_DIR = assetStorageDir;
@@ -46,7 +52,16 @@ function makeStoredImageAsset(projectId, { width = 16, height = 9 } = {}) {
 
 function makeStoredVideoAsset(projectId) {
   const asset = timelineStore.addAsset(projectId, { assetId: crypto.randomUUID(), type: 'video' });
-  timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: `${asset.assetId}.mp4` });
+  const relativePath = `${asset.assetId}.mp4`;
+  timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: relativePath });
+  // A real, tiny, synthetic (ffmpeg lavfi, no download) video file backing
+  // the stored path — required since Stage 26.8C's BROLL_CLIP route
+  // (services/renderers/hyperframes-renderer.js) genuinely decodes the
+  // source file rather than only checking its metadata. Harmless for the
+  // AI_VIDEO/ASSET_PLACEMENT test below, which still blocks on the
+  // asset's `type` field before ever reading the file.
+  const absolutePath = assetStorage.resolveStoredPath(relativePath);
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:duration=6:rate=25', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', absolutePath]);
   return timelineStore.getAsset(projectId, asset.assetId);
 }
 
@@ -149,9 +164,9 @@ test('4. real pipeline — WHITEBOARD beat resolves via DETERMINISTIC_TEMPLATE, 
   assert.match(svgText, /stroke-dasharray/);
 });
 
-// --- 5. BROLL_CLIP -> BROLL_LIBRARY -> BROLL_CLIP executor -> renderer (honestly RENDERER_UNAVAILABLE) -------------------------------------------------------------------
+// --- 5. BROLL_CLIP -> BROLL_LIBRARY -> BROLL_CLIP executor -> HyperFrames renderer (real MP4) -------------------------------------------------------------------
 
-test('5. real pipeline — BROLL_CLIP beat resolves via BROLL_LIBRARY, executes to a real renderSpec, then renders to the honest RENDERER_UNAVAILABLE blocker (never a fabricated frame)', () => {
+test('5. real pipeline — BROLL_CLIP beat resolves via BROLL_LIBRARY, executes to a real renderSpec, then renders to a real, ffprobe-verified MP4 via HyperFrames', () => {
   const project = projectStore.createProject({ title: 'x', topic: 'y' });
   const asset = makeStoredVideoAsset(project.id);
   // TREATMENT_TO_ASSET_TYPES maps BROLL_CLIP -> ['video'] too, so this same
@@ -175,10 +190,14 @@ test('5. real pipeline — BROLL_CLIP beat resolves via BROLL_LIBRARY, executes 
   assert.equal(execution.executorType, 'BROLL_CLIP');
 
   const render = renderMaterial(project.id, execution, outDir());
-  assert.equal(render.status, 'FAILED');
+  assert.equal(render.status, 'COMPLETED');
   assert.equal(render.rendererType, 'BROLL_CLIP');
-  assert.equal(render.diagnostics[0].code, 'RENDERER_UNAVAILABLE');
-  assert.equal(render.artifact, null);
+  assert.deepEqual(render.diagnostics, []);
+  assert.equal(render.artifact.format, 'MP4');
+  assert.ok(fs.existsSync(render.artifact.path));
+  assert.equal(render.artifact.width, 1920);
+  assert.equal(render.artifact.height, 1080);
+  assert.ok(render.artifact.duration > 0);
 });
 
 // --- 6. AI_VIDEO -> PROJECT_ASSET_REUSE(video) -> ASSET_PLACEMENT executor -> renderer (honestly RENDERER_UNAVAILABLE) -------------------------------------------------------------------

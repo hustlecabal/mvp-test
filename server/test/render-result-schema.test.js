@@ -22,8 +22,8 @@ test('2. RENDERER_TYPES is exactly the 6 target renderer types', () => {
   assert.deepEqual(RENDERER_TYPES, ['ASSET_PLACEMENT', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP']);
 });
 
-test('3. RENDER_ARTIFACT_FORMATS is exactly SVG this stage — never MP4/PNG/JPEG speculatively', () => {
-  assert.deepEqual(RENDER_ARTIFACT_FORMATS, ['SVG']);
+test('3. RENDER_ARTIFACT_FORMATS is exactly SVG and MP4 — MP4 added Stage 26.8C for the real HyperFrames renderer, never PNG/JPEG speculatively', () => {
+  assert.deepEqual(RENDER_ARTIFACT_FORMATS, ['SVG', 'MP4']);
 });
 
 test('4. createRenderDiagnostic defaults', () => {

@@ -41,9 +41,12 @@ const RENDER_STATUSES = ['COMPLETED', 'FAILED'];
 const RENDERER_TYPES = ['ASSET_PLACEMENT', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP'];
 
 // Formats an actual renderer in this stage can genuinely produce. Never
-// 'MP4'/'JPEG' etc. speculatively — only values a real renderer module
-// below actually writes.
-const RENDER_ARTIFACT_FORMATS = ['SVG'];
+// speculatively listed — only values a real renderer module below actually
+// writes. 'MP4' added in Stage 26.8C: services/renderers/hyperframes-
+// renderer.js produces real MP4 via a real HyperFrames + FFmpeg + Chrome
+// pipeline, verified with ffprobe before a COMPLETED result is ever
+// returned.
+const RENDER_ARTIFACT_FORMATS = ['SVG', 'MP4'];
 
 function createRenderDiagnostic(overrides = {}) {
   const base = {
