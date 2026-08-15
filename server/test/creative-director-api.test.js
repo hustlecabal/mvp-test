@@ -172,6 +172,58 @@ test('PUT creative/storyboard/shots/:shotId returns 404 for an unknown shot', as
   assert.equal(res.status, 404);
 });
 
+// --- Stage 24: POST creative/storyboard/scenes / shots (found missing during
+// the UI acceptance audit — previously only reachable via MCP) -----------------
+
+function postJson(url, body) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+test('POST creative/storyboard/scenes adds one scene and bumps the storyboard version', async () => {
+  const project = await createProject();
+  const res = await postJson(`${baseUrl}/projects/${project.id}/creative/storyboard/scenes`, { title: 'Opening', changeNote: 'added opening scene' });
+  assert.equal(res.status, 200);
+  const scene = await res.json();
+  assert.equal(scene.title, 'Opening');
+  assert.ok(scene.sceneId);
+
+  const storyboard = await (await fetch(`${baseUrl}/projects/${project.id}/creative/storyboard`)).json();
+  assert.equal(storyboard.scenes.length, 1);
+  assert.equal(storyboard.scenes[0].sceneId, scene.sceneId);
+});
+
+test('POST creative/storyboard/scenes 400s without a changeNote', async () => {
+  const project = await createProject();
+  const res = await postJson(`${baseUrl}/projects/${project.id}/creative/storyboard/scenes`, { title: 'Opening' });
+  assert.equal(res.status, 400);
+});
+
+test('POST creative/storyboard/scenes 404s for an unknown project', async () => {
+  const res = await postJson(`${baseUrl}/projects/00000000-0000-0000-0000-000000000000/creative/storyboard/scenes`, { title: 'x', changeNote: 'x' });
+  assert.equal(res.status, 404);
+});
+
+test('POST creative/storyboard/shots adds one shot scoped to its scene', async () => {
+  const project = await createProject();
+  const sceneRes = await postJson(`${baseUrl}/projects/${project.id}/creative/storyboard/scenes`, { title: 'Opening', changeNote: 'x' });
+  const scene = await sceneRes.json();
+
+  const res = await postJson(`${baseUrl}/projects/${project.id}/creative/storyboard/shots`, { sceneId: scene.sceneId, purpose: 'establish', changeNote: 'added shot' });
+  assert.equal(res.status, 200);
+  const shot = await res.json();
+  assert.equal(shot.sceneId, scene.sceneId);
+  assert.equal(shot.purpose, 'establish');
+
+  const storyboard = await (await fetch(`${baseUrl}/projects/${project.id}/creative/storyboard`)).json();
+  assert.equal(storyboard.shots.length, 1);
+});
+
+test('POST creative/storyboard/shots 400s for a sceneId that does not belong to the project', async () => {
+  const project = await createProject();
+  const res = await postJson(`${baseUrl}/projects/${project.id}/creative/storyboard/shots`, { sceneId: 'not-a-real-scene', purpose: 'x', changeNote: 'x' });
+  assert.equal(res.status, 400);
+});
+
 // --- 20. skill recommendation endpoint -----------------------------------------
 
 test('20. GET /skills and /skills/recommendation power the skill panel', async () => {

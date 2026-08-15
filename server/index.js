@@ -365,6 +365,42 @@ app.put('/projects/:id/creative/storyboard', (req, res) => {
   res.json(creativeStore.updateStoryboard(req.params.id, updates, { updatedBy, changeNote }));
 });
 
+// Stage 24 — adds ONE new scene/shot, mirroring create_storyboard_scene/
+// create_storyboard_shot's MCP behavior exactly (creativeStore.addStoryboardScene/
+// addStoryboardShot). Found missing during the Stage 24 UI acceptance audit:
+// the frontend had no way to create a scene or shot at all — only edit an
+// existing shot's fields (PUT .../shots/:shotId below) or bulk-replace the
+// whole storyboard (PUT .../storyboard above). Never generates anything,
+// never touches approval/budget.
+app.post('/projects/:id/creative/storyboard/scenes', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  const scene = creativeStore.addStoryboardScene(req.params.id, updates, { updatedBy, changeNote });
+  res.json(scene);
+});
+
+app.post('/projects/:id/creative/storyboard/shots', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const changeNote = requireChangeNote(req.body || {}, res);
+  if (changeNote === null) return;
+  const { updatedBy, updates } = splitVersionMeta(req.body);
+
+  let shot;
+  try {
+    shot = creativeStore.addStoryboardShot(req.params.id, updates, { updatedBy, changeNote });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  res.json(shot);
+});
+
 // The Shot Editor's Save action — updates one shot's fields in place.
 app.put('/projects/:id/creative/storyboard/shots/:shotId', (req, res) => {
   const project = projectStore.getProject(req.params.id);
@@ -1002,6 +1038,29 @@ app.get('/projects/:id/assets/:assetId/identity-reviews', (req, res) => {
   const project = projectStore.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   res.json(identityConsistencyReviewStore.listReviews(req.params.id, req.params.assetId));
+});
+
+// Stage 24 — the upload half of adding a reference asset (found missing
+// during the UI acceptance audit: reference-assets above only accepts an
+// assetId that already exists, and nothing turned a human's raw image
+// bytes into one). Deliberately raw-body, not JSON — same convention as
+// POST /handoffs/:handoffId/asset — the request body IS the image's bytes.
+app.post('/projects/:id/reference-library/:entityType/:entityId/upload', express.raw({ type: () => true, limit: '50mb' }), (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).json({ error: 'Request body must be the raw image bytes.' });
+  }
+
+  const uploadedBy = req.query.uploadedBy || req.get('X-Uploaded-By') || null;
+  const result = creativeStore.ingestReferenceAsset(req.params.id, req.params.entityType, req.params.entityId, req.body, { uploadedBy });
+  if (!result.ok) {
+    const status = result.code === 'not_found' ? 404 : 400;
+    return res.status(status).json({ error: result.reason });
+  }
+  res.status(201).json(result);
 });
 
 // Stage 9A — permanent asset storage download/preview. See

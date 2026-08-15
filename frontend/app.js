@@ -1430,6 +1430,90 @@ function renderPropsTab(content, bible) {
 
 // --- Storyboard view (Part 8) + Shot editor (Part 9) -------------------------------
 
+// Stage 24 — found missing during the UI acceptance audit: there was no way
+// to create a scene or shot from the UI at all, only to edit an existing
+// shot's fields or bulk-replace the whole storyboard. These two POST routes
+// (server/index.js) mirror create_storyboard_scene/create_storyboard_shot's
+// MCP behavior exactly — additive only, never touches approval/budget/
+// generation.
+async function addStoryboardSceneFromUI(title) {
+  const projectId = state.selectedProjectId;
+  await fetchJson(`/projects/${projectId}/creative/storyboard/scenes`, {
+    method: 'POST',
+    body: { title, changeNote: `Added scene "${title}" from the Creative Director UI` },
+  });
+  state.creative.storyboard = await fetchJson(`/projects/${projectId}/creative/storyboard`);
+  renderStoryboardView();
+}
+
+async function addStoryboardShotFromUI(sceneId, purpose) {
+  const projectId = state.selectedProjectId;
+  await fetchJson(`/projects/${projectId}/creative/storyboard/shots`, {
+    method: 'POST',
+    body: { sceneId, purpose, changeNote: `Added shot to scene "${sceneId}" from the Creative Director UI` },
+  });
+  state.creative.storyboard = await fetchJson(`/projects/${projectId}/creative/storyboard`);
+  renderStoryboardView();
+}
+
+function renderAddSceneControl(container) {
+  const box = document.createElement('div');
+  box.className = 'field-form';
+  box.style.marginBottom = '16px';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'New scene title';
+  box.appendChild(input);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-secondary';
+  addBtn.textContent = 'Add Scene';
+  addBtn.addEventListener('click', async () => {
+    const title = input.value.trim();
+    if (!title) return;
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding…';
+    try {
+      await addStoryboardSceneFromUI(title);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add Scene';
+    }
+  });
+  box.appendChild(addBtn);
+  container.appendChild(box);
+}
+
+function renderAddShotControl(sceneBox, sceneId) {
+  const box = document.createElement('div');
+  box.className = 'field-form';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'New shot purpose (e.g. "establish the lab")';
+  box.appendChild(input);
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-secondary';
+  addBtn.textContent = 'Add Shot';
+  addBtn.addEventListener('click', async () => {
+    const purpose = input.value.trim();
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding…';
+    try {
+      await addStoryboardShotFromUI(sceneId, purpose || undefined);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add Shot';
+    }
+  });
+  box.appendChild(addBtn);
+  sceneBox.appendChild(box);
+}
+
 function renderStoryboardView() {
   const container = document.getElementById('creative-editor');
   container.innerHTML = '';
@@ -1442,6 +1526,8 @@ function renderStoryboardView() {
   const heading = document.createElement('h3');
   heading.textContent = 'Storyboard';
   container.appendChild(heading);
+
+  renderAddSceneControl(container);
 
   const storyboard = state.creative.storyboard;
   if (!storyboard || !storyboard.scenes || storyboard.scenes.length === 0) {
@@ -1475,6 +1561,7 @@ function renderStoryboardView() {
       shots.forEach((shot, shotIdx) => grid.appendChild(renderShotCard(shot, shotIdx + 1)));
       sceneBox.appendChild(grid);
     }
+    renderAddShotControl(sceneBox, scene.sceneId);
     container.appendChild(sceneBox);
   });
 
@@ -1647,13 +1734,21 @@ function renderKeyframeAnalysisSection(container, shot) {
 
   const analysis = state.creative.shotAnalysis;
   if (analysis && analysis.shotId === shot.shotId) {
-    section.appendChild(renderKeyframeAnalysisResults(analysis));
+    section.appendChild(renderKeyframeAnalysisResults(analysis, shot));
   }
 
   container.appendChild(section);
 }
 
-function renderKeyframeAnalysisResults(analysis) {
+// Stage 24 — found missing during the UI acceptance audit: analysis is
+// deliberately read-only (Stage 12's own rule, unchanged — running ANALYZE
+// KEYFRAMES itself still creates nothing), but there was no separate,
+// explicit action anywhere in the UI to actually record a keyframe from a
+// recommendation. ADD THIS KEYFRAME is that separate action: one explicit
+// click per recommendation, calling the existing POST /projects/:id/keyframes
+// endpoint with exactly that recommendation's own fields — never a batch/
+// auto-accept of every recommendation at once.
+function renderKeyframeAnalysisResults(analysis, shot) {
   const wrap = document.createElement('div');
   wrap.className = 'keyframe-analysis-results';
 
@@ -1666,7 +1761,7 @@ function renderKeyframeAnalysisResults(analysis) {
     `${analysis.summary.alreadyPlanned} already planned.`;
   wrap.appendChild(summary);
 
-  function group(title, items, describe) {
+  function group(title, items, describe, actionable) {
     if (items.length === 0) return;
     const groupBox = document.createElement('div');
     groupBox.className = 'keyframe-analysis-group';
@@ -1678,18 +1773,56 @@ function renderKeyframeAnalysisResults(analysis) {
     items.forEach((item) => {
       const li = document.createElement('li');
       li.textContent = describe(item);
+      if (actionable) {
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn-secondary';
+        addBtn.style.marginLeft = '8px';
+        addBtn.textContent = 'ADD THIS KEYFRAME';
+        addBtn.addEventListener('click', async () => {
+          addBtn.disabled = true;
+          addBtn.textContent = 'Adding…';
+          try {
+            const storyboard = state.creative.storyboard;
+            await fetchJson(`/projects/${state.selectedProjectId}/keyframes`, {
+              method: 'POST',
+              body: {
+                sceneId: shot.sceneId,
+                shotId: shot.shotId,
+                subject: item.subject,
+                frameType: item.frameType,
+                characterReferences: item.characterId ? [item.characterId] : [],
+                locationReferences: item.locationId ? [item.locationId] : [],
+                sourceShotVersion: storyboard ? storyboard.version : null,
+                changeNote: `Added ${item.frameType} keyframe from ANALYZE KEYFRAMES recommendation`,
+              },
+            });
+            li.appendChild(document.createTextNode(' — added.'));
+            addBtn.remove();
+          } catch {
+            addBtn.disabled = false;
+            addBtn.textContent = 'ADD THIS KEYFRAME';
+          }
+        });
+        li.appendChild(addBtn);
+      }
       list.appendChild(li);
     });
     groupBox.appendChild(list);
     wrap.appendChild(groupBox);
   }
 
-  group('Recommended (new)', analysis.recommendations, (r) => {
-    const skill = r.recommendedSkill ? ` — recommended skill: ${SKILL_DISPLAY_NAMES[r.recommendedSkill] || r.recommendedSkill}` : '';
-    return `${r.frameType}: ${displayValue(r.purpose)}${skill}`;
-  });
-  group('Reusable (already have an approved asset)', analysis.reused, (r) => `${r.frameType}: ${r.reason}`);
-  group('Already planned', analysis.existing, (r) => `${r.frameType}: ${r.reason} (status: ${displayValue(r.status)})`);
+  group(
+    'Recommended (new)',
+    analysis.recommendations,
+    (r) => {
+      const skill = r.recommendedSkill ? ` — recommended skill: ${SKILL_DISPLAY_NAMES[r.recommendedSkill] || r.recommendedSkill}` : '';
+      return `${r.frameType}: ${displayValue(r.purpose)}${skill}`;
+    },
+    true
+  );
+  group('Reusable (already have an approved asset)', analysis.reused, (r) => `${r.frameType}: ${r.reason}`, false);
+  group('Already planned', analysis.existing, (r) => `${r.frameType}: ${r.reason} (status: ${displayValue(r.status)})`, false);
 
   return wrap;
 }
@@ -3707,10 +3840,56 @@ function renderReferenceEntityCard(entity) {
 
   if (expanded) {
     card.appendChild(renderIdentityLockPanel(entity));
+    card.appendChild(renderUploadReferenceControl(entity));
     card.appendChild(renderReferenceAssetsPanel(entity));
   }
 
   return card;
+}
+
+// Stage 24 — ADD AS CANDIDATE, the upload control this section's own
+// header comment already described but never implemented: turns a
+// human-supplied image into a new candidate reference asset for this
+// entity (approvalStatus NONE, never auto-approved, never auto-canonical
+// — SELECT AS CANONICAL below stays the only way that happens). Mirrors
+// renderUploadImageControl's exact pattern (raw bytes, server sniffs the
+// real image format itself).
+function renderUploadReferenceControl(entity) {
+  const box = document.createElement('div');
+  box.className = 'form-actions';
+  box.style.marginTop = '8px';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/png,image/jpeg,image/gif,image/webp';
+  box.appendChild(fileInput);
+
+  const uploadBtn = document.createElement('button');
+  uploadBtn.type = 'button';
+  uploadBtn.className = 'btn';
+  uploadBtn.textContent = 'ADD AS CANDIDATE';
+  uploadBtn.addEventListener('click', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      window.alert('Choose an image file first.');
+      return;
+    }
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+    try {
+      const projectId = state.selectedProjectId;
+      await uploadRaw(`/projects/${projectId}/reference-library/${entity.entityType}/${entity.entityId}/upload?uploadedBy=${encodeURIComponent('Creative Director UI')}`, file);
+      await loadReferenceLibrary();
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'ADD AS CANDIDATE';
+    }
+  });
+  box.appendChild(uploadBtn);
+
+  return box;
 }
 
 function renderIdentityLockPanel(entity) {
@@ -3796,7 +3975,12 @@ function renderReferenceAssetCard(entity, asset) {
     badge.className = 'badge badge-approved';
     badge.textContent = 'CANONICAL';
     card.appendChild(badge);
-  } else if (asset.approvalStatus === 'APPROVED') {
+  } else if (asset.approvalStatus !== 'REJECTED') {
+    // Backend gate (creative-store.js selectCanonicalReferenceAsset) only
+    // blocks REJECTED assets — NONE (freshly uploaded, unreviewed) and
+    // APPROVED are both selectable. Matching that here, not a stricter
+    // APPROVED-only check, or a freshly uploaded candidate could never be
+    // selected at all.
     const selectBtn = document.createElement('button');
     selectBtn.type = 'button';
     selectBtn.className = 'btn btn-secondary';

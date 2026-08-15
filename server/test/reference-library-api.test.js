@@ -121,6 +121,66 @@ test('POST .../reference-assets requires assetId', async () => {
   assert.equal(res.status, 400);
 });
 
+// --- Stage 24: POST .../upload (found missing during the UI acceptance audit —
+// reference-assets above only accepts an assetId that already exists) -----------------
+
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]);
+
+test('POST .../upload turns raw image bytes into a new candidate reference asset, approvalStatus NONE', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG_BYTES,
+  });
+  assert.equal(res.status, 201);
+  const body = await res.json();
+  assert.equal(body.asset.type, 'character_reference');
+  assert.equal(body.asset.approvalStatus, 'NONE', 'a newly-uploaded reference is never auto-approved');
+  assert.equal(body.asset.storage.status, 'STORED');
+  assert.ok(body.entity.referenceAssets.includes(body.asset.assetId));
+});
+
+test('POST .../upload 400s for a non-image body', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: 'not an image',
+  });
+  assert.equal(res.status, 400);
+});
+
+test('POST .../upload 400s for an empty body', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/upload`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: Buffer.alloc(0) });
+  assert.equal(res.status, 400);
+});
+
+test('POST .../upload 404s for an unknown entity', async () => {
+  const project = await createProject();
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/nope/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG_BYTES,
+  });
+  assert.equal(res.status, 404);
+});
+
+test('POST .../upload 400s for an invalid entityType', async () => {
+  const project = await createProject();
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/NOT_A_TYPE/char-1/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: PNG_BYTES,
+  });
+  assert.equal(res.status, 400);
+});
+
 // --- canonical selection ----------------------------------------------------------------
 
 test('PUT .../canonical selects the canonical reference asset', async () => {

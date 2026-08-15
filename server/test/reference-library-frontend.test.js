@@ -83,3 +83,17 @@ test('canonical selection always requires an explicit assetId from a human click
   // never an index-0 / "first" / "latest" selection.
   assert.match(fnText, /assetId: asset\.assetId/);
 });
+
+// Stage 24 — found during the UI acceptance audit: this card used to gate
+// SELECT AS CANONICAL on approvalStatus === 'APPROVED', but the backend
+// (creative-store.js selectCanonicalReferenceAsset) only ever blocks
+// REJECTED assets — a freshly uploaded, unreviewed (NONE) candidate was
+// always backend-eligible but could never be selected through the UI.
+test('SELECT AS CANONICAL is offered for any non-REJECTED asset, not only APPROVED ones', () => {
+  const js = readFrontend('app.js');
+  const fnStart = js.indexOf('function renderReferenceAssetCard');
+  const fnEnd = js.indexOf('\n}\n', fnStart);
+  const fnText = js.slice(fnStart, fnEnd);
+  assert.match(fnText, /asset\.approvalStatus !== 'REJECTED'/);
+  assert.doesNotMatch(fnText, /asset\.approvalStatus === 'APPROVED'/);
+});

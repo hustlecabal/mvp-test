@@ -16,8 +16,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const projectStore = require('./project-store');
 const timelineStore = require('./timeline-store');
+const assetStorage = require('./asset-storage');
 const creativeSchema = require('../schemas/creative-schema');
 
 // Overridable for tests, same pattern as PROJECT_DATA_DIR/
@@ -283,6 +285,55 @@ function addEntityReferenceAsset(projectId, entityType, entityId, assetId, { upd
   return list[index];
 }
 
+// Stage 24 — found missing during the UI acceptance audit: the REST route
+// for associating an EXISTING assetId to an entity (addEntityReferenceAsset
+// above) has existed since Stage 19, but there was no way to get a new
+// image's bytes turned into an assetId in the first place for this purpose
+// — no upload endpoint existed for the Reference Library at all. This
+// combines that missing upload step with the existing association step in
+// one call, mirroring keyframe-handoff-service.js's ingestHandoffAsset
+// exactly (storeUploadedImage -> addAsset -> associate), the one other
+// place in this codebase that already turns raw uploaded bytes into an
+// Asset record. Returns { ok:false, code, reason } for a bad upload —
+// never throws for an ordinary validation failure.
+function ingestReferenceAsset(projectId, entityType, entityId, imageBuffer, { uploadedBy, changeNote } = {}) {
+  const found = findReferenceEntity(projectId, entityType, entityId);
+  if (!found) return { ok: false, code: 'not_found', reason: `No ${entityType.toLowerCase()} found with id "${entityId}" in project "${projectId}".` };
+
+  const assetId = crypto.randomUUID(); // always generated server-side
+  let stored;
+  try {
+    stored = assetStorage.storeUploadedImage(imageBuffer, assetId);
+  } catch (err) {
+    return { ok: false, code: err.code || 'upload_failed', reason: err.message };
+  }
+
+  timelineStore.addAsset(projectId, {
+    assetId,
+    type: `${entityType.toLowerCase()}_reference`,
+    provider: 'human-upload',
+    model: null,
+    generationId: null,
+    approvalStatus: 'NONE', // a human still reviews/selects it as canonical separately — never auto-approved
+  });
+  const asset = timelineStore.updateAssetStorage(projectId, assetId, {
+    provider: 'local',
+    path: stored.relativePath,
+    status: 'STORED',
+    contentType: stored.contentType,
+    sizeBytes: stored.sizeBytes,
+    archivedAt: new Date().toISOString(),
+    error: null,
+  });
+
+  const entity = addEntityReferenceAsset(projectId, entityType, entityId, assetId, {
+    updatedBy: uploadedBy,
+    changeNote: changeNote || `Uploaded a new candidate reference asset for ${entityType.toLowerCase()} "${found.entity.name || entityId}"`,
+  });
+
+  return { ok: true, asset, entity };
+}
+
 // Small internal helper: updates exactly one array field of the Visual
 // Bible (characters/locations/props) through the existing versioned
 // update path, without a caller having to reassemble the other two
@@ -416,6 +467,7 @@ module.exports = {
   ENTITY_TYPE_CONFIG,
   findReferenceEntity,
   addEntityReferenceAsset,
+  ingestReferenceAsset,
   selectCanonicalReferenceAsset,
   getCanonicalReferenceAsset,
 };
