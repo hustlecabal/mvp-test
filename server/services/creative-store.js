@@ -334,6 +334,31 @@ function ingestReferenceAsset(projectId, entityType, entityId, imageBuffer, { up
   return { ok: true, asset, entity };
 }
 
+// Stage 25 — found during the MVP acceptance run: a human-uploaded
+// reference asset (approvalStatus NONE) can be selected as canonical
+// (Stage 24 fix), but keyframe-prompt-service.js's resolution only ever
+// treats an APPROVED reference asset as "existing" — nothing anywhere
+// promoted an upload from NONE to APPROVED, so it was a dead end: canonical
+// forever, never actually usable. This is the missing human decision,
+// mirroring the exact pattern already used for generated keyframes/videos
+// (approveGeneratedKeyframe/approveGeneratedVideo) — a human explicitly
+// approves or rejects, scoped to an asset that is genuinely one of this
+// entity's own reference assets so an unrelated assetId can't be decided
+// through this route.
+function decideReferenceAsset(projectId, entityType, entityId, assetId, approve, { decidedBy } = {}) {
+  const found = findReferenceEntity(projectId, entityType, entityId);
+  if (!found) return { ok: false, code: 'not_found', reason: `No ${String(entityType).toLowerCase()} found with id "${entityId}" in project "${projectId}".` };
+
+  if (!(found.entity.referenceAssets || []).includes(assetId)) {
+    return { ok: false, code: 'not_associated', reason: `Asset "${assetId}" is not one of this ${entityType.toLowerCase()}'s reference assets.` };
+  }
+
+  const asset = timelineStore.setAssetApprovalStatus(projectId, assetId, approve ? 'APPROVED' : 'REJECTED');
+  if (!asset) return { ok: false, code: 'not_found', reason: `No asset found with id "${assetId}" in project "${projectId}".` };
+
+  return { ok: true, asset };
+}
+
 // Small internal helper: updates exactly one array field of the Visual
 // Bible (characters/locations/props) through the existing versioned
 // update path, without a caller having to reassemble the other two
@@ -468,6 +493,7 @@ module.exports = {
   findReferenceEntity,
   addEntityReferenceAsset,
   ingestReferenceAsset,
+  decideReferenceAsset,
   selectCanonicalReferenceAsset,
   getCanonicalReferenceAsset,
 };

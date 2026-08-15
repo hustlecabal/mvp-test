@@ -3970,6 +3970,45 @@ function renderReferenceAssetCard(entity, asset) {
   card.appendChild(infoRow('Source', asset.provider));
   card.appendChild(infoRow('Generation ID', asset.generationId));
 
+  // Stage 25 — found during the MVP acceptance run: a NONE-status reference
+  // asset (any freshly uploaded candidate) could be selected canonical but
+  // then sat unresolved forever in every keyframe prompt package, because
+  // keyframe-prompt-service.js only treats APPROVED assets as usable and
+  // nothing ever promoted an upload past NONE. This is that missing human
+  // decision — same shape as GENERATE KEYFRAME's approve/reject.
+  if (asset.approvalStatus === 'NONE') {
+    const decisionActions = document.createElement('div');
+    decisionActions.className = 'form-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'btn';
+    approveBtn.textContent = 'APPROVE REFERENCE';
+    approveBtn.addEventListener('click', async () => {
+      await fetchJson(`/projects/${state.selectedProjectId}/reference-library/${entity.entityType}/${entity.entityId}/assets/${asset.assetId}/decision`, {
+        method: 'POST',
+        body: { approve: true, decidedBy: 'Creative Director UI' },
+      });
+      await loadReferenceLibrary();
+    });
+    decisionActions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'btn btn-secondary';
+    rejectBtn.textContent = 'REJECT REFERENCE';
+    rejectBtn.addEventListener('click', async () => {
+      await fetchJson(`/projects/${state.selectedProjectId}/reference-library/${entity.entityType}/${entity.entityId}/assets/${asset.assetId}/decision`, {
+        method: 'POST',
+        body: { approve: false, decidedBy: 'Creative Director UI' },
+      });
+      await loadReferenceLibrary();
+    });
+    decisionActions.appendChild(rejectBtn);
+
+    card.appendChild(decisionActions);
+  }
+
   if (asset.canonical) {
     const badge = document.createElement('span');
     badge.className = 'badge badge-approved';
@@ -4325,10 +4364,22 @@ function renderQueueRow(item) {
     // COMPLETE yet) is deliberately not shown — nothing useful to report.
     if (item.videoStatus && item.videoStatus !== 'NOT_APPLICABLE') {
       card.appendChild(infoRow('Video', item.videoAssetId ? `${item.videoStatus} (${item.videoAssetId})` : item.videoStatus));
-      if (item.videoStatus === 'VIDEO_RETURNED' || item.videoStatus === 'VIDEO_REJECTED') {
+      // Stage 25 — VIDEO_FAILED added alongside the existing two banners:
+      // the most recent attempt failed before producing an asset (e.g. a
+      // provider/schema rejection), so an operator doesn't click GENERATE
+      // VIDEO again without knowing a real attempt was already made.
+      const videoBannerText =
+        item.videoStatus === 'VIDEO_RETURNED'
+          ? 'VIDEO NEEDS REVIEW'
+          : item.videoStatus === 'VIDEO_REJECTED'
+            ? 'VIDEO WAS REJECTED — rebuild/regenerate to try again'
+            : item.videoStatus === 'VIDEO_FAILED'
+              ? `VIDEO GENERATION FAILED${item.videoFailureReason ? `: ${item.videoFailureReason}` : ''} — fix the underlying issue before generating again`
+              : null;
+      if (videoBannerText) {
         const videoBanner = document.createElement('div');
         videoBanner.className = 'budget-warning';
-        videoBanner.textContent = item.videoStatus === 'VIDEO_RETURNED' ? 'VIDEO NEEDS REVIEW' : 'VIDEO WAS REJECTED — rebuild/regenerate to try again';
+        videoBanner.textContent = videoBannerText;
         card.appendChild(videoBanner);
       }
     }

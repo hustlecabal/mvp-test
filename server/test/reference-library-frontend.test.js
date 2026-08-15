@@ -97,3 +97,19 @@ test('SELECT AS CANONICAL is offered for any non-REJECTED asset, not only APPROV
   assert.match(fnText, /asset\.approvalStatus !== 'REJECTED'/);
   assert.doesNotMatch(fnText, /asset\.approvalStatus === 'APPROVED'/);
 });
+
+// Stage 25 — found during the MVP acceptance run: an uploaded (NONE-status)
+// reference asset could be made canonical but had no path to APPROVED, so
+// it was never actually resolved into a keyframe prompt package. APPROVE
+// REFERENCE / REJECT REFERENCE is the missing explicit human decision.
+test('a NONE-status reference asset offers explicit APPROVE REFERENCE / REJECT REFERENCE controls, each a single real REST call', () => {
+  const js = readFrontend('app.js');
+  const fnStart = js.indexOf('function renderReferenceAssetCard');
+  const fnEnd = js.indexOf('\n}\n', fnStart);
+  const fnText = js.slice(fnStart, fnEnd);
+  assert.match(fnText, /asset\.approvalStatus === 'NONE'/);
+  assert.match(fnText, /'APPROVE REFERENCE'/);
+  assert.match(fnText, /'REJECT REFERENCE'/);
+  assert.match(fnText, /reference-library\/\$\{entity\.entityType\}\/\$\{entity\.entityId\}\/assets\/\$\{asset\.assetId\}\/decision/);
+  assert.doesNotMatch(fnText, /setInterval|setTimeout/);
+});

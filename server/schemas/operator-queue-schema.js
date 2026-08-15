@@ -88,6 +88,15 @@ const REFERENCE_STATUSES = ['NO_REFERENCE_NEEDED', 'MISSING', 'REVIEW_REQUIRED',
 //                                rebuild the package/re-approve/regenerate
 //                                to try again, exactly like a rejected
 //                                keyframe image.
+//   VIDEO_FAILED              — Stage 25. the most recent generation job
+//                                for this keyframe reached a terminal
+//                                FAILED status without ever producing an
+//                                asset (a provider/schema-level rejection,
+//                                e.g. an empty prompt) — distinct from
+//                                VIDEO_REJECTED, which is a human's
+//                                decision about a real result. Never
+//                                blocks trying again: a human can still
+//                                rebuild the package and re-generate.
 const VIDEO_STATUSES = [
   'NOT_APPLICABLE',
   'NEEDS_VIDEO_PACKAGE',
@@ -97,6 +106,7 @@ const VIDEO_STATUSES = [
   'VIDEO_RETURNED',
   'VIDEO_APPROVED',
   'VIDEO_REJECTED',
+  'VIDEO_FAILED',
 ];
 
 // Part 4 — 1 (highest) through 9 (lowest). Deliberately a plain integer,
@@ -172,6 +182,8 @@ function createQueueItem(overrides = {}) {
     videoGenerationApprovalStatus: null, // 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | null
     videoAssetId: null,
     videoAssetApprovalStatus: null,
+    videoGenerationId: null, // Stage 25 — set only when videoStatus is VIDEO_FAILED
+    videoFailureReason: null, // Stage 25 — the provider/schema error message for that failed job
 
     createdAt: null,
     updatedAt: null,

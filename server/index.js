@@ -1063,6 +1063,26 @@ app.post('/projects/:id/reference-library/:entityType/:entityId/upload', express
   res.status(201).json(result);
 });
 
+// Stage 25 — a human decision on a reference candidate, mirroring
+// /keyframes/:keyframeId/approval (keyframe-generation-service.js) and the
+// video-generation review route: an explicit APPROVED/REJECTED, scoped to
+// an asset that is genuinely one of this entity's own reference assets.
+app.post('/projects/:id/reference-library/:entityType/:entityId/assets/:assetId/decision', (req, res) => {
+  const project = projectStore.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!requireValidEntityType(req.params.entityType, res)) return;
+
+  const { approve, decidedBy } = req.body || {};
+  if (typeof approve !== 'boolean') return res.status(400).json({ error: 'approve (boolean) is required' });
+
+  const result = creativeStore.decideReferenceAsset(req.params.id, req.params.entityType, req.params.entityId, req.params.assetId, approve, { decidedBy });
+  if (!result.ok) {
+    const status = result.code === 'not_found' ? 404 : 400;
+    return res.status(status).json({ error: result.reason });
+  }
+  res.json(result.asset);
+});
+
 // Stage 9A — permanent asset storage download/preview. See
 // docs/architecture/asset-storage.md. Neither endpoint ever exposes the
 // internal filesystem path to the client; both only stream file bytes.

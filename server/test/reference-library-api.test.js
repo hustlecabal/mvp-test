@@ -293,6 +293,76 @@ test('GET .../identity-reviews lists every recorded review, never deleted', asyn
   assert.equal(body.length, 2);
 });
 
+// --- POST .../assets/:assetId/decision (Stage 25) -----------------------------------
+
+test('POST .../assets/:assetId/decision approves a NONE-status reference asset', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const asset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  creativeStore.addEntityReferenceAsset(project.id, 'CHARACTER', 'char-1', asset.assetId);
+
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/assets/${asset.assetId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve: true, decidedBy: 'reviewer' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.approvalStatus, 'APPROVED');
+});
+
+test('POST .../assets/:assetId/decision rejects when approve:false', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const asset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  creativeStore.addEntityReferenceAsset(project.id, 'CHARACTER', 'char-1', asset.assetId);
+
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/assets/${asset.assetId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve: false, decidedBy: 'reviewer' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.approvalStatus, 'REJECTED');
+});
+
+test('POST .../assets/:assetId/decision 400s without a boolean approve', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const asset = timelineStore.addAsset(project.id, { type: 'character_reference' });
+  creativeStore.addEntityReferenceAsset(project.id, 'CHARACTER', 'char-1', asset.assetId);
+
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/assets/${asset.assetId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decidedBy: 'reviewer' }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test('POST .../assets/:assetId/decision 400s for an assetId that is not one of this entity\'s reference assets', async () => {
+  const project = await createProject();
+  seedCharacter(project.id);
+  const unrelated = timelineStore.addAsset(project.id, { type: 'character_reference' });
+
+  const res = await fetch(`${baseUrl}/projects/${project.id}/reference-library/CHARACTER/char-1/assets/${unrelated.assetId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve: true, decidedBy: 'reviewer' }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test('POST .../assets/:assetId/decision 404s for an unknown project', async () => {
+  const res = await fetch(`${baseUrl}/projects/nope/reference-library/CHARACTER/char-1/assets/asset-1/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve: true }),
+  });
+  assert.equal(res.status, 404);
+});
+
 // --- no business logic lives in index.js -------------------------------------------
 
 test("index.js's reference-library routes are thin wrappers — no canonical/resolution logic lives there", () => {

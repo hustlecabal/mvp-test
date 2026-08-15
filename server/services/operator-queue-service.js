@@ -309,6 +309,22 @@ function computeVideoStatus({ canonicalAsset, videoPkg, videoApproval, videoJobs
     return { videoStatus: 'VIDEO_IN_PROGRESS' };
   }
 
+  // Stage 25 — found during the MVP acceptance run: a FAILED generation job
+  // produces no asset (assetId stays null), so it fell through every check
+  // below straight to VIDEO_READY_FOR_GENERATION — indistinguishable from
+  // "never attempted." An operator had no way to see that a real attempt
+  // already failed, or why. Only surfaces the MOST RECENT job when it's a
+  // terminal FAILED with no asset; an older failure superseded by a later
+  // asset (returned/approved/rejected) is correctly not shown here.
+  const mostRecentJob = videoJobsForKeyframe.at(-1);
+  if (mostRecentJob && mostRecentJob.status === 'FAILED' && !mostRecentJob.assetId) {
+    return {
+      videoStatus: 'VIDEO_FAILED',
+      videoGenerationId: mostRecentJob.id,
+      videoFailureReason: (mostRecentJob.error && mostRecentJob.error.message) || null,
+    };
+  }
+
   const approvedVideoAsset = videoAssetsForKeyframe.find((a) => a.approvalStatus === 'APPROVED');
   if (approvedVideoAsset) {
     return { videoStatus: 'VIDEO_APPROVED', videoAssetId: approvedVideoAsset.assetId, videoAssetApprovalStatus: approvedVideoAsset.approvalStatus };

@@ -150,6 +150,68 @@ test('videoStatus is VIDEO_IN_PROGRESS when an active video generation job exist
   assert.equal(item.videoStatus, 'VIDEO_IN_PROGRESS');
 });
 
+// Stage 25 — found during the MVP acceptance run: a FAILED job that never
+// produced an asset fell straight through to VIDEO_READY_FOR_GENERATION,
+// indistinguishable from "never attempted." VIDEO_FAILED closes that gap.
+test('videoStatus is VIDEO_FAILED when the most recent job is a terminal FAILED with no asset', () => {
+  const { project, keyframe } = buildCompleteKeyframeFixture();
+  const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  approveVideo(project, keyframe, built.package);
+  const job = generationStore.createGenerationJob({
+    projectId: project.id,
+    shotId: keyframe.shotId,
+    keyframeId: keyframe.keyframeId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    canonicalKeyframeAssetId: built.package.canonicalKeyframeAssetId,
+    generationType: 'VIDEO',
+    provider: GOOD_PROVIDER,
+    model: GOOD_MODEL,
+    status: 'FAILED',
+    assetId: null,
+    error: { message: 'prompt cannot be empty' },
+  });
+
+  const item = itemFor(oq.buildProjectQueue(project.id), keyframe.keyframeId);
+  assert.equal(item.videoStatus, 'VIDEO_FAILED');
+  assert.equal(item.videoGenerationId, job.id);
+  assert.equal(item.videoFailureReason, 'prompt cannot be empty');
+});
+
+test('videoStatus is VIDEO_READY_FOR_GENERATION again once a rebuild/regenerate follows a VIDEO_FAILED job (not permanently stuck)', () => {
+  const { project, keyframe } = buildCompleteKeyframeFixture();
+  const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  approveVideo(project, keyframe, built.package);
+  generationStore.createGenerationJob({
+    projectId: project.id,
+    shotId: keyframe.shotId,
+    keyframeId: keyframe.keyframeId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    canonicalKeyframeAssetId: built.package.canonicalKeyframeAssetId,
+    generationType: 'VIDEO',
+    provider: GOOD_PROVIDER,
+    model: GOOD_MODEL,
+    status: 'FAILED',
+    assetId: null,
+    error: { message: 'prompt cannot be empty' },
+  });
+  // A later successful attempt for the same keyframe.
+  const videoAsset = timelineStore.addAsset(project.id, {
+    type: 'video',
+    keyframeId: keyframe.keyframeId,
+    sceneId: keyframe.sceneId,
+    shotId: keyframe.shotId,
+    videoPromptPackageId: built.package.packageId,
+    videoPromptPackageVersion: built.package.version,
+    approvalStatus: 'NONE',
+  });
+
+  const item = itemFor(oq.buildProjectQueue(project.id), keyframe.keyframeId);
+  assert.equal(item.videoStatus, 'VIDEO_RETURNED', 'a later completed asset always takes priority over an older failed job');
+  assert.equal(item.videoAssetId, videoAsset.assetId);
+});
+
 test('videoStatus is VIDEO_RETURNED when a completed video asset has not been reviewed yet', () => {
   const { project, keyframe } = buildCompleteKeyframeFixture();
   const built = videoPromptService.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
