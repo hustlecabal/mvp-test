@@ -118,6 +118,18 @@ function createShot(overrides = {}) {
     generationId: null,
     status: 'PLANNED',
     approvalStatus: 'NONE',
+    // Stage 26.6 — Timeline Compiler additive fields (see
+    // docs/architecture/stage-26.2-visual-production-master-spec.md,
+    // Section 16.2, and the Stage 26.6 Part 1 audit). All stay null for a
+    // legacy/hand-authored shot (e.g. the create_shot MCP tool) — only
+    // ever populated by services/timeline-compiler-service.js.
+    layer: null, // one of visual-beat-schema.js's MATERIAL_ROLES
+                  // (PRIMARY/OVERLAY/BACKGROUND/INSERT) once compiled
+    renderSpec: null, // the originating ExecutionResult's own renderSpec,
+                        // copied verbatim — never reinterpreted here
+    beatId: null, // provenance: the VisualBeat this shot was compiled from
+    materialId: null, // provenance: the MaterialResolution candidate id
+    executionId: null, // provenance: the ExecutionResult this shot came from
   };
   return withDefaults(base, overrides);
 }
