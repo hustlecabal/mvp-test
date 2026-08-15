@@ -259,7 +259,54 @@ three comes only from the separate `evolink.ai/models` catalogue page (Stage
 No generation was performed. No approval was created. No budget was
 reserved. No registry or provider file was modified.
 
-## Safety Statement
+---
+
+## Addendum — Real Test Result (approved follow-up session)
+
+The Part 6 recommendation was approved. Two small, additive defects
+(documented above as necessary prerequisites) were fixed first:
+`generation-model-registry.js`'s model ID for this entry was corrected from
+the unconfirmed/incorrect `seedance-1.0-pro-fast` to the real, primary-source-
+verified `doubao-seedance-1.0-pro-fast`; a matching `evolink-models.js`
+allowlist entry was added (no new mapper branch — reuses the existing
+`image-to-video` `image_urls` logic as-is); and an additive `quality`
+execution-parameter field was added to `video-prompt-schema.js`/
+`video-prompt-service.js`, since the mapper only ever read `parameters.quality`
+and never the pre-existing `resolution` field — without this fix, EvoLink
+would have silently applied its own 1080p default instead of the intended
+720p.
+
+**One real generation call was made** (project `0d0bdebb-29a2-41ce-bc37-52c6baa2c1dc`,
+same canonical Kade image, `duration:5, quality:720p, aspectRatio:adaptive`):
+
+| | Seedance 2.5 (image-to-video) | doubao-seedance-1.0-pro-fast |
+|---|---|---|
+| `reservedCost` | 100.45 credits | **4.5 credits** |
+| Requested duration | 5s | 5s |
+| Real output duration | 5.06s | 5.042s |
+| Requested quality | 720p | 720p |
+| Real output resolution | not measured this stage | 960×960 (adaptive matched the square input image) |
+| Wall-clock to COMPLETED | ~8 minutes | **~42 seconds** |
+
+**Real credits/second: 0.9 (doubao-seedance-1.0-pro-fast) vs. 20.09 (Seedance
+2.5)** — a **22.3× real, OBSERVED reduction**, landing within this
+document's own earlier INFERRED estimate of a 9×–27× gap (Part 4) — the
+first time that estimate has been checked against an actual second data
+point rather than derived catalogue arithmetic alone.
+
+Full verification: `COMPLETED`, stored asset structurally valid (manual
+ISO-BMFF box parse: `ftyp`/`moov`/`mdat` present, `mvhd`-derived duration
+5.042s), full lineage intact (keyframe → video prompt package v3 → `evolink`
+→ `doubao-seedance-1.0-pro-fast` → generation ID `07be47f5-a6ac-4606-ac09-c9cf0abf1f3a`
+→ provider task `task-unified-1786775763-62tkqn8m` → asset
+`741f12ea-48ca-440d-98f2-a47ce39259ca`), `approvalStatus: NONE`, canonical
+Kade image byte-identical (md5 match) and still `APPROVED`, Operator Queue
+`videoStatus: VIDEO_RETURNED`, budget reconciled (4.5 / 150 cap / 145.5
+remaining), real smoke-test project (`9b6a78b3-7238-4469-8280-5c4281216343`)
+byte-identical (mtime unchanged since before this investigation began), full
+suite **1062/1062 passing**. No further generation was triggered.
+
+## Safety Statement (initial investigation, before the addendum above)
 
 - Real EvoLink generation calls made: **0**
 - Credits spent: **0**
@@ -270,3 +317,16 @@ reserved. No registry or provider file was modified.
 - Real smoke-test project (`9b6a78b3-7238-4469-8280-5c4281216343`) modified: **NO**
 - Disposable smoke-test project (`1425375f-ef95-4b86-98b4-0b03ba0f0d42`) modified: **NO**
 - Full test suite: **1061/1061 passing** (unchanged — no code touched)
+
+## Safety Statement (after the approved follow-up: wiring + one real generation)
+
+- Real EvoLink generation calls made: **1** (explicitly approved, itemized authorization)
+- Credits spent: **4.5** (reserved; account balance draws from the same pool used throughout this project)
+- Generation jobs created: **1** (`07be47f5-a6ac-4606-ac09-c9cf0abf1f3a`, disposable project only)
+- Approvals created: **1** (disposable project only, never auto-approved)
+- Registry/provider/mapper/schema files modified: **4**, all additive (see Addendum) — `generation-model-registry.js`, `evolink-models.js`, `video-prompt-schema.js`, `video-prompt-service.js`
+- Real smoke-test project (`9b6a78b3-7238-4469-8280-5c4281216343`) modified: **NO**
+- Prior disposable project (`1425375f-ef95-4b86-98b4-0b03ba0f0d42`) modified: **NO**
+- New disposable project (`0d0bdebb-29a2-41ce-bc37-52c6baa2c1dc`) canonical asset modified: **NO** (byte-identical, still `APPROVED`)
+- Full test suite: **1062/1062 passing**
+- Further generation calls made after this one: **0**
