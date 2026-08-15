@@ -11,10 +11,13 @@ const path = require('path');
 const crypto = require('crypto');
 
 const projectTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-execution-service-projects-'));
+const brollTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-execution-service-broll-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
+process.env.BROLL_DATA_DIR = brollTempDir;
 
 const projectStore = require('../services/project-store');
 const timelineStore = require('../services/timeline-store');
+const brollLibraryService = require('../services/broll-library-service');
 const { createVisualBeat } = require('../schemas/visual-beat-schema');
 const { createCandidateResult, createMaterialResolution } = require('../schemas/material-resolution-schema');
 const executionService = require('../services/material-execution-service');
@@ -83,6 +86,44 @@ test('G3. routes KINETIC_TYPOGRAPHY, MOTION_GRAPHIC, and WHITEBOARD each to thei
   );
   assert.equal(wb.executorType, 'WHITEBOARD');
   assert.equal(wb.status, 'COMPLETED');
+});
+
+test('G3b. Stage 26.5B Part 5 — routes a real BROLL_LIBRARY + BROLL_CLIP candidate to the BROLL_CLIP executor, distinct from PROJECT_ASSET_REUSE routing for the same asset type', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  const asset = timelineStore.addAsset(project.id, { assetId: crypto.randomUUID(), type: 'video' });
+  timelineStore.updateAssetStorage(project.id, asset.assetId, { status: 'STORED' });
+  const reg = brollLibraryService.registerBrollSegment(project.id, { assetId: asset.assetId, source: { type: 'LOCAL_UPLOAD' }, licensing: { status: 'LICENSED' } });
+  assert.equal(reg.ok, true);
+
+  const material = createCandidateResult({
+    candidate: `BROLL_LIBRARY+BROLL_CLIP:${reg.segment.id}`,
+    materialSource: 'BROLL_LIBRARY',
+    visualTreatment: 'BROLL_CLIP',
+    selectedAssetId: asset.assetId,
+    brollSegment: {
+      segmentId: reg.segment.id,
+      assetId: reg.segment.assetId,
+      licensing: reg.segment.licensing,
+      source: reg.segment.source,
+      media: reg.segment.media,
+      descriptiveMetadata: reg.segment.descriptiveMetadata,
+      usage: reg.segment.usage,
+    },
+  });
+
+  const result = executionService.executeMaterial(project.id, beat({ visualTreatment: 'BROLL_CLIP' }), resolution(material));
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.executorType, 'BROLL_CLIP');
+  assert.equal(result.renderSpec.type, 'BROLL_CLIP');
+  assert.equal(result.renderSpec.sourceAssetId, asset.assetId);
+
+  // The SAME materialSource (PROJECT_ASSET_REUSE) for the SAME asset type
+  // ('video') still routes to a DIFFERENT executor — proves resolveExecutorType's
+  // new branch is scoped to (BROLL_LIBRARY, BROLL_CLIP) specifically, never a
+  // blanket "any video asset" rule.
+  const reuseMaterial = createCandidateResult({ candidate: 'PROJECT_ASSET_REUSE+AI_VIDEO', materialSource: 'PROJECT_ASSET_REUSE', visualTreatment: 'AI_VIDEO', selectedAssetId: asset.assetId });
+  const reuseResult = executionService.executeMaterial(project.id, beat({ visualTreatment: 'AI_VIDEO' }), resolution(reuseMaterial));
+  assert.equal(reuseResult.executorType, 'PROJECT_ASSET_REUSE');
 });
 
 test('G4. rejects a material with no Stage 26.5A executor (GENERATED_NEW AI_VIDEO) with structured UNSUPPORTED_MATERIAL diagnostics, never a throw', () => {

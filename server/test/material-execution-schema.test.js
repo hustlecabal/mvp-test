@@ -11,8 +11,8 @@ test('1a. EXECUTION_STATUSES is the exact fixed vocabulary', () => {
   assert.deepEqual(EXECUTION_STATUSES, ['COMPLETED', 'FAILED']);
 });
 
-test('1b. EXECUTOR_TYPES is the exact fixed vocabulary — the five Stage 26.5A executors', () => {
-  assert.deepEqual(EXECUTOR_TYPES, ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD']);
+test('1b. EXECUTOR_TYPES is the exact fixed vocabulary — the five Stage 26.5A executors plus Stage 26.5B Part 5\'s BROLL_CLIP', () => {
+  assert.deepEqual(EXECUTOR_TYPES, ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP']);
 });
 
 test('2a. createDiagnostic fills in every field with a safe default', () => {

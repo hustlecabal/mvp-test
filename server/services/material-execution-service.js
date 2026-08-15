@@ -37,19 +37,26 @@ const { createExecutionResult, createDiagnostic } = require('../schemas/material
 //   visualTreatment KINETIC_TYPOGRAPHY   -> KINETIC_TYPOGRAPHY
 //   visualTreatment MOTION_GRAPHIC       -> MOTION_GRAPHIC
 //   visualTreatment WHITEBOARD           -> WHITEBOARD
+//   materialSource BROLL_LIBRARY + visualTreatment BROLL_CLIP -> BROLL_CLIP
+//     (Stage 26.5B, Part 5 — a real, already-selected B-roll segment;
+//     checked as a specific pair, not by visualTreatment alone, since
+//     PROJECT_ASSET_REUSE can ALSO satisfy a BROLL_CLIP-treatment beat via
+//     an existing video asset — see the branch below — and that path must
+//     keep routing to PROJECT_ASSET_REUSE, never this one)
 //   materialSource PROJECT_ASSET_REUSE   -> PROJECT_ASSET_REUSE (every other
 //     treatment reached via existing-asset reuse — e.g. AI_VIDEO/BROLL_CLIP
 //     treatments satisfied by an already-existing video asset: just placed,
 //     no motion synthesis needed, it is already a video)
-//   everything else (GENERATED_NEW AI_VIDEO, BROLL_LIBRARY BROLL_CLIP, ...)
-//     -> null, unsupported this stage — AI video generation and B-roll
-//     ingestion are explicitly out of Stage 26.5A's scope
+//   everything else (GENERATED_NEW AI_VIDEO, ...)
+//     -> null, unsupported this stage — AI video generation is explicitly
+//     out of Stage 26.5A/26.5B's scope
 function resolveExecutorType(selectedMaterial) {
   if (!selectedMaterial) return null;
   if (selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'STILL_IMAGE_MOTION';
   if (selectedMaterial.visualTreatment === 'KINETIC_TYPOGRAPHY') return 'KINETIC_TYPOGRAPHY';
   if (selectedMaterial.visualTreatment === 'MOTION_GRAPHIC') return 'MOTION_GRAPHIC';
   if (selectedMaterial.visualTreatment === 'WHITEBOARD') return 'WHITEBOARD';
+  if (selectedMaterial.materialSource === 'BROLL_LIBRARY' && selectedMaterial.visualTreatment === 'BROLL_CLIP') return 'BROLL_CLIP';
   if (selectedMaterial.materialSource === 'PROJECT_ASSET_REUSE') return 'PROJECT_ASSET_REUSE';
   return null;
 }

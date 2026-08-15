@@ -8,7 +8,7 @@ const path = require('path');
 const registry = require('../services/material-executor-registry');
 const { EXECUTOR_TYPES } = require('../schemas/material-execution-schema');
 
-test('A1. all five executor types are registered', () => {
+test('A1. every EXECUTOR_TYPES value is registered', () => {
   for (const executorType of EXECUTOR_TYPES) {
     const executor = registry.getExecutor(executorType);
     assert.ok(executor, `${executorType} must be registered`);
@@ -45,7 +45,7 @@ test('A5. services/material-executor-registry.js makes no network calls (no fetc
   }
 });
 
-test('A6. services/material-executors/index.js registers exactly the five executor modules, nothing else', () => {
+test('A6. services/material-executors/index.js registers exactly the EXECUTOR_TYPES modules, nothing else', () => {
   const map = require('../services/material-executors');
   assert.deepEqual(Object.keys(map).sort(), [...EXECUTOR_TYPES].sort());
 });

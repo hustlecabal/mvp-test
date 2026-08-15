@@ -41,7 +41,10 @@ const EXECUTION_STATUSES = ['COMPLETED', 'FAILED'];
 // candidate's (materialSource, visualTreatment) pair, not a straight alias
 // of either existing enum (see that service's own resolveExecutorType()
 // comment for the exact derivation rule).
-const EXECUTOR_TYPES = ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD'];
+// Stage 26.5B, Part 5 — BROLL_CLIP added additively. Maps onto
+// materialSource 'BROLL_LIBRARY' + visualTreatment 'BROLL_CLIP' (see
+// services/material-execution-service.js's resolveExecutorType()).
+const EXECUTOR_TYPES = ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP'];
 
 // One structured diagnostic entry — same {code, message} shape used
 // throughout this stage's executors, never a bare string, so a caller can

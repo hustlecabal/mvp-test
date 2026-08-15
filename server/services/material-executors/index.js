@@ -9,4 +9,5 @@ module.exports = {
   KINETIC_TYPOGRAPHY: require('./kinetic-typography-executor'),
   MOTION_GRAPHIC: require('./motion-graphic-executor'),
   WHITEBOARD: require('./whiteboard-executor'),
+  BROLL_CLIP: require('./broll-executor'), // Stage 26.5B, Part 5
 };
