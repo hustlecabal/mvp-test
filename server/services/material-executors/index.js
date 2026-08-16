@@ -10,4 +10,6 @@ module.exports = {
   MOTION_GRAPHIC: require('./motion-graphic-executor'),
   WHITEBOARD: require('./whiteboard-executor'),
   BROLL_CLIP: require('./broll-executor'), // Stage 26.5B, Part 5
+  GENERATED_NEW_STILL_IMAGE: require('./generated-new-executor'), // P0-2
+  GENERATED_NEW_VIDEO: require('./generated-new-executor'), // P0-2 — same module, branches on visualTreatment
 };

@@ -126,15 +126,15 @@ test('G3b. Stage 26.5B Part 5 — routes a real BROLL_LIBRARY + BROLL_CLIP candi
   assert.equal(reuseResult.executorType, 'PROJECT_ASSET_REUSE');
 });
 
-test('G4. rejects a material with no Stage 26.5A executor (GENERATED_NEW AI_VIDEO) with structured UNSUPPORTED_MATERIAL diagnostics, never a throw', () => {
+test('G4. GENERATED_NEW AI_VIDEO now routes to P0-2\'s GENERATED_NEW_VIDEO bridge — with no approved generation yet, it fails structurally with NO_APPROVED_GENERATION_EXISTS, never UNSUPPORTED_MATERIAL and never a throw', () => {
   const project = projectStore.createProject({ title: 'x', topic: 'y' });
   const material = createCandidateResult({ candidate: 'GENERATED_NEW+AI_VIDEO', materialSource: 'GENERATED_NEW', visualTreatment: 'AI_VIDEO', modelRequirements: { modality: 'video', textToVideo: true } });
 
-  const result = executionService.executeMaterial(project.id, beat({ visualTreatment: 'AI_VIDEO' }), resolution(material));
+  const result = executionService.executeMaterial(project.id, beat({ visualTreatment: 'AI_VIDEO', shotId: 'sh1' }), resolution(material));
 
   assert.equal(result.status, 'FAILED');
-  assert.equal(result.executorType, null);
-  assert.equal(result.diagnostics[0].code, 'UNSUPPORTED_MATERIAL');
+  assert.equal(result.executorType, 'GENERATED_NEW_VIDEO');
+  assert.equal(result.diagnostics[0].code, 'NO_APPROVED_GENERATION_EXISTS');
 });
 
 test('G5. an UNRESOLVED MaterialResolution (nothing to execute) fails with UNRESOLVED_MATERIAL, never a throw', () => {

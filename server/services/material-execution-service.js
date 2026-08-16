@@ -27,13 +27,21 @@ const { createExecutionResult, createDiagnostic } = require('../schemas/material
 // alternatives — Material Resolution already made that choice; this is a
 // fixed structural lookup over its OUTPUT.
 //
+//   materialSource GENERATED_NEW + visualTreatment STILL_IMAGE
+//     -> GENERATED_NEW_STILL_IMAGE (P0-2 — checked as a specific pair,
+//     BEFORE the generic STILL_IMAGE rule below, same discipline as
+//     BROLL_LIBRARY+BROLL_CLIP: a thin bridge that looks up an already-
+//     approved generated asset via the existing Pipeline A flow and
+//     delegates to STILL_IMAGE_MOTION's own executor — never generates
+//     anything itself)
+//   materialSource GENERATED_NEW + visualTreatment AI_VIDEO
+//     -> GENERATED_NEW_VIDEO (P0-2 — same bridge pattern, delegates to
+//     PROJECT_ASSET_REUSE's own executor once an approved video asset exists)
 //   visualTreatment STILL_IMAGE          -> STILL_IMAGE_MOTION (regardless
 //     of materialSource — a still is a still whether reused or freshly
 //     generated; the camera-motion instructions are the same either way,
 //     per docs/architecture/stage-26.2-visual-production-master-spec.md,
-//     Part 12.1 — though GENERATED_NEW without a concrete asset yet still
-//     fails structurally inside the executor itself, since AI image
-//     generation is out of this stage's scope)
+//     Part 12.1)
 //   visualTreatment KINETIC_TYPOGRAPHY   -> KINETIC_TYPOGRAPHY
 //   visualTreatment MOTION_GRAPHIC       -> MOTION_GRAPHIC
 //   visualTreatment WHITEBOARD           -> WHITEBOARD
@@ -47,11 +55,11 @@ const { createExecutionResult, createDiagnostic } = require('../schemas/material
 //     treatment reached via existing-asset reuse — e.g. AI_VIDEO/BROLL_CLIP
 //     treatments satisfied by an already-existing video asset: just placed,
 //     no motion synthesis needed, it is already a video)
-//   everything else (GENERATED_NEW AI_VIDEO, ...)
-//     -> null, unsupported this stage — AI video generation is explicitly
-//     out of Stage 26.5A/26.5B's scope
+//   everything else -> null, unsupported
 function resolveExecutorType(selectedMaterial) {
   if (!selectedMaterial) return null;
+  if (selectedMaterial.materialSource === 'GENERATED_NEW' && selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'GENERATED_NEW_STILL_IMAGE';
+  if (selectedMaterial.materialSource === 'GENERATED_NEW' && selectedMaterial.visualTreatment === 'AI_VIDEO') return 'GENERATED_NEW_VIDEO';
   if (selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'STILL_IMAGE_MOTION';
   if (selectedMaterial.visualTreatment === 'KINETIC_TYPOGRAPHY') return 'KINETIC_TYPOGRAPHY';
   if (selectedMaterial.visualTreatment === 'MOTION_GRAPHIC') return 'MOTION_GRAPHIC';

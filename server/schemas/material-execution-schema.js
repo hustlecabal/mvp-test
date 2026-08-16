@@ -44,7 +44,16 @@ const EXECUTION_STATUSES = ['COMPLETED', 'FAILED'];
 // Stage 26.5B, Part 5 — BROLL_CLIP added additively. Maps onto
 // materialSource 'BROLL_LIBRARY' + visualTreatment 'BROLL_CLIP' (see
 // services/material-execution-service.js's resolveExecutorType()).
-const EXECUTOR_TYPES = ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP'];
+// P0-2 — GENERATED_NEW_STILL_IMAGE/GENERATED_NEW_VIDEO added additively.
+// Maps onto materialSource 'GENERATED_NEW' + visualTreatment
+// 'STILL_IMAGE'/'AI_VIDEO' respectively (see resolveExecutorType()'s own
+// comment for why these are checked as specific pairs, same discipline as
+// BROLL_LIBRARY+BROLL_CLIP above). Both executor types are a THIN BRIDGE
+// only — they never generate anything themselves; they look up an
+// already-approved asset from the existing Pipeline A generation flow and
+// delegate actual render-spec construction to the existing
+// still-image-motion-executor.js/project-asset-reuse-executor.js.
+const EXECUTOR_TYPES = ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP', 'GENERATED_NEW_STILL_IMAGE', 'GENERATED_NEW_VIDEO'];
 
 // One structured diagnostic entry — same {code, message} shape used
 // throughout this stage's executors, never a bare string, so a caller can
