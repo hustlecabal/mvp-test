@@ -18,7 +18,12 @@ const crypto = require('crypto');
 // services/asset-storage.js, same approvalStatus/version/lineage fields),
 // never a second asset model. See schemas/audio-schema.js's AudioEvent,
 // whose sourceAssetId points at an Asset of this type.
-const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'video', 'audio'];
+// INT-1B — 'reference_frame' added the same way: a single JPEG frame
+// deterministically sampled from a reference video (services/reference-
+// video-measurement-service.js) is an ordinary Asset, never a new binary
+// model. See schemas/reference-video-measurement-schema.js's FrameSample,
+// whose frameAssetId points at an Asset of this type.
+const ASSET_TYPES = ['character_reference', 'location_reference', 'keyframe', 'video', 'audio', 'reference_frame'];
 
 // Stage 13B, Part 1 — distinguishes a controlled single-image keyframe
 // generation from the existing video generation flow. Every generation

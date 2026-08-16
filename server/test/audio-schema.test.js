@@ -26,9 +26,9 @@ test('2. AUDIO_EVENT_STATUSES is exactly PLANNED/READY — no FAILED/GENERATING 
   assert.deepEqual(AUDIO_EVENT_STATUSES, ['PLANNED', 'READY']);
 });
 
-test('3. ASSET_TYPES gains "audio" additively, existing values untouched', () => {
+test('3. ASSET_TYPES gains "audio" additively, existing values untouched (INT-1B additively appended "reference_frame" after it — same pattern, not a regression)', () => {
   assert.equal(ASSET_TYPES.includes('audio'), true);
-  assert.deepEqual(ASSET_TYPES, ['character_reference', 'location_reference', 'keyframe', 'video', 'audio']);
+  assert.deepEqual(ASSET_TYPES, ['character_reference', 'location_reference', 'keyframe', 'video', 'audio', 'reference_frame']);
 });
 
 // --- 4. VoiceProfile — creative intent only -------------------------------------------------------------------
