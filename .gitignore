@@ -23,3 +23,12 @@ server/data/broll/*.json
 # itself is kept in git via .gitkeep.
 server/data/assets/*
 !server/data/assets/.gitkeep
+
+# Stage 26.9B — local voice-generation/alignment infrastructure (espeak-ng
+# is an OS package, not a repo file; the Python venv and downloaded Whisper
+# model weights are large, binary, and machine-specific). Ephemeral,
+# container-scoped exactly like Stage 26.8B-R's FFmpeg install — must be
+# re-provisioned in a fresh environment (see services/voice/README or the
+# Stage 26.9B final report for the exact setup commands).
+server/.venv/
+server/.whisper-models/

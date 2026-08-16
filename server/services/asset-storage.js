@@ -286,6 +286,77 @@ function storeUploadedImage(buffer, assetId, { maxBytes = DEFAULT_MAX_UPLOAD_BYT
   return { path: finalPath, relativePath, sizeBytes: buffer.length, contentType: format.contentType };
 }
 
+// ---------------------------------------------------------------------------
+// Stage 26.9B — audio. Same reasoning as the image case above (sniff the
+// buffer's own magic bytes, never trust a caller-claimed format). Only WAV
+// is recognized: it is the one format services/voice/espeak-voice-
+// provider.js's real generation path actually produces (espeak-ng's `-w`
+// flag) — no format is ever added speculatively (matching this file's own
+// existing image-signature discipline). This is NOT a second storage
+// system: same ASSETS_DIR, same relativeFilename()/resolveStoredPath()
+// convention, same crash-safe .upload-then-rename write, same
+// storeUploadedImage() shape — Stage 26.9B, Part 5's explicit "reuse the
+// existing Asset model... do not create AudioAsset/AudioStorage/VoiceAsset"
+// requirement.
+// ---------------------------------------------------------------------------
+
+const AUDIO_SIGNATURES = [
+  {
+    ext: '.wav',
+    contentType: 'audio/wav',
+    check: (b) => b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WAVE',
+  },
+];
+
+function sniffAudioFormat(buffer) {
+  if (!Buffer.isBuffer(buffer)) return null;
+  for (const sig of AUDIO_SIGNATURES) {
+    if (sig.check(buffer)) return { ext: sig.ext, contentType: sig.contentType };
+  }
+  return null;
+}
+
+// Mirrors storeUploadedImage() exactly — same assetId validation, same
+// size cap default, same refuse-to-overwrite safety, same crash-safe
+// .upload-then-rename write. `maxBytes` defaults higher than the image
+// cap (audio files run longer than a single frame) but reuses the exact
+// same DEFAULT_MAX_BYTES already used for downloaded video, never a new
+// constant invented just for audio.
+function storeUploadedAudio(buffer, assetId, { maxBytes = DEFAULT_MAX_BYTES } = {}) {
+  if (!isValidAssetId(assetId)) {
+    throw new AssetStorageError('invalid_asset_id', `"${assetId}" is not a valid asset id.`);
+  }
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new AssetStorageError('empty_upload', 'Uploaded file was empty.');
+  }
+  if (buffer.length > maxBytes) {
+    throw new AssetStorageError('too_large', `Uploaded file (${buffer.length} bytes) exceeds the ${maxBytes}-byte limit.`);
+  }
+
+  const format = sniffAudioFormat(buffer);
+  if (!format) {
+    throw new AssetStorageError('unsupported_format', 'Uploaded file is not a recognized audio format (WAV).');
+  }
+
+  const relativePath = relativeFilename(assetId, format.ext);
+  const finalPath = resolveStoredPath(relativePath);
+
+  if (fs.existsSync(finalPath)) {
+    throw new AssetStorageError('already_exists', `A stored file already exists for asset "${assetId}".`);
+  }
+
+  const tmpPath = `${finalPath}.upload`;
+  try {
+    fs.writeFileSync(tmpPath, buffer);
+    fs.renameSync(tmpPath, finalPath);
+  } catch (err) {
+    fs.rmSync(tmpPath, { force: true });
+    throw err;
+  }
+
+  return { path: finalPath, relativePath, sizeBytes: buffer.length, contentType: format.contentType };
+}
+
 module.exports = {
   ASSETS_DIR,
   DEFAULT_MAX_BYTES,
@@ -298,5 +369,7 @@ module.exports = {
   storedFileExists,
   downloadAsset,
   sniffImageFormat,
+  sniffAudioFormat,
+  storeUploadedAudio,
   storeUploadedImage,
 };
