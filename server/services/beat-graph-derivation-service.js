@@ -1,0 +1,295 @@
+// beat-graph-derivation-service.js
+//
+// P0-1 — the STORYBOARD -> BEATGRAPH bridge. Implements exactly the design
+// in the completed P0-1 audit (chat record, this stage) and
+// docs/architecture/evolink-master-control-quality-blueprint.md — nothing
+// reinterpreted, nothing added beyond what those documents specify.
+//
+//   Storyboard -> VisualBeat(s) -> BeatGraph
+//
+// PURE AND DETERMINISTIC. Never mutates its inputs, never persists
+// anything, never calls a provider/network/EvoLink, never calls Material
+// Resolution or Material Execution, never infers a creative decision this
+// file wasn't explicitly told. Given identical (storyboard, context), the
+// output is identical apart from unavoidable timestamps (createVisualBeat/
+// createBeatGraph's own versionFields().updatedAt and this function's own
+// createdAt) — beat identity itself is stable (see below), not
+// timestamp-like.
+//
+// DEFAULT MAPPING: exactly one StoryboardShot -> one VisualBeat. Never
+// split automatically — StoryboardShot has no structured sub-unit field
+// (no narrationSegments[], no beat markers) for an automatic split to key
+// off; inventing a boundary the schema doesn't record would be exactly
+// the "arbitrary splitting logic" the audit forbids. Automatic splitting
+// is not implemented here, at all.
+//
+// IDENTITY (audit Part 4/Part 1 safety check, this stage): beat.id =
+// shot.shotId — confirmed collision-free (no store cross-references
+// VisualBeat.id against StoryboardShot.shotId in a shared namespace;
+// compareBeats/BeatEdge only ever read beat.id, never beat.shotId).
+// beat.shotId is ALSO set to shot.shotId — VisualBeat already has this
+// dedicated field for exactly this purpose ("a beat MAY exist without a
+// storyboard shot"); populating it when the source IS known is a
+// zero-interpretation use of an existing field, not a new identity model.
+//
+// CRITICAL NON-INFERENCE RULE, restated because it is the one rule this
+// whole file exists to enforce: visualTreatment, narrationSegment,
+// startTime, motionRequirements, costPriority, qualityPriority, and
+// fallbackStrategy are NEVER derived from StoryboardShot's own free-text
+// fields (visualDescription/subject/action/soundNotes/etc.), no matter how
+// suggestive the wording. visualTreatment and narrationSegment are set
+// ONLY from the two explicit, caller-supplied context maps below
+// (context.treatments / context.narrationSegments) — never from anything
+// else. Everything else in that list simply stays at createVisualBeat's
+// own null/[]/'MEDIUM' defaults, which this file never overrides.
+
+const { VISUAL_TREATMENTS, createVisualBeat, createIdentityRequirements, createNarrationSegment } = require('../schemas/visual-beat-schema');
+const { createBeatGraph } = require('../schemas/beat-graph-schema');
+
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+// Part 3's explicit, conservative mapping — a PRIORITY choice among
+// already-authored fields, never a synthesis/concatenation of them (that
+// would read as inventing a combined description the shot never wrote as
+// one phrase). Same "first non-empty wins" rule for both target fields.
+function firstNonEmpty(...values) {
+  for (const v of values) {
+    if (nonEmptyString(v)) return v;
+  }
+  return '';
+}
+
+// Identity-reference validation (audit Part 7) — reuses the EXACT lookup
+// shape services/creative-store.js's own findReferenceEntity() reads
+// (bible[arrayField].find(e => e[idField] === id)), inlined rather than
+// requiring creative-store.js itself: that module also owns file I/O
+// (ensureRecord/saveRecord) this derivation must never depend on to stay
+// pure. context.visualBible is the caller's ALREADY-FETCHED
+// creativeStore.getVisualBible(projectId) result — the same "pass in
+// already-fetched context data" convention material-resolution-service.js
+// already established for context.brollSegments. No new lookup/
+// persistence system is introduced; when visualBible isn't supplied,
+// identity references are simply left unchecked (not an error — Part 7
+// only requires validation "IF the derivation context provides the
+// necessary project data").
+const REFERENCE_ENTITY_CONFIG = [
+  { shotField: 'characterReferences', arrayField: 'characters', idField: 'characterId', code: 'UNKNOWN_CHARACTER_REFERENCE' },
+  { shotField: 'locationReferences', arrayField: 'locations', idField: 'locationId', code: 'UNKNOWN_LOCATION_REFERENCE' },
+  { shotField: 'propReferences', arrayField: 'props', idField: 'propId', code: 'UNKNOWN_PROP_REFERENCE' },
+];
+
+function findUnknownReferences(shot, visualBible) {
+  if (!visualBible) return [];
+  const problems = [];
+  for (const cfg of REFERENCE_ENTITY_CONFIG) {
+    const refs = Array.isArray(shot[cfg.shotField]) ? shot[cfg.shotField] : [];
+    if (refs.length === 0) continue;
+    const known = new Set((Array.isArray(visualBible[cfg.arrayField]) ? visualBible[cfg.arrayField] : []).map((e) => e[cfg.idField]));
+    for (const ref of refs) {
+      if (!known.has(ref)) problems.push({ code: cfg.code, ref });
+    }
+  }
+  return problems;
+}
+
+// Duplicate-order detection (audit Part 9) — a Storyboard-authoring
+// correctness signal, computed over EVERY shot regardless of whether that
+// shot is later accepted/rejected for an unrelated reason (this is about
+// the source Storyboard's own ordering, not this derivation's output).
+// Warning-only: never renumbers, never "fixes" the order.
+function findDuplicateOrders(shots) {
+  const byScene = new Map(); // sceneId -> Map(order -> [shotId,...])
+  for (const shot of shots) {
+    if (!shot || !shot.shotId || shot.order === null || shot.order === undefined) continue;
+    const sceneKey = shot.sceneId || '';
+    if (!byScene.has(sceneKey)) byScene.set(sceneKey, new Map());
+    const orderMap = byScene.get(sceneKey);
+    if (!orderMap.has(shot.order)) orderMap.set(shot.order, []);
+    orderMap.get(shot.order).push(shot.shotId);
+  }
+  const duplicates = [];
+  for (const orderMap of byScene.values()) {
+    for (const shotIds of orderMap.values()) {
+      if (shotIds.length > 1) duplicates.push(...shotIds);
+    }
+  }
+  return new Set(duplicates);
+}
+
+function diagnostic(code, shotId, message) {
+  return { code, shotId: shotId || null, message };
+}
+
+// Public entry point.
+//   storyboard — a real schemas/creative-schema.js createStoryboard() object
+//   context — {
+//     treatments: { [shotId]: one of VISUAL_TREATMENTS },        // explicit only, never inferred
+//     narrationSegments: { [shotId]: createNarrationSegment() shape }, // explicit only, never inferred
+//     visualBible: a real schemas/creative-schema.js createVisualBible() object, // optional, read-only
+//   }
+function deriveBeatGraph(storyboard, context = {}) {
+  const createdAt = new Date().toISOString();
+
+  if (!storyboard || !Array.isArray(storyboard.scenes) || !Array.isArray(storyboard.shots)) {
+    return {
+      beatGraph: null,
+      status: 'FAILED',
+      diagnostics: [diagnostic('INVALID_STORYBOARD', null, 'a Storyboard with scenes[] and shots[] arrays is required')],
+      derivedBeatCount: 0,
+      rejectedBeatCount: 0,
+      createdAt,
+    };
+  }
+
+  const diagnostics = [];
+
+  // --- validate context shape (Part 5/7) — a malformed context input is
+  // surfaced, then ignored (treated as "not supplied"), never a fatal
+  // error for the whole derivation. ---
+  let treatments = context.treatments;
+  if (treatments !== undefined && !isPlainObject(treatments)) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.treatments must be a plain object keyed by shotId — ignored'));
+    treatments = {};
+  } else {
+    treatments = treatments || {};
+  }
+
+  let narrationSegments = context.narrationSegments;
+  if (narrationSegments !== undefined && !isPlainObject(narrationSegments)) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.narrationSegments must be a plain object keyed by shotId — ignored'));
+    narrationSegments = {};
+  } else {
+    narrationSegments = narrationSegments || {};
+  }
+
+  const visualBible = isPlainObject(context.visualBible) ? context.visualBible : null;
+  if (context.visualBible !== undefined && !visualBible) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.visualBible must be a plain object — ignored, identity references left unchecked'));
+  }
+
+  const sceneIds = new Set(storyboard.scenes.filter((s) => s && s.sceneId).map((s) => s.sceneId));
+  const duplicateOrderShotIds = findDuplicateOrders(storyboard.shots);
+  for (const shotId of duplicateOrderShotIds) {
+    diagnostics.push(diagnostic('DUPLICATE_SHOT_ORDER', shotId, `shot "${shotId}" shares its order value with another shot in the same scene`));
+  }
+
+  const beats = [];
+  let rejectedBeatCount = 0;
+
+  for (const shot of storyboard.shots) {
+    if (!shot || !shot.shotId) continue; // structurally unidentifiable — nothing downstream could reference it either
+
+    // --- scene existence (Part 9) ---
+    if (shot.sceneId && !sceneIds.has(shot.sceneId)) {
+      diagnostics.push(diagnostic('MISSING_SCENE', shot.shotId, `shot "${shot.shotId}" references sceneId "${shot.sceneId}", which is not present in this Storyboard`));
+      rejectedBeatCount += 1;
+      continue;
+    }
+
+    // --- duration (Part 5/6) — ABSENT is non-fatal, INVALID is fatal for
+    // this one beat only, never silently repaired. ---
+    let duration = null;
+    if (shot.duration === null || shot.duration === undefined) {
+      diagnostics.push(diagnostic('SHOT_DURATION_MISSING', shot.shotId, `shot "${shot.shotId}" has no duration — beat.duration left null`));
+    } else if (typeof shot.duration !== 'number' || !Number.isFinite(shot.duration) || shot.duration <= 0) {
+      diagnostics.push(diagnostic('SHOT_DURATION_INVALID', shot.shotId, `shot "${shot.shotId}" duration must be a positive number, got ${JSON.stringify(shot.duration)}`));
+      rejectedBeatCount += 1;
+      continue;
+    } else {
+      duration = shot.duration;
+    }
+
+    // --- identity reference validation (Part 7) ---
+    const unknownRefs = findUnknownReferences(shot, visualBible);
+    if (unknownRefs.length > 0) {
+      for (const problem of unknownRefs) {
+        diagnostics.push(diagnostic(problem.code, shot.shotId, `shot "${shot.shotId}" references unknown id "${problem.ref}"`));
+      }
+      rejectedBeatCount += 1;
+      continue;
+    }
+
+    // --- explicit treatment override only (Part 4/5) — never inferred ---
+    let visualTreatment = null;
+    if (Object.prototype.hasOwnProperty.call(treatments, shot.shotId)) {
+      const t = treatments[shot.shotId];
+      if (!VISUAL_TREATMENTS.includes(t)) {
+        diagnostics.push(diagnostic('INVALID_VISUAL_TREATMENT', shot.shotId, `treatments["${shot.shotId}"] value "${t}" is not one of ${VISUAL_TREATMENTS.join(', ')}`));
+        rejectedBeatCount += 1;
+        continue;
+      }
+      visualTreatment = t;
+    }
+
+    // --- explicit narration override only (Part 4/5) — never inferred ---
+    let narrationSegment = null;
+    if (Object.prototype.hasOwnProperty.call(narrationSegments, shot.shotId)) {
+      const seg = narrationSegments[shot.shotId];
+      if (!isPlainObject(seg)) {
+        diagnostics.push(diagnostic('INVALID_NARRATION_SEGMENT', shot.shotId, `narrationSegments["${shot.shotId}"] must be a plain object`));
+        rejectedBeatCount += 1;
+        continue;
+      }
+      narrationSegment = createNarrationSegment(seg);
+    }
+
+    // --- creative-intent warning (Part 8) — non-fatal ---
+    const visualIntent = firstNonEmpty(shot.visualDescription, shot.subject, shot.action);
+    const narrativePurpose = firstNonEmpty(shot.purpose, shot.narrativeBeat);
+    if (!nonEmptyString(shot.purpose) && !nonEmptyString(shot.narrativeBeat) && !nonEmptyString(shot.visualDescription)) {
+      diagnostics.push(diagnostic('MISSING_VISUAL_INTENT', shot.shotId, `shot "${shot.shotId}" has no purpose, narrativeBeat, or visualDescription`));
+    }
+
+    const beat = createVisualBeat({
+      id: shot.shotId, // Part 1/4 — stable identity, confirmed collision-free
+      projectId: storyboard.projectId,
+      sceneId: shot.sceneId,
+      shotId: shot.shotId, // the schema's own dedicated provenance field
+      sequence: shot.order, // ordinal only — never converted into startTime
+      startTime: null, // Part 6 — never manufactured; no context input for it exists in this stage
+      duration,
+      narrativePurpose,
+      visualIntent,
+      visualTreatment, // null unless explicitly supplied — never inferred
+      narrationSegment, // null unless explicitly supplied — never inferred
+      camera: shot.camera !== undefined ? shot.camera : null,
+      lighting: shot.lighting !== undefined ? shot.lighting : null,
+      identityRequirements: createIdentityRequirements({
+        characterReferences: Array.isArray(shot.characterReferences) ? shot.characterReferences : [],
+        locationReferences: Array.isArray(shot.locationReferences) ? shot.locationReferences : [],
+        propReferences: Array.isArray(shot.propReferences) ? shot.propReferences : [],
+      }),
+      continuityRequirements: Array.isArray(shot.continuityRequirements) ? shot.continuityRequirements : [],
+      transition: shot.transition !== undefined ? shot.transition : null,
+      status: 'PLANNED',
+      // motionRequirements, costPriority, qualityPriority, fallbackStrategy,
+      // styleRequirements, materials, graphics, audioEvents all stay at
+      // createVisualBeat's own defaults — never set here (Part 4).
+    });
+
+    beats.push(beat);
+  }
+
+  const totalShots = storyboard.shots.filter((s) => s && s.shotId).length;
+  const derivedBeatCount = beats.length;
+  const status = totalShots === 0 ? 'DERIVED' : derivedBeatCount === totalShots ? 'DERIVED' : derivedBeatCount === 0 ? 'FAILED' : 'PARTIAL';
+
+  const beatGraph = createBeatGraph({ projectId: storyboard.projectId, beats, edges: [] });
+
+  return {
+    beatGraph,
+    status,
+    diagnostics,
+    derivedBeatCount,
+    rejectedBeatCount,
+    createdAt,
+  };
+}
+
+module.exports = { deriveBeatGraph };
