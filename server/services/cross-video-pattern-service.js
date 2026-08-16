@@ -50,6 +50,36 @@ function diag(code, message) {
   return createPatternDiagnostic({ code, message });
 }
 
+// INT-1E-PATCH — Part 4: proves, rather than assumes, that a candidate
+// CO_OCCURRENCE support entry's two observations are real and actually
+// responsible for the co-occurrence being reported, before that entry is
+// ever persisted. Never repairs or invents a replacement id — a failing
+// entry is simply dropped and reported via a structured diagnostic
+// (Part 4's own "do not silently repair" rule).
+//
+// obsA/obsB are expected to be the exact observation objects already
+// resolved from this member's own real, already-persisted ObservationSet
+// (services/reference-video-observation-service.js's deriveObservations()
+// guarantees at most one observation per rule id per ObservationSet, and
+// every observation in one ObservationSet shares that ObservationSet's own
+// single measurementsId — so a truthful CO_OCCURRENCE support entry needs
+// exactly one measurementsId, never a plural measurementsIds).
+function validateCoOccurrenceProvenance({ obsA, obsB, referenceVideoId, ruleIdA, ruleIdB }) {
+  if (!obsA || !obsB) {
+    return { ok: false, diagnostic: diag('INVALID_CO_OCCURRENCE_PROVENANCE', `reference video "${referenceVideoId}" is missing one or both observations for rule ids "${ruleIdA}"/"${ruleIdB}"`) };
+  }
+  if (obsA.referenceVideoId !== referenceVideoId || obsB.referenceVideoId !== referenceVideoId) {
+    return { ok: false, diagnostic: diag('INVALID_CO_OCCURRENCE_PROVENANCE', `an observation supporting reference video "${referenceVideoId}" does not itself belong to that video`) };
+  }
+  if (obsA.methodology.ruleId !== ruleIdA || obsB.methodology.ruleId !== ruleIdB) {
+    return { ok: false, diagnostic: diag('INVALID_CO_OCCURRENCE_PROVENANCE', `reference video "${referenceVideoId}"'s resolved observations do not match rule ids "${ruleIdA}"/"${ruleIdB}"`) };
+  }
+  if (obsA.measurementsId !== obsB.measurementsId) {
+    return { ok: false, diagnostic: diag('INVALID_CO_OCCURRENCE_PROVENANCE', `reference video "${referenceVideoId}"'s two co-occurring observations resolve to different Measurements records`) };
+  }
+  return { ok: true, measurementsId: obsA.measurementsId };
+}
+
 // Part 11 — the fixed set of comparable, normalized (where mathematically
 // justified) metrics this stage aggregates, extracted from an already-
 // computed INT-1B ReferenceVideoMeasurements record. Every metric here is
@@ -264,17 +294,35 @@ function buildNumericDistributionPatterns(projectId, referenceSetId, membersData
 // Part 14 — joint frequency of pairs of INT-1C rule ids. Only pairs that
 // co-occur at least twice are recorded, to avoid a flood of one-off,
 // uninformative combinations.
+//
+// INT-1E-PATCH (Parts 2-4) — each contributing video's support entry now
+// carries the exact two observation ids (and their shared measurementsId)
+// responsible for that video's contribution, instead of only a bare
+// referenceVideoId. The lookup uses the SAME `withObservations` data this
+// function already had in memory — no new store call, no redesign of the
+// underlying co-occurrence math (patternMath.computeCoOccurrence itself is
+// unchanged and still drives prevalence/count). Returns
+// { patterns, diagnostics } — diagnostics is non-empty only if a
+// provenance check ever fails (see validateCoOccurrenceProvenance);
+// callers must merge it into the PatternSet's own diagnostics rather than
+// silently dropping it.
 function buildCoOccurrencePatterns(projectId, referenceSetId, membersData) {
   const withObservations = membersData.filter((m) => m.observationSet);
   const totalCount = withObservations.length;
-  if (totalCount === 0) return [];
+  if (totalCount === 0) return { patterns: [], diagnostics: [] };
 
   const memberRuleIdSets = withObservations.map((m) => new Set(m.observationSet.observations.map((o) => o.methodology.ruleId)));
+  const memberObservationByRuleId = withObservations.map((m) => {
+    const byRuleId = new Map();
+    for (const o of m.observationSet.observations) byRuleId.set(o.methodology.ruleId, o);
+    return byRuleId;
+  });
   const categoryByRuleId = new Map();
   for (const m of withObservations) for (const o of m.observationSet.observations) categoryByRuleId.set(o.methodology.ruleId, o.category);
   const allRuleIds = [...categoryByRuleId.keys()].sort();
 
   const patterns = [];
+  const diagnostics = [];
   for (let i = 0; i < allRuleIds.length; i += 1) {
     for (let j = i + 1; j < allRuleIds.length; j += 1) {
       const ruleIdA = allRuleIds[i];
@@ -283,7 +331,20 @@ function buildCoOccurrencePatterns(projectId, referenceSetId, membersData) {
       if (result.count < 2) continue;
       const meetsThreshold = patternMath.meetsMinimumEvidenceThreshold(result.count, totalCount);
       const confidenceResult = patternMath.computePatternConfidence({ supportingCount: result.count, totalCount, distribution: null });
-      const supportVideoIds = withObservations.filter((m, idx) => memberRuleIdSets[idx].has(ruleIdA) && memberRuleIdSets[idx].has(ruleIdB)).map((m) => m.referenceVideo.id);
+
+      const support = [];
+      withObservations.forEach((m, idx) => {
+        if (!memberRuleIdSets[idx].has(ruleIdA) || !memberRuleIdSets[idx].has(ruleIdB)) return;
+        const obsA = memberObservationByRuleId[idx].get(ruleIdA);
+        const obsB = memberObservationByRuleId[idx].get(ruleIdB);
+        const validation = validateCoOccurrenceProvenance({ obsA, obsB, referenceVideoId: m.referenceVideo.id, ruleIdA, ruleIdB });
+        if (!validation.ok) {
+          diagnostics.push(validation.diagnostic);
+          return; // Part 4 — never invent a replacement id; this video's contribution is simply omitted from support
+        }
+        support.push(createPatternSupport({ referenceVideoId: m.referenceVideo.id, measurementsId: validation.measurementsId, observationIds: [obsA.id, obsB.id] }));
+      });
+
       patterns.push(
         createPattern({
           projectId,
@@ -293,7 +354,7 @@ function buildCoOccurrencePatterns(projectId, referenceSetId, membersData) {
           statement: `"${ruleIdA}" and "${ruleIdB}" co-occur in ${result.count} of ${totalCount} reference video(s) (${result.percentage}%). This is a joint-frequency count, not evidence that either influences or causes the other.`,
           prevalence: { supportingCount: result.count, totalCount, percentage: result.percentage },
           coOccurrence: { ruleIdA, ruleIdB, categoryA: categoryByRuleId.get(ruleIdA), categoryB: categoryByRuleId.get(ruleIdB) },
-          support: supportVideoIds.map((id) => createPatternSupport({ referenceVideoId: id })),
+          support,
           confidence: confidenceResult.confidence,
           confidenceMethodology: confidenceResult,
           meetsMinimumEvidenceThreshold: meetsThreshold,
@@ -302,7 +363,7 @@ function buildCoOccurrencePatterns(projectId, referenceSetId, membersData) {
       );
     }
   }
-  return patterns;
+  return { patterns, diagnostics };
 }
 
 // Public entry point.
@@ -358,7 +419,9 @@ function extractPatterns(projectId, referenceSetId) {
   const homogeneityReport = computeHomogeneityReport(membersData);
   diagnostics.push(...homogeneityReport.warnings);
 
-  const patterns = [...buildRecurringObservationPatterns(projectId, referenceSetId, membersData), ...buildNumericDistributionPatterns(projectId, referenceSetId, membersData), ...buildCoOccurrencePatterns(projectId, referenceSetId, membersData)];
+  const coOccurrenceResult = buildCoOccurrencePatterns(projectId, referenceSetId, membersData);
+  diagnostics.push(...coOccurrenceResult.diagnostics);
+  const patterns = [...buildRecurringObservationPatterns(projectId, referenceSetId, membersData), ...buildNumericDistributionPatterns(projectId, referenceSetId, membersData), ...coOccurrenceResult.patterns];
 
   const status = patterns.length === 0 ? 'FAILED' : diagnostics.length === 0 ? 'COMPLETE' : 'PARTIAL';
   const patternSet = createPatternSet({ projectId, referenceSetId, patterns, homogeneityReport, status, diagnostics });
@@ -389,4 +452,5 @@ module.exports = {
   METRIC_DEFINITIONS,
   DURATION_HETEROGENEITY_COV_THRESHOLD,
   SUBGROUP_DIVERGENCE_RATIO_THRESHOLD,
+  validateCoOccurrenceProvenance, // INT-1E-PATCH — exported for direct, isolated provenance-validation tests (Part 7)
 };

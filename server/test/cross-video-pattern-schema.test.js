@@ -50,8 +50,15 @@ test('8. PATTERN_REVIEW_DECISIONS is exactly ACCEPT/REJECT/FLAG/REQUEST_REVIEW',
   assert.deepEqual(schema.PATTERN_REVIEW_DECISIONS.slice().sort(), ['ACCEPT', 'FLAG', 'REJECT', 'REQUEST_REVIEW'].sort());
 });
 
-test('9. createPatternSupport defaults every field to null — never a placeholder value or id', () => {
-  assert.deepEqual(schema.createPatternSupport(), { referenceVideoId: null, measurementsId: null, observationId: null, value: null });
+test('9. createPatternSupport defaults every scalar field to null and observationIds to [] — never a placeholder value or id', () => {
+  assert.deepEqual(schema.createPatternSupport(), { referenceVideoId: null, measurementsId: null, observationId: null, observationIds: [], value: null });
+});
+
+test('9b. createPatternSupport never mutates a nested observationIds array passed in (INT-1E-PATCH)', () => {
+  const idsInput = ['obs-a', 'obs-b'];
+  const support = schema.createPatternSupport({ observationIds: idsInput });
+  support.observationIds.push('obs-c');
+  assert.deepEqual(idsInput, ['obs-a', 'obs-b']);
 });
 
 test('10. createPattern never mutates a nested support array passed in', () => {

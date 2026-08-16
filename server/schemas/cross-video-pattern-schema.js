@@ -60,6 +60,12 @@ const PATTERN_DIAGNOSTIC_CODES = [
   'INCOMPLETE_MEASUREMENTS', // one or more members has no usable Measurements
   'INCOMPLETE_OBSERVATIONS', // one or more members has no usable ObservationSet
   'MISSING_METADATA', // a homogeneity dimension couldn't be evaluated because the field isn't populated for enough members
+  // INT-1E-PATCH — a CO_OCCURRENCE support entry's two candidate observations
+  // failed the provenance check (didn't exist / didn't belong to the claimed
+  // video / didn't match the claimed rule ids). The entry is dropped, never
+  // repaired or invented — see services/cross-video-pattern-service.js's
+  // own validateCoOccurrenceProvenance().
+  'INVALID_CO_OCCURRENCE_PROVENANCE',
 ];
 
 function createPatternDiagnostic(overrides = {}) {
@@ -90,17 +96,27 @@ function createHomogeneityReport(overrides = {}) {
 // Part 19 — evidence chain: Pattern -> Observation/Measurement -> Raw
 // Evidence, one entry per contributing video. `value` is populated only
 // for NUMERIC_DISTRIBUTION patterns (the exact number this video
-// contributed); `observationId` only for RECURRING_OBSERVATION/
-// CO_OCCURRENCE patterns.
+// contributed); `observationId` only for RECURRING_OBSERVATION patterns.
+//
+// INT-1E-PATCH — `observationIds` (plural) is the CO_OCCURRENCE-only
+// counterpart to the singular `observationId`: a co-occurrence is by
+// definition backed by TWO observations per contributing video (one per
+// rule id in the pair), so a single `observationId` cannot represent it
+// truthfully. RECURRING_OBSERVATION/NUMERIC_DISTRIBUTION support entries
+// are unaffected — they continue to use `observationId`/`value` exactly as
+// before and simply carry an empty `observationIds: []` by default, like
+// every other field on this record.
 // ---------------------------------------------------------------------------
 function createPatternSupport(overrides = {}) {
+  const { observationIds, ...rest } = overrides;
   const base = {
     referenceVideoId: null,
     measurementsId: null,
     observationId: null,
+    observationIds: Array.isArray(observationIds) ? [...observationIds] : [],
     value: null,
   };
-  return withDefaults(base, overrides);
+  return withDefaults(base, rest);
 }
 
 // Part 8/9 — how many of the set support this pattern, and what fraction.
