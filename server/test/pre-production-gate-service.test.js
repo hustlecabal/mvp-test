@@ -606,3 +606,122 @@ test('20. evaluatePreProductionGate fails gracefully (ok:false) for a non-existe
   assert.equal(gateService.evaluatePreProductionGate('00000000-0000-4000-8000-000000000000', 'x').ok, false);
   assert.equal(gateService.evaluatePreProductionGate(project.id, '11111111-1111-4111-8111-111111111111').ok, false);
 });
+
+// ---------------------------------------------------------------------------
+// P0 Hardening — dedicated regression tests for fixes C, D, E, I.
+// ---------------------------------------------------------------------------
+
+// Fix C — a human's ACCEPT/EDIT of an INSUFFICIENT_EVIDENCE recommendation
+// is dropped by INT-2's own buildCreativeBlueprintDraft() (the decision
+// never survives into recommendationDecisions), but its diagnostic is
+// recorded. Previously the gate only ever copied this diagnostic through
+// as a non-blocking WARNING-equivalent (never even reaching machineAssessment);
+// now it is a hard BLOCKER, matching the same "gate is the stricter layer"
+// precedent already established for INVALID_RECOMMENDATION_PROVENANCE.
+test('21. fix C — a human ACCEPT of an INSUFFICIENT_EVIDENCE recommendation surfaces as an INSUFFICIENT_EVIDENCE_RECOMMENDATION BLOCKER at the gate, forcing REVISE even though INT-2 itself silently dropped the decision', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{ evidenceSufficiency: 'INSUFFICIENT_EVIDENCE', meetsMinimumEvidenceThreshold: false }]);
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, {
+    referenceSetId: 'rs1',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }],
+  });
+  // INT-2 itself dropped the decision (never blocking) — the diagnostic is the only surviving record.
+  assert.equal(draft.recommendationDecisions.length, 0);
+  assert.ok(draft.diagnostics.some((d) => d.code === 'INSUFFICIENT_EVIDENCE_RECOMMENDATION'));
+  creativeBlueprintService.reviewCreativeBlueprint(project.id, draft.id, { decision: 'APPROVE', reviewedBy: 'human1' });
+  const approved = creativeBlueprintStore.getCreativeBlueprint(project.id, draft.id);
+
+  const result = gateService.evaluatePreProductionGate(project.id, approved.id);
+  assert.equal(result.ok, true);
+  assert.ok(result.gateResult.blockers.some((b) => b.code === 'INSUFFICIENT_EVIDENCE_RECOMMENDATION'), 'must be a BLOCKER, not silently absorbed');
+  assert.equal(result.gateResult.machineAssessment, 'REVISE'); // locally fixable — not one of the REJECT-tier codes
+});
+
+// Fix D — humanDecisions[] is an append-only history. A later ACCEPT (which
+// legitimately has no rationale) must never erase an earlier OVERRIDE's
+// rationale — previously the four scalar fields were simply overwritten.
+test('22. fix D — humanDecisions[] records every decision in order, and a later ACCEPT (no rationale) never erases an earlier OVERRIDE\'s rationale', () => {
+  const project = newProject();
+  setupRecommendationSet(project.id, 'rs1', [{}]);
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, {
+    referenceSetId: 'rs1',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    structuralDirection: { plannedSectionCount: 8, minimumSectionDurationSeconds: 20 }, // forces CONTRADICTORY_STRUCTURE -> REJECT
+  });
+  const evalResult = gateService.evaluatePreProductionGate(project.id, draft.id);
+  assert.equal(evalResult.gateResult.machineAssessment, 'REJECT');
+
+  const overridden = gateService.decideGateResult(project.id, evalResult.gateResult.id, { decision: 'OVERRIDE', decidedBy: 'human1', rationale: 'accepting the contradiction, will fix in Storyboard' });
+  assert.equal(overridden.ok, true);
+  const accepted = gateService.decideGateResult(project.id, evalResult.gateResult.id, { decision: 'ACCEPT', decidedBy: 'human2' });
+  assert.equal(accepted.ok, true);
+
+  assert.equal(accepted.gateResult.humanDecisions.length, 2);
+  assert.equal(accepted.gateResult.humanDecisions[0].decision, 'OVERRIDE');
+  assert.equal(accepted.gateResult.humanDecisions[0].rationale, 'accepting the contradiction, will fix in Storyboard'); // survives intact
+  assert.equal(accepted.gateResult.humanDecisions[1].decision, 'ACCEPT');
+  assert.equal(accepted.gateResult.humanDecisions[1].rationale, null);
+  // the scalar mirror reflects only the newest entry — never a regression for existing readers
+  assert.equal(accepted.gateResult.humanDecision, 'ACCEPT');
+  assert.equal(accepted.gateResult.humanRationale, null);
+});
+
+// Fix E — a gate result must not outlive the exact Blueprint state it was
+// computed against (Rule 4). blueprintUpdatedAt is captured at evaluation
+// time; ACCEPT/OVERRIDE on a result whose Blueprint has since moved on
+// (superseded via a REQUEST_REVISION against a LATER gate evaluation) must
+// be blocked, never silently actioned against a Blueprint that no longer
+// reflects what was evaluated.
+test('23. fix E — an ACCEPT on a gate result whose Blueprint has since been superseded is blocked as stale, and isGateResultStale() reports it explicitly', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{}]);
+  const blueprint = buildAndApproveBlueprint(project, recSet, { recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }] });
+
+  const firstEval = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  assert.equal(firstEval.gateResult.blueprintUpdatedAt, blueprint.updatedAt);
+  assert.equal(gateService.isGateResultStale(project.id, firstEval.gateResult).stale, false);
+
+  // A second, independent gate evaluation against the SAME (still-unchanged) Blueprint,
+  // whose REQUEST_REVISION supersedes v1 -> a new DRAFT v2 (Blueprint.updatedAt changes).
+  const secondEval = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  const revised = gateService.decideGateResult(project.id, secondEval.gateResult.id, { decision: 'REQUEST_REVISION', decidedBy: 'human1', rationale: 'needs a rework' });
+  assert.equal(revised.ok, true);
+  assert.equal(creativeBlueprintStore.getCreativeBlueprint(project.id, blueprint.id).status, 'SUPERSEDED');
+
+  // The FIRST gate result's own snapshot is now stale — an ACCEPT against it must be blocked.
+  const staleness = gateService.isGateResultStale(project.id, firstEval.gateResult);
+  assert.equal(staleness.stale, true);
+  assert.match(staleness.reason, /since changed|no longer exists/);
+
+  const staleAccept = gateService.decideGateResult(project.id, firstEval.gateResult.id, { decision: 'ACCEPT', decidedBy: 'human2' });
+  assert.equal(staleAccept.ok, false);
+  assert.match(staleAccept.reason, /stale/i);
+
+  const staleOverride = gateService.decideGateResult(project.id, firstEval.gateResult.id, { decision: 'OVERRIDE', decidedBy: 'human2', rationale: 'proceeding anyway' });
+  assert.equal(staleOverride.ok, false);
+  assert.match(staleOverride.reason, /stale/i);
+});
+
+// Fix I — the gate's own computed costStatus (KNOWN/ESTIMATED/UNKNOWN) was
+// previously computed inside checkBeatGraphDerivedCapability() and then
+// discarded before ever reaching the persisted PreProductionGateResult.
+test('24. fix I — costStatus is persisted as UNKNOWN when no BeatGraph is supplied, and ESTIMATED when one is', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{}]);
+  const blueprint = buildAndApproveBlueprint(project, recSet, { recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }] });
+
+  const withoutBeatGraph = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  assert.equal(withoutBeatGraph.gateResult.costStatus, 'UNKNOWN');
+
+  const beatGraph = createBeatGraph({
+    projectId: project.id,
+    beats: [createVisualBeat({ id: 'beat-1', sceneId: 's1', shotId: 'sh1', sequence: 1, startTime: 0, duration: 5, visualTreatment: 'STILL_IMAGE' })],
+  });
+  const withBeatGraph = gateService.evaluatePreProductionGate(project.id, blueprint.id, { beatGraph });
+  assert.equal(withBeatGraph.gateResult.costStatus, 'ESTIMATED');
+});
