@@ -19,6 +19,21 @@ server/data/video-prompt-packages/*.json
 server/data/video-generation-approvals/*.json
 server/data/broll/*.json
 
+# INT-1/INT-2 — video-intelligence pipeline data (real acquired reference
+# videos, derived measurements/observations/interpretations/patterns/
+# recommendations/blueprints). Same convention as every other data dir
+# above: the folder itself is kept in git via .gitkeep; the generated
+# per-project JSON is never committed (real scraped/derived content).
+server/data/reference-videos/*.json
+server/data/reference-video-measurements/*.json
+server/data/reference-video-observations/*.json
+server/data/reference-video-interpretations/*.json
+server/data/reference-video-interpretation-approvals/*.json
+server/data/reference-sets/*.json
+server/data/cross-video-patterns/*.json
+server/data/recommendations/*.json
+server/data/creative-blueprints/*.json
+
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.
 server/data/assets/*
