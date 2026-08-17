@@ -301,6 +301,43 @@ function createStoryboardShot(overrides = {}) {
     // representation of the structured fields above (see Part 13).
     promptDraft: null,
     status: 'DRAFT',
+
+    // ---------------------------------------------------------------------
+    // P0-4A — Blueprint -> Storyboard contract (docs: the P0-4 forensic
+    // audit + P0-4A specification, this stage). Two fields, deliberately
+    // minimal — see that specification's Part 2 contract table for the
+    // full source/destination/derivation-rule justification for each.
+    // ---------------------------------------------------------------------
+
+    // DIRECT_REFERENCE — Recommendation ids only (never statement/
+    // rationale/action text), resolved through Storyboard.blueprintId ->
+    // CreativeBlueprint.recommendationDecisions[]. Zero, one, or many per
+    // shot; one recommendation may legitimately span many shots. HUMAN-
+    // AUTHORED in P0-4A — no Blueprint -> Storyboard generator exists yet
+    // (that is P0-4B, explicitly out of scope here) to populate this
+    // automatically. An accepted recommendation whose id never appears in
+    // ANY shot's recommendationIds is not itself a separate NOT_APPLICABLE
+    // state — absence already carries that meaning; distinguishing
+    // "deliberately not applicable" from "simply forgotten" is a future
+    // validation-time judgment (a future STORYBOARD_GATE), not data this
+    // schema stores.
+    recommendationIds: [],
+
+    // HUMAN_AUTHORED in P0-4A (STRUCTURED_DERIVATION-eligible in a future
+    // stage — a future P0-4D could read this to build services/beat-graph-
+    // derivation-service.js's own context.treatments map, never the other
+    // way around). Value space is VISUAL_TREATMENTS (schemas/visual-beat-
+    // schema.js) — documented here, not schema-enforced: no schema file in
+    // this codebase ever requires another schema file (every schema file
+    // imports only `crypto`; confirmed by inspection during this stage),
+    // and every other enum-bearing field in this codebase's schema
+    // factories (e.g. CreativeBlueprint.status, Recommendation.
+    // recommendationType) follows the identical convention — the schema
+    // stores an unconstrained value, and enum enforcement (where it
+    // exists at all) lives at the MCP/REST/service boundary, never inside
+    // a schema factory. This is INTENT ONLY: never a material assignment,
+    // renderer choice, generated asset, or provider selection.
+    visualTreatment: null,
   };
   return withDefaults(base, overrides);
 }
@@ -311,6 +348,16 @@ function createStoryboard(overrides = {}) {
     projectId: null,
     scenes: [],
     shots: [],
+
+    // P0-4A — DIRECT_REFERENCE to the approved CreativeBlueprint this
+    // Storyboard was authored against (a plain id, never a content copy —
+    // concept/corePromise/targetAudience/strategy text/evidence summaries
+    // are never duplicated here; a consumer follows this id back to the
+    // real CreativeBlueprint record for anything beyond the id itself).
+    // null for a pre-existing Storyboard authored before this field
+    // existed, or one not (yet) tied to any Blueprint — never fabricated.
+    blueprintId: null,
+
     ...versionFields(),
   };
   return withDefaults(base, overrides);
