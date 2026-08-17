@@ -68,6 +68,13 @@ const GATE_BLOCKER_CODES = [
   'INVALID_TARGET_DURATION',
   'CONTRADICTORY_STRUCTURE', // reuses detectStructuralContradiction() unchanged
   'INVALID_RECOMMENDATION_PROVENANCE', // BLOCKER here even though non-blocking at the Blueprint layer (spec Part 2A, Part 5D) — INT-2.5 is the stricter gate
+  // P0 Hardening (finding C) — a human ACCEPT/EDIT of an INSUFFICIENT_EVIDENCE
+  // recommendation is dropped by INT-2's own buildCreativeBlueprintDraft(),
+  // which records this diagnostic but never blocks approval with it. Copied
+  // through here as a BLOCKER using the exact same "gate is the stricter
+  // layer" precedent already established for INVALID_RECOMMENDATION_PROVENANCE
+  // directly above — a broken evidence link is a broken evidence link.
+  'INSUFFICIENT_EVIDENCE_RECOMMENDATION',
   'UNSUPPORTED_CAPABILITY_NO_FALLBACK', // a confirmed UNSUPPORTED production capability with no acceptable fallback expressed anywhere reachable
 ];
 
@@ -116,11 +123,22 @@ function createGateInformation(overrides = {}) {
   return withDefaults(base, overrides);
 }
 
+// P0 Hardening (finding D) — ONE entry in the gate result's append-only
+// human-decision history. A later decision NEVER overwrites or erases an
+// earlier one's own rationale — mirrors CreativeBlueprint.reviews[]'s own
+// append-only discipline exactly, applied here because the gate previously
+// had none: it stored only four overwritable scalars, so a rationale-free
+// ACCEPT could silently erase a mandatory OVERRIDE rationale.
+function createGateHumanDecision(overrides = {}) {
+  const base = { decision: null, decidedBy: null, decidedAt: new Date().toISOString(), rationale: null };
+  return withDefaults(base, overrides);
+}
+
 // ---------------------------------------------------------------------------
 // PreProductionGateResult — the record itself.
 // ---------------------------------------------------------------------------
 function createPreProductionGateResult(overrides = {}) {
-  const { blockers, warnings, information, ...rest } = overrides;
+  const { blockers, warnings, information, humanDecisions, ...rest } = overrides;
   const base = {
     id: crypto.randomUUID(),
     projectId: null,
@@ -130,19 +148,41 @@ function createPreProductionGateResult(overrides = {}) {
                                // as its own named field per the spec's exact required shape, not collapsed into blueprintId
     gateVersion: 1, // Part 18/29 — versions THIS FILE's own rule logic; bump when evaluator rules change
 
+    // P0 Hardening (finding E) — the Blueprint's OWN updatedAt at the exact
+    // moment this gate result was computed. A later mutation of the
+    // Blueprint (status change, content edit, a new revision superseding
+    // it) changes the Blueprint's own updatedAt, so comparing the two
+    // values is how services/pre-production-gate-service.js's
+    // isGateResultStale() answers "is this PROCEED still about the
+    // Blueprint that currently exists, or about one that no longer does?"
+    // — never a second state-machine, just a plain timestamp comparison
+    // against data the Blueprint already carries.
+    blueprintUpdatedAt: null,
+
     machineAssessment: null, // one of GATE_ASSESSMENT_VALUES — set once, by the evaluator, never after
     blockers: Array.isArray(blockers) ? blockers.map((b) => createGateFinding(b)) : [],
     warnings: Array.isArray(warnings) ? warnings.map((w) => createGateFinding(w)) : [],
     information: Array.isArray(information) ? information.map((i) => createGateInformation(i)) : [],
     reasoning: '', // deterministically assembled from blockers/warnings — never LLM-authored (spec Part 20)
 
+    // P0 Hardening (finding I) — previously computed by the evaluator and
+    // discarded before ever reaching this record. One of COST_STATUS_VALUES.
+    costStatus: null,
+
     createdAt: new Date().toISOString(),
 
-    // --- human review (spec Part 11) — appended later, never overwrites the machine fields above ---
-    humanDecision: null, // one of HUMAN_DECISION_VALUES, or null until a human decides
+    // --- human review (spec Part 11) ---
+    // P0 Hardening (finding D) — humanDecisions[] is the real, authoritative,
+    // append-only history (never mutated in place, only pushed to). The four
+    // scalars below are kept as a read-convenience MIRROR of the array's own
+    // last entry (exactly what every existing caller already reads) — but
+    // the authoritative record, and the only place an OVERRIDE's rationale
+    // is guaranteed recoverable after a later decision, is the array.
+    humanDecisions: Array.isArray(humanDecisions) ? humanDecisions.map((d) => createGateHumanDecision(d)) : [],
+    humanDecision: null, // mirrors humanDecisions[humanDecisions.length - 1].decision
     humanDecidedBy: null,
     humanDecidedAt: null,
-    humanRationale: null, // REQUIRED (non-null, non-empty) when humanDecision === 'OVERRIDE' — enforced by the service, not this factory
+    humanRationale: null, // mirrors humanDecisions[humanDecisions.length - 1].rationale — REQUIRED (non-null, non-empty) when that decision is 'OVERRIDE', enforced by the service
   };
   return withDefaults(base, rest);
 }
@@ -157,5 +197,6 @@ module.exports = {
   CAPABILITY_STATUS_VALUES,
   createGateFinding,
   createGateInformation,
+  createGateHumanDecision,
   createPreProductionGateResult,
 };

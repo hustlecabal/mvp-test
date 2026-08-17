@@ -236,15 +236,26 @@ function checkCompletenessAndStructure(blueprint) {
 // Blueprint — copying them through from blueprint.diagnostics is the only
 // faithful way to represent them, never silently dropped (spec Part 5).
 function checkCopiedThroughBlueprintDiagnostics(blueprint) {
+  const blockers = [];
   const warnings = [];
   for (const d of blueprint.diagnostics || []) {
     if (d.code === 'INVALID_ENTITY_REFERENCE') {
       warnings.push(warning('INVALID_ENTITY_REFERENCE', d.message, 'CONTINUITY'));
     } else if (d.code === 'CREATIVE_BRIEF_MISMATCH') {
       warnings.push(warning('CREATIVE_BRIEF_MISMATCH', d.message, 'AUDIENCE_CONTEXT'));
+    } else if (d.code === 'INSUFFICIENT_EVIDENCE_RECOMMENDATION') {
+      // P0 Hardening (finding C) — a human's ACCEPT/EDIT of a recommendation
+      // below INT-1E's minimum evidence threshold is dropped by INT-2's own
+      // buildCreativeBlueprintDraft() (the decision never enters
+      // recommendationDecisions), but the diagnostic IS recorded there.
+      // Copied through here as a BLOCKER — the same "gate is the stricter
+      // layer" precedent already applied to INVALID_RECOMMENDATION_PROVENANCE
+      // just above. Without this, a human's evidence-based decision could be
+      // silently dropped while both layers report clean.
+      blockers.push(blocker('INSUFFICIENT_EVIDENCE_RECOMMENDATION', d.message, 'EVIDENCE_ALIGNMENT'));
     }
   }
-  return { blockers: [], warnings };
+  return { blockers, warnings };
 }
 
 // Dimension D (Evidence alignment). INDEPENDENT re-verification against
@@ -534,16 +545,36 @@ function evaluatePreProductionGate(projectId, blueprintId, { beatGraph } = {}) {
     projectId,
     blueprintId: blueprint.id,
     blueprintRevision: blueprint.id,
+    blueprintUpdatedAt: blueprint.updatedAt,
     machineAssessment: assessment,
     blockers,
     warnings,
     information,
     reasoning,
+    costStatus: beatGraphResult.costStatus,
   });
 
   const saved = preProductionGateStore.addGateResult(projectId, gateResult);
   if (!saved.ok) return { ok: false, reason: saved.reason };
   return { ok: true, gateResult: saved.gateResult };
+}
+
+// P0 Hardening (finding E) — a PROCEED/REVISE/REJECT verdict is only ever
+// true of the EXACT Blueprint content it was computed against. If the
+// Blueprint has since been edited (editCreativeBlueprintDraft) or replaced
+// by a new revision, its updatedAt no longer matches what this gate result
+// captured at evaluation time — the result is stale and must not be acted
+// on as if it still describes the current Blueprint. Returns { stale, reason }
+// rather than throwing, so callers can produce a normal ok:false response.
+function isGateResultStale(projectId, gateResult) {
+  const blueprint = creativeBlueprintStore.getCreativeBlueprint(projectId, gateResult.blueprintId);
+  if (!blueprint) {
+    return { stale: true, reason: `the Blueprint ("${gateResult.blueprintId}") this gate result was computed against no longer exists` };
+  }
+  if (blueprint.updatedAt !== gateResult.blueprintUpdatedAt) {
+    return { stale: true, reason: `this gate result was computed against Blueprint "${gateResult.blueprintId}" as of ${gateResult.blueprintUpdatedAt}, but the Blueprint has since changed (now updated at ${blueprint.updatedAt}) — re-run the gate against the current Blueprint before acting on it` };
+  }
+  return { stale: false, reason: null };
 }
 
 // Spec Part 11 — human decision handling. REQUEST_REVISION/REJECT
@@ -552,6 +583,12 @@ function evaluatePreProductionGate(projectId, blueprintId, { beatGraph } = {}) {
 // non-empty humanRationale. ACCEPT/OVERRIDE never touch the Blueprint's
 // own status — the gate is advisory infrastructure, not a technical lock
 // (spec Part 4/11).
+//
+// P0 Hardening (finding E) — ACCEPT/OVERRIDE are BLOCKED once the gate
+// result is stale (Rule 4: a gate result must not outlive the exact
+// Blueprint state it was computed against). REQUEST_REVISION/REJECT are
+// NOT blocked — they act on the Blueprint itself (via reviewCreativeBlueprint)
+// and remain valid regardless of what the Blueprint currently looks like.
 function decideGateResult(projectId, gateResultId, { decision, decidedBy, rationale } = {}) {
   if (!HUMAN_DECISION_VALUES.includes(decision)) {
     return { ok: false, reason: `"${decision}" is not a recognized human decision` };
@@ -562,6 +599,11 @@ function decideGateResult(projectId, gateResultId, { decision, decidedBy, ration
   }
   if (decision === 'OVERRIDE' && (!rationale || String(rationale).trim().length === 0)) {
     return { ok: false, reason: 'OVERRIDE requires a non-empty humanRationale' };
+  }
+
+  if (decision === 'ACCEPT' || decision === 'OVERRIDE') {
+    const staleness = isGateResultStale(projectId, gateResult);
+    if (staleness.stale) return { ok: false, reason: `cannot ${decision} a stale gate result: ${staleness.reason}` };
   }
 
   if (decision === 'REQUEST_REVISION' || decision === 'REJECT') {
@@ -584,4 +626,5 @@ module.exports = {
   determineAssessment,
   evaluatePreProductionGate,
   decideGateResult,
+  isGateResultStale,
 };

@@ -50,6 +50,7 @@ process.env.REFERENCE_VIDEO_DATA_DIR = rvTempDir;
 const projectStore = require('../services/project-store');
 const timelineStore = require('../services/timeline-store');
 const referenceVideoStore = require('../services/reference-video-store');
+const gate = require('../services/approval-gate');
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
 
 const REAL_VIDEO_URL = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
@@ -138,6 +139,15 @@ test('REAL PROOF — ingesting a real, public YouTube video produces a durable R
   }
 
   const project = projectStore.createProject({ title: 'EVOLINK INT-1A REAL ACQUISITION PROOF', topic: 'Me at the zoo' });
+  // P0 Hardening (finding J) — ingestReferenceVideo() now requires the
+  // project's approval-gate.js budget/approval checkpoint to allow it
+  // before making any real provider call; this proof is not testing that
+  // gate (test/reference-video-ingestion-service.test.js's G1-G5 do), so
+  // it authorizes the project up front, same as every other fixture.
+  gate.setBudget(project, 1);
+  gate.requestApproval(project, { estimatedCost: 0 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  projectStore.touch(project);
   const rv = await ingestReferenceVideo(project.id, { url: REAL_VIDEO_URL, provider: realRelayProvider() });
 
   console.log(`[INT-1A REAL PROOF] ReferenceVideo ${rv.id} — status ${rv.status}`);

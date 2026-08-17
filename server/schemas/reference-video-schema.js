@@ -84,6 +84,12 @@ const ACQUISITION_DIAGNOSTIC_CODES = [
   'TRANSCRIPT_INVALID',
   'TRANSCRIPT_ALIGNMENT_FAILED',
   'METADATA_UNAVAILABLE',
+  // P0 Hardening (finding J) — reference-video-ingestion-service.js's real,
+  // billed Apify calls (acquireMetadata/acquireVideo/acquireTranscript)
+  // previously had zero references to the project's approval-gate.js
+  // budget/approval checkpoint anywhere — a confirmed uncontrolled-spend
+  // path. Emitted when ingestion is blocked before any provider call is made.
+  'BUDGET_APPROVAL_REQUIRED',
 ];
 
 // Part 13 — one stage of the acquisition record's own audit trail.

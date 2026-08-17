@@ -28,6 +28,7 @@ for (const [envVar, prefix] of [
 }
 
 const projectStore = require('../services/project-store');
+const gate = require('../services/approval-gate');
 const timelineStore = require('../services/timeline-store');
 const referenceVideoStore = require('../services/reference-video-store');
 const measurementStore = require('../services/reference-video-measurement-store');
@@ -39,8 +40,17 @@ const { deriveObservations } = require('../services/reference-video-observation-
 const referenceSetSvc = require('../services/reference-set-service');
 const patternSvc = require('../services/cross-video-pattern-service');
 
+// P0 Hardening (finding J) — ingestReferenceVideo() now blocks on the
+// project's approval-gate.js budget/approval state before making any real
+// (billed, in production) Apify call. Pre-approved here so every existing
+// test in this file exercising the acquisition/pattern pipeline is
+// unaffected.
 function newProject() {
-  return projectStore.createProject({ title: 'x', topic: 'y' });
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 1000);
+  gate.requestApproval(project, { estimatedCost: 1 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  return projectStore.touch(project);
 }
 
 // Builds a small set of REUSABLE fixture video files ONCE — many

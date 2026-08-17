@@ -125,6 +125,33 @@ function updateCreativeBlueprintReviewState(projectId, blueprintId, { status, re
   return blueprint;
 }
 
+// P0 Hardening — the ONE content mutator this store previously lacked
+// (see updateCreativeBlueprintReviewState's own comment above, which was
+// accurate about every function that existed at the time it was written).
+// Only ever called by creative-blueprint-service.js's editCreativeBlueprintDraft(),
+// which itself only ever operates on a DRAFT/PENDING_REVIEW record — this
+// function re-checks that same precondition defensively (never trusts a
+// caller not to skip the service layer) so an APPROVED Blueprint's content
+// can never be mutated in place through this path either. contentFields is
+// a plain object of already-validated field values (recommendationDecisions/
+// diagnostics/etc. already recomputed by the caller) — this function does
+// no validation of its own, exactly like updateCreativeBlueprintReviewState
+// does no validation of its own; it only writes.
+const EDITABLE_STATUSES = ['DRAFT', 'PENDING_REVIEW'];
+function updateCreativeBlueprintContent(projectId, blueprintId, contentFields) {
+  const library = ensureLibrary(projectId);
+  if (!library) return null;
+  const blueprint = library.blueprints.find((b) => b.id === blueprintId);
+  if (!blueprint) return null;
+  if (!EDITABLE_STATUSES.includes(blueprint.status)) return null;
+  for (const [key, value] of Object.entries(contentFields)) {
+    if (value !== undefined) blueprint[key] = JSON.parse(JSON.stringify(value));
+  }
+  blueprint.updatedAt = new Date().toISOString();
+  saveLibrary(library);
+  return blueprint;
+}
+
 module.exports = {
   CREATIVE_BLUEPRINT_DATA_DIR,
   getCreativeBlueprint,
@@ -133,4 +160,5 @@ module.exports = {
   getRevisionChain,
   addCreativeBlueprint,
   updateCreativeBlueprintReviewState,
+  updateCreativeBlueprintContent,
 };

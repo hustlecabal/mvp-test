@@ -83,7 +83,10 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // docs/architecture/video-generation-lifecycle.md.
   // Stage 23 added 3 more (acknowledge_video_unknown_cost,
   // approve_generated_video, reject_generated_video).
-  assert.equal(names.length, 91);
+  // P0 Hardening (finding J) added 1 more (set_project_budget) — the
+  // primary agent-facing interface previously had no way to establish a
+  // spend ceiling at all.
+  assert.equal(names.length, 92);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

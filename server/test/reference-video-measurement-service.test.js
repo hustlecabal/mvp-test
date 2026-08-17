@@ -24,6 +24,7 @@ const measurementTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-rvm-ms
 process.env.REFERENCE_VIDEO_MEASUREMENT_DATA_DIR = measurementTempDir;
 
 const projectStore = require('../services/project-store');
+const gate = require('../services/approval-gate');
 const timelineStore = require('../services/timeline-store');
 const assetStorage = require('../services/asset-storage');
 const referenceVideoStore = require('../services/reference-video-store');
@@ -31,8 +32,17 @@ const measurementStore = require('../services/reference-video-measurement-store'
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
 const measurementService = require('../services/reference-video-measurement-service');
 
+// P0 Hardening (finding J) — ingestReferenceVideo() now blocks on the
+// project's approval-gate.js budget/approval state before making any real
+// (billed, in production) Apify call. Pre-approved here so every existing
+// test in this file exercising the acquisition/measurement pipeline is
+// unaffected.
 function newProject() {
-  return projectStore.createProject({ title: 'x', topic: 'y' });
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 1000);
+  gate.requestApproval(project, { estimatedCost: 1 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  return projectStore.touch(project);
 }
 
 // A real, deterministic TWO-SHOT video: a solid red frame for exactly

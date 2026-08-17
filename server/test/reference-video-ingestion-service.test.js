@@ -30,10 +30,24 @@ const projectStore = require('../services/project-store');
 const timelineStore = require('../services/timeline-store');
 const assetStorage = require('../services/asset-storage');
 const referenceVideoStore = require('../services/reference-video-store');
+const gate = require('../services/approval-gate');
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
 
+// P0 Hardening (finding J) — ingestReferenceVideo() now blocks on the
+// project's approval-gate.js budget/approval state before making any real
+// (billed, in production) Apify call. Every pre-existing test in this file
+// exercises the ACQUISITION pipeline itself, not the spend gate, so the
+// default fixture is pre-approved with a generous budget — mirrors
+// keyframe-generation-service.test.js's own per-test gate.setBudget/
+// requestApproval/decideApproval pattern, applied once here since nearly
+// every test in this file needs it. The dedicated gate tests (G1-G5 below)
+// construct their own, deliberately un-approved or budget-exhausted project.
 function newProject() {
-  return projectStore.createProject({ title: 'x', topic: 'y' });
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 1000);
+  gate.requestApproval(project, { estimatedCost: 1 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  return projectStore.touch(project);
 }
 
 function makeVideoFile({ durationSeconds = 2, withAudio = true, width = 320, height = 180 } = {}) {
@@ -329,6 +343,77 @@ test('20. the caller-supplied provider object is never mutated', async () => {
   const before = JSON.stringify(Object.keys(provider));
   await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider, fetchImpl: fetchImplServing(src) });
   assert.equal(JSON.stringify(Object.keys(provider)), before);
+});
+
+// --- G1-G5. P0 Hardening (finding J) — budget/approval gate ---------------------------------
+
+test('G1. an unapproved project (no approval-gate decision at all) is blocked before any provider call is made', async () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' }); // deliberately NOT approved — bypasses the newProject() default fixture
+  let calls = 0;
+  const provider = fakeProvider({ acquireMetadata: async () => { calls += 1; return fakeProvider().acquireMetadata(); } });
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider });
+  assert.equal(rv.status, 'FAILED');
+  assert.equal(rv.diagnostics[0].code, 'BUDGET_APPROVAL_REQUIRED');
+  assert.match(rv.diagnostics[0].message, /not been approved/);
+  assert.equal(calls, 0); // the real (billed, in production) provider call never happened
+  assert.deepEqual(referenceVideoStore.listReferenceVideos(project.id), []); // never persisted
+});
+
+test('G2. an approved project whose remaining budget is already exhausted is blocked before any provider call is made', async () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 5);
+  gate.requestApproval(project, { estimatedCost: 5 });
+  gate.decideApproval(project, { approve: true });
+  gate.reconcileGenerationCost(project, { id: 'prior-job', reservedCost: 5 }); // consumes the whole budget
+  projectStore.touch(project);
+
+  let calls = 0;
+  const provider = fakeProvider({ acquireMetadata: async () => { calls += 1; return fakeProvider().acquireMetadata(); } });
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider });
+  assert.equal(rv.status, 'FAILED');
+  assert.equal(rv.diagnostics[0].code, 'BUDGET_APPROVAL_REQUIRED');
+  assert.equal(calls, 0);
+});
+
+test('G3. an approved project with an unknown (null) estimated cost that has NOT been acknowledged is blocked — unknown cost is never silently treated as free', async () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 100);
+  gate.requestApproval(project, { estimatedCost: null }); // unknown
+  gate.decideApproval(project, { approve: true });
+  projectStore.touch(project);
+
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider: fakeProvider() });
+  assert.equal(rv.status, 'FAILED');
+  assert.equal(rv.diagnostics[0].code, 'BUDGET_APPROVAL_REQUIRED');
+  assert.match(rv.diagnostics[0].message, /unknown/i);
+});
+
+test('G4. an approved project with unknown estimated cost that HAS been explicitly acknowledged is allowed to proceed', async () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 100);
+  gate.requestApproval(project, { estimatedCost: null });
+  gate.decideApproval(project, { approve: true });
+  gate.acknowledgeUnknownCost(project, { acknowledgedBy: 'tester' });
+  projectStore.touch(project);
+
+  const src = makeVideoFile({ durationSeconds: 1 });
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider: fakeProvider(), fetchImpl: fetchImplServing(src) });
+  assert.equal(rv.status, 'COMPLETE');
+});
+
+test('G5. a project blocked by a prior unacknowledged budget overage is blocked here too, exactly like keyframe/video generation', async () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 5);
+  gate.requestApproval(project, { estimatedCost: 5 });
+  gate.decideApproval(project, { approve: true });
+  gate.reconcileGenerationCost(project, { id: 'over-job', reservedCost: 20 }); // trips the overage/blocked state
+  projectStore.touch(project);
+  assert.equal(project.creditLedger.blocked, true); // sanity check on the fixture itself
+
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider: fakeProvider() });
+  assert.equal(rv.status, 'FAILED');
+  assert.equal(rv.diagnostics[0].code, 'BUDGET_APPROVAL_REQUIRED');
+  assert.match(rv.diagnostics[0].message, /overage/i);
 });
 
 // --- 21. security ------------------------------------------------------------------------------

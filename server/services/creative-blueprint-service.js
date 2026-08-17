@@ -131,28 +131,21 @@ function detectCreativeBriefMismatch(projectId, creativeBriefId, draft) {
   return mismatches.map((m) => diag('CREATIVE_BRIEF_MISMATCH', m));
 }
 
-// Public entry point (Part 3/6/17/18). Builds and persists a DRAFT
-// CreativeBlueprint from real, already-supplied human input plus real,
-// already-persisted Recommendation records — never inventing evidence,
-// strategy, or approval.
-function buildCreativeBlueprintDraft(projectId, input = {}) {
-  if (!projectStore.getProject(projectId)) {
-    return createCreativeBlueprint({ projectId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no project found with id "${projectId}"`)] });
-  }
-
-  const { referenceSetId, recommendationSetId, creativeBriefId } = input;
-  const recommendationSet = recommendationSetId
-    ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
-    : referenceSetId
-    ? recommendationStore.getLatestRecommendationSetForReferenceSet(projectId, referenceSetId)
-    : null;
-  if (!recommendationSet || recommendationSet.projectId !== projectId) {
-    return createCreativeBlueprint({ projectId, referenceSetId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no RecommendationSet found for referenceSetId "${referenceSetId}" / recommendationSetId "${recommendationSetId}"`)] });
-  }
-
+// P0 Hardening — extracted from what used to be buildCreativeBlueprintDraft's
+// own inline body, so a REVISION can recompute diagnostics fresh against
+// whatever content it actually holds, instead of the two paths (initial
+// build vs. REQUEST_REVISION) diverging — one validating for real, the
+// other blindly copying a prior diagnostics[] array forward. `content` is
+// any object exposing the same field names buildCreativeBlueprintDraft's
+// own `input` always has: concept/corePromise/targetDuration/
+// structuralDirection/recommendationDecisions/continuityRequirements/
+// creativeBriefId/targetAudience/format — an existing Blueprint record
+// already has every one of these under the same names, so it can be passed
+// here directly with no reshaping.
+function validateBlueprintContent(projectId, recommendationSet, content) {
   const diagnostics = [];
   const validDecisions = [];
-  for (const decisionInput of Array.isArray(input.recommendationDecisions) ? input.recommendationDecisions : []) {
+  for (const decisionInput of Array.isArray(content.recommendationDecisions) ? content.recommendationDecisions : []) {
     const resolved = resolveRecommendationDecision(recommendationSet, decisionInput);
     if (!resolved.ok) {
       diagnostics.push(resolved.diagnostic);
@@ -173,12 +166,11 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
   const sourceRecommendationIds = [...new Set(validDecisions.map((d) => d.recommendationId))];
   const acceptedOrEdited = validDecisions.filter((d) => d.decision === 'ACCEPT' || d.decision === 'EDIT');
   const sourcePatternIds = [...new Set(acceptedOrEdited.flatMap((d) => (recommendationSet.recommendations.find((r) => r.id === d.recommendationId) || { sourcePatternIds: [] }).sourcePatternIds))];
-  const sourceReferenceSetIds = [...new Set([recommendationSet.referenceSetId])];
 
   // Part 9 — continuity requirement validation against the real VisualBible.
   const visualBible = creativeStore.getVisualBible(projectId);
   const validContinuityRequirements = [];
-  for (const cr of Array.isArray(input.continuityRequirements) ? input.continuityRequirements : []) {
+  for (const cr of Array.isArray(content.continuityRequirements) ? content.continuityRequirements : []) {
     if (resolveEntityReference(visualBible, cr.entityType, cr.entityId)) {
       validContinuityRequirements.push(cr);
     } else {
@@ -186,27 +178,57 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
     }
   }
 
+  // Part 17/18 — structural readiness diagnostics, checked against real
+  // supplied values only.
+  if (!content.concept || String(content.concept).trim().length === 0) diagnostics.push(diag('MISSING_CONCEPT', 'concept is required'));
+  if (!content.corePromise || String(content.corePromise).trim().length === 0) diagnostics.push(diag('MISSING_CORE_PROMISE', 'corePromise is required'));
+  if (content.targetDuration === undefined || content.targetDuration === null) {
+    diagnostics.push(diag('MISSING_TARGET_DURATION', 'targetDuration is required'));
+  } else if (typeof content.targetDuration !== 'number' || !Number.isFinite(content.targetDuration) || content.targetDuration <= 0) {
+    diagnostics.push(diag('INVALID_TARGET_DURATION', `targetDuration "${content.targetDuration}" must be a positive number of seconds`));
+  }
+  const contradiction = detectStructuralContradiction(content.targetDuration, content.structuralDirection);
+  if (contradiction) diagnostics.push(contradiction);
+
+  diagnostics.push(...detectCreativeBriefMismatch(projectId, content.creativeBriefId, { targetAudience: content.targetAudience, format: content.format, targetDuration: content.targetDuration }));
+
+  const productionConsiderations = deriveBlueprintProductionConsiderations({
+    continuityRequirements: validContinuityRequirements,
+    targetDuration: content.targetDuration,
+    structuralDirection: content.structuralDirection,
+  });
+
+  return { diagnostics, validDecisions, sourceRecommendationIds, sourcePatternIds, validContinuityRequirements, productionConsiderations };
+}
+
+// Public entry point (Part 3/6/17/18). Builds and persists a DRAFT
+// CreativeBlueprint from real, already-supplied human input plus real,
+// already-persisted Recommendation records — never inventing evidence,
+// strategy, or approval.
+function buildCreativeBlueprintDraft(projectId, input = {}) {
+  if (!projectStore.getProject(projectId)) {
+    return createCreativeBlueprint({ projectId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no project found with id "${projectId}"`)] });
+  }
+
+  const { referenceSetId, recommendationSetId, creativeBriefId } = input;
+  const recommendationSet = recommendationSetId
+    ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
+    : referenceSetId
+    ? recommendationStore.getLatestRecommendationSetForReferenceSet(projectId, referenceSetId)
+    : null;
+  if (!recommendationSet || recommendationSet.projectId !== projectId) {
+    return createCreativeBlueprint({ projectId, referenceSetId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no RecommendationSet found for referenceSetId "${referenceSetId}" / recommendationSetId "${recommendationSetId}"`)] });
+  }
+
+  const validated = validateBlueprintContent(projectId, recommendationSet, input);
+  const sourceReferenceSetIds = [...new Set([recommendationSet.referenceSetId])];
+
   // Part 10 — VoiceProfile reuse: validated via the real factory, never
   // redefined; if the caller supplied nothing, this stays null (never
   // invented).
   const narrationDirection = input.narrationDirection
     ? { ...input.narrationDirection, voiceProfile: input.narrationDirection.voiceProfile ? createVoiceProfile(input.narrationDirection.voiceProfile) : null }
     : undefined;
-
-  // Part 17/18 — structural readiness diagnostics, checked against real
-  // supplied values only.
-  if (!input.concept || String(input.concept).trim().length === 0) diagnostics.push(diag('MISSING_CONCEPT', 'concept is required'));
-  if (!input.corePromise || String(input.corePromise).trim().length === 0) diagnostics.push(diag('MISSING_CORE_PROMISE', 'corePromise is required'));
-  if (input.targetDuration === undefined || input.targetDuration === null) {
-    diagnostics.push(diag('MISSING_TARGET_DURATION', 'targetDuration is required'));
-  } else if (typeof input.targetDuration !== 'number' || !Number.isFinite(input.targetDuration) || input.targetDuration <= 0) {
-    diagnostics.push(diag('INVALID_TARGET_DURATION', `targetDuration "${input.targetDuration}" must be a positive number of seconds`));
-  }
-  const contradiction = detectStructuralContradiction(input.targetDuration, input.structuralDirection);
-  if (contradiction) diagnostics.push(contradiction);
-
-  const draftForMismatchCheck = { targetAudience: input.targetAudience, format: input.format, targetDuration: input.targetDuration };
-  diagnostics.push(...detectCreativeBriefMismatch(projectId, creativeBriefId, draftForMismatchCheck));
 
   const blueprint = createCreativeBlueprint({
     projectId,
@@ -226,7 +248,7 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
     narrationStrategy: input.narrationStrategy || '',
     tone: input.tone || '',
     emotionalArc: input.emotionalArc || '',
-    recommendationDecisions: validDecisions,
+    recommendationDecisions: validated.validDecisions,
     creativeDecisions: input.creativeDecisions || [],
     constraints: input.constraints || [],
     exclusions: input.exclusions || [],
@@ -234,17 +256,76 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
     visualDirection: input.visualDirection || '',
     narrationDirection,
     structuralDirection: input.structuralDirection,
-    continuityRequirements: validContinuityRequirements,
-    productionConsiderations: deriveBlueprintProductionConsiderations({ continuityRequirements: validContinuityRequirements, targetDuration: input.targetDuration, structuralDirection: input.structuralDirection }),
-    sourceRecommendationIds,
-    sourcePatternIds,
+    continuityRequirements: validated.validContinuityRequirements,
+    productionConsiderations: validated.productionConsiderations,
+    sourceRecommendationIds: validated.sourceRecommendationIds,
+    sourcePatternIds: validated.sourcePatternIds,
     sourceReferenceSetIds,
     status: 'DRAFT',
-    diagnostics,
+    diagnostics: validated.diagnostics,
   });
 
   const saved = creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint);
   return saved.ok ? saved.blueprint : blueprint;
+}
+
+// P0 Hardening (Rule 2) — the one content-edit mechanism this file
+// previously lacked. Only ever operates on a DRAFT/PENDING_REVIEW record
+// (an APPROVED Blueprint's content stays immutable, unchanged from before).
+// Recomputes diagnostics fresh via validateBlueprintContent — never
+// invents content, never auto-approves, never auto-submits for review.
+const EDITABLE_BLUEPRINT_FIELDS = [
+  'title', 'concept', 'corePromise', 'format', 'targetAudience', 'targetDuration',
+  'hookStrategy', 'narrativeStrategy', 'pacingStrategy', 'visualStrategy', 'narrationStrategy',
+  'tone', 'emotionalArc', 'recommendationDecisions', 'creativeDecisions', 'constraints',
+  'exclusions', 'openQuestions', 'visualDirection', 'structuralDirection', 'continuityRequirements',
+];
+
+function editCreativeBlueprintDraft(projectId, blueprintId, edits = {}) {
+  const blueprint = creativeBlueprintStore.getCreativeBlueprint(projectId, blueprintId);
+  if (!blueprint) return { ok: false, reason: `no CreativeBlueprint found with id "${blueprintId}"` };
+  if (!['DRAFT', 'PENDING_REVIEW'].includes(blueprint.status)) {
+    return { ok: false, reason: `cannot edit content from status "${blueprint.status}" — only a DRAFT or PENDING_REVIEW Blueprint may be edited` };
+  }
+  const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+  if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+
+  const mergedContent = { ...blueprint };
+  for (const field of EDITABLE_BLUEPRINT_FIELDS) {
+    if (edits[field] !== undefined) mergedContent[field] = edits[field];
+  }
+
+  const validated = validateBlueprintContent(projectId, recommendationSet, mergedContent);
+  const contentUpdate = {
+    title: mergedContent.title,
+    concept: mergedContent.concept,
+    corePromise: mergedContent.corePromise,
+    format: mergedContent.format,
+    targetAudience: mergedContent.targetAudience,
+    targetDuration: mergedContent.targetDuration,
+    hookStrategy: mergedContent.hookStrategy,
+    narrativeStrategy: mergedContent.narrativeStrategy,
+    pacingStrategy: mergedContent.pacingStrategy,
+    visualStrategy: mergedContent.visualStrategy,
+    narrationStrategy: mergedContent.narrationStrategy,
+    tone: mergedContent.tone,
+    emotionalArc: mergedContent.emotionalArc,
+    creativeDecisions: mergedContent.creativeDecisions,
+    constraints: mergedContent.constraints,
+    exclusions: mergedContent.exclusions,
+    openQuestions: mergedContent.openQuestions,
+    visualDirection: mergedContent.visualDirection,
+    structuralDirection: mergedContent.structuralDirection,
+    recommendationDecisions: validated.validDecisions,
+    continuityRequirements: validated.validContinuityRequirements,
+    productionConsiderations: validated.productionConsiderations,
+    sourceRecommendationIds: validated.sourceRecommendationIds,
+    sourcePatternIds: validated.sourcePatternIds,
+    diagnostics: validated.diagnostics,
+  };
+  const updated = creativeBlueprintStore.updateCreativeBlueprintContent(projectId, blueprintId, contentUpdate);
+  if (!updated) return { ok: false, reason: 'failed to persist edit — Blueprint status may have changed concurrently' };
+  return { ok: true, blueprint: updated };
 }
 
 // Part 7 — optional soft transition, DRAFT -> PENDING_REVIEW. Never
@@ -283,19 +364,49 @@ function reviewCreativeBlueprint(projectId, blueprintId, { decision, reviewedBy,
   }
 
   if (decision === 'REJECT') {
-    if (!['DRAFT', 'PENDING_REVIEW'].includes(blueprint.status)) return { ok: false, reason: `cannot REJECT from status "${blueprint.status}"` };
+    // P0 Hardening (finding A) — the pre-production gate's own documented
+    // precondition is an APPROVED Blueprint (schemas/pre-production-gate-
+    // schema.js), so REJECT must be reachable from APPROVED for the gate's
+    // human-decision path to ever actually work, not just from the
+    // pre-approval DRAFT/PENDING_REVIEW states this guard originally
+    // allowed. Widening this one guard is the full extent of the fix —
+    // REJECTED remains exactly as terminal as before (nothing here changes
+    // what REJECTED itself permits).
+    if (!['DRAFT', 'PENDING_REVIEW', 'APPROVED'].includes(blueprint.status)) return { ok: false, reason: `cannot REJECT from status "${blueprint.status}"` };
     creativeBlueprintStore.updateCreativeBlueprintReviewState(projectId, blueprintId, { status: 'REJECTED', review: createCreativeBlueprintReview({ decision, reviewedBy, note }) });
     return { ok: true, blueprint: creativeBlueprintStore.getCreativeBlueprint(projectId, blueprintId) };
   }
 
   if (decision === 'REQUEST_REVISION') {
     if (blueprint.status === 'SUPERSEDED') return { ok: false, reason: 'this Blueprint is already SUPERSEDED by a later revision' };
+    // P0 Hardening (Rule 3) — REJECTED is a terminal state; nothing may
+    // silently move it to SUPERSEDED just because REQUEST_REVISION is a
+    // generic-sounding function. A rejected Blueprint has no path back —
+    // building a brand-new draft (buildCreativeBlueprintDraft) is the only
+    // way forward, exactly as it already was for a bad-provenance case
+    // that was never approved in the first place.
+    if (blueprint.status === 'REJECTED') return { ok: false, reason: 'a REJECTED Blueprint is terminal and cannot be revised — build a new Blueprint draft instead' };
+    const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+    if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+    // P0 Hardening (Rule 2/findings B, F) — recomputed fresh via the same
+    // validation core buildCreativeBlueprintDraft uses, NEVER a blind copy
+    // of the prior revision's diagnostics[]. Against unchanged content this
+    // reproduces the same diagnostics (nothing has been fixed yet); once a
+    // human calls editCreativeBlueprintDraft() on the resulting DRAFT, the
+    // next recomputation can actually clear a diagnostic that content edit
+    // genuinely fixed — a real repair path, not a permanently-stuck clone.
+    const validated = validateBlueprintContent(projectId, recommendationSet, blueprint);
     const revised = createCreativeBlueprint({
       ...blueprint,
       id: undefined,
       status: 'DRAFT',
       supersedesBlueprintId: blueprint.id,
-      diagnostics: blueprint.diagnostics, // carried forward — still real, still unresolved until the human edits the new draft
+      recommendationDecisions: validated.validDecisions,
+      continuityRequirements: validated.validContinuityRequirements,
+      productionConsiderations: validated.productionConsiderations,
+      sourceRecommendationIds: validated.sourceRecommendationIds,
+      sourcePatternIds: validated.sourcePatternIds,
+      diagnostics: validated.diagnostics,
       reviews: [],
       createdAt: undefined,
       updatedAt: undefined,
@@ -314,10 +425,12 @@ function reviewCreativeBlueprint(projectId, blueprintId, { decision, reviewedBy,
 
 module.exports = {
   buildCreativeBlueprintDraft,
+  editCreativeBlueprintDraft,
   submitCreativeBlueprintForReview,
   reviewCreativeBlueprint,
   resolveRecommendationDecision,
   resolveEntityReference,
   detectStructuralContradiction,
   deriveBlueprintProductionConsiderations,
+  validateBlueprintContent,
 };

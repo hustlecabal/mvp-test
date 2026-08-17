@@ -194,6 +194,10 @@ test('REAL PROOF — interpreting real "Me at the zoo" observations produces evi
   gate.setBudget(project, 10);
   gate.requestApproval(project, { estimatedCost: 0 });
   gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — ingestReferenceVideo() now re-reads the
+  // project fresh from disk to check this approval before its real
+  // provider call; persist it rather than leaving it in memory only.
+  projectStore.touch(project);
 
   const rv = await ingestReferenceVideo(project.id, { url: REAL_VIDEO_URL, provider: realRelayAcquisitionProvider() });
   assert.equal(rv.status, 'COMPLETE');
@@ -207,6 +211,9 @@ test('REAL PROOF — interpreting real "Me at the zoo" observations produces evi
   const q1 = 'OPENING_STRUCTURAL_PURPOSE';
   interpretationApprovalStore.requestApproval(project.id, rv.id, q1, { estimatedCost: 0.01, requestedBy: 'tester' });
   interpretationApprovalStore.decideApproval(project.id, rv.id, q1, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires
+  // explicit human acknowledgment (currency mismatch vs the credit budget).
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, q1, { acknowledgedBy: 'tester' });
   const interp1 = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId: q1, provider, providerName: 'claude-code-relay' });
   console.log(`[INT-1D REAL PROOF] Q1 (${q1}) status=${interp1.status}`);
   console.log(`[INT-1D REAL PROOF] hypothesis: ${interp1.hypothesis}`);
@@ -221,6 +228,7 @@ test('REAL PROOF — interpreting real "Me at the zoo" observations produces evi
   const q2 = 'INFORMATION_DELAY_LOCATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, q2, { estimatedCost: 0.01, requestedBy: 'tester' });
   interpretationApprovalStore.decideApproval(project.id, rv.id, q2, { approve: true, decidedBy: 'tester' });
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, q2, { acknowledgedBy: 'tester' });
   const interp2 = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId: q2, provider, providerName: 'claude-code-relay' });
   console.log(`[INT-1D REAL PROOF] Q2 (${q2}) status=${interp2.status}`);
   console.log(`[INT-1D REAL PROOF] hypothesis: ${interp2.hypothesis}`);
@@ -235,6 +243,7 @@ test('REAL PROOF — interpreting real "Me at the zoo" observations produces evi
   const q3 = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, q3, { estimatedCost: 0.01, requestedBy: 'tester' });
   interpretationApprovalStore.decideApproval(project.id, rv.id, q3, { approve: true, decidedBy: 'tester' });
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, q3, { acknowledgedBy: 'tester' });
   const interp3 = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId: q3, provider, providerName: 'claude-code-relay' });
   console.log(`[INT-1D REAL PROOF] Q3 (${q3}) status=${interp3.status} diagnostics=${JSON.stringify(interp3.diagnostics)}`);
   assert.equal(interp3.status, 'FAILED');

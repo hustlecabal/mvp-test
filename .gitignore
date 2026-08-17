@@ -34,6 +34,13 @@ server/data/cross-video-patterns/*.json
 server/data/recommendations/*.json
 server/data/creative-blueprints/*.json
 
+# INT-2.5 — pre-production gate results. Same convention: folder kept via
+# .gitkeep, generated per-project JSON never committed. P0 Hardening data-
+# integrity check found this directory was missing from .gitignore since
+# INT-2.5 introduced it — fixed here rather than left as a latent gap that
+# could silently commit real dev-server data on a future commit.
+server/data/pre-production-gates/*.json
+
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.
 server/data/assets/*

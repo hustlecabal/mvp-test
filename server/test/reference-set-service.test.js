@@ -18,11 +18,21 @@ for (const [envVar, prefix] of [
 }
 
 const projectStore = require('../services/project-store');
+const gate = require('../services/approval-gate');
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
 const referenceSetSvc = require('../services/reference-set-service');
 
+// P0 Hardening (finding J) — ingestReferenceVideo() now blocks on the
+// project's approval-gate.js budget/approval state before making any real
+// (billed, in production) Apify call. Pre-approved here so every existing
+// test in this file exercising the acquisition/pattern pipeline is
+// unaffected.
 function newProject() {
-  return projectStore.createProject({ title: 'x', topic: 'y' });
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  gate.setBudget(project, 1000);
+  gate.requestApproval(project, { estimatedCost: 1 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  return projectStore.touch(project);
 }
 
 function makeOneShotVideo() {

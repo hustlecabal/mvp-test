@@ -44,6 +44,7 @@ const { execFileSync } = require('child_process');
 const projectStore = require('./project-store');
 const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
+const gate = require('./approval-gate');
 const referenceVideoStore = require('./reference-video-store');
 const whisperAlignmentProvider = require('./voice/whisper-alignment-provider');
 const { createApifyAcquisitionProvider } = require('./reference-video/apify-acquisition-provider');
@@ -163,7 +164,8 @@ function diag(code, message, stageName) {
 async function ingestReferenceVideo(projectId, options = {}) {
   const { url, provider = defaultProvider, allowWhisperFallback = true, fetchImpl, ffmpegPath: ffmpegOverride, ffprobePath: ffprobeOverride, maxVideoBytes } = options || {};
 
-  if (!projectStore.getProject(projectId)) {
+  const project = projectStore.getProject(projectId);
+  if (!project) {
     return createReferenceVideo({ projectId, status: 'FAILED', diagnostics: [diag('VIDEO_ACQUISITION_FAILED', `no project found with id "${projectId}"`)] });
   }
   assertImplementsAcquisitionProviderInterface(provider);
@@ -196,6 +198,31 @@ async function ingestReferenceVideo(projectId, options = {}) {
   // call is made, so re-ingesting the same reference never re-spends. ---
   const existing = referenceVideoStore.findByExternalId(projectId, source.platform, source.externalId);
   if (existing) return existing;
+
+  // P0 Hardening (finding J) — every real Apify call below this point is
+  // billed (see apify-acquisition-provider.js's own header: metadata+
+  // transcript at $0.005/result, video at $0.00015/s). Nothing previously
+  // checked this project's approval-gate.js budget/approval state before
+  // making them — a confirmed, completely ungated real-money spend path.
+  // Gated here, before the FIRST billed call, using the same project-wide
+  // canProceed() checkpoint approval-gate.js already defines (never a
+  // second budget system) — the only honest option available: unlike
+  // keyframe/video generation, no per-call cost estimate exists here before
+  // the call is made (duration is unknown until metadata is fetched), so
+  // there is nothing to compare against a per-operation estimate the way
+  // checkKeyframeBudget()/checkVideoBudget() do. A human must therefore
+  // either approve this project with a real estimatedCost, or explicitly
+  // acknowledge the cost is unknown (gate.acknowledgeUnknownCost) — exactly
+  // Rule 6/8's "no invented default amount, no fabricated cost" discipline.
+  const budgetCheck = gate.canProceed(project);
+  if (!budgetCheck.allowed) {
+    return createReferenceVideo({
+      projectId,
+      source,
+      status: 'FAILED',
+      diagnostics: [diag('BUDGET_APPROVAL_REQUIRED', `Reference video ingestion blocked by budget/approval gate: ${budgetCheck.reason}`)],
+    });
+  }
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-reference-video-'));
   try {

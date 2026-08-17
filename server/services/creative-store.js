@@ -21,6 +21,9 @@ const projectStore = require('./project-store');
 const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
 const creativeSchema = require('../schemas/creative-schema');
+const creativeBlueprintStore = require('./creative-blueprint-store');
+const recommendationStore = require('./recommendation-store');
+const { VISUAL_TREATMENTS } = require('../schemas/visual-beat-schema');
 
 // Overridable for tests, same pattern as PROJECT_DATA_DIR/
 // GENERATION_JOBS_DATA_DIR/ASSET_STORAGE_DIR.
@@ -144,6 +147,68 @@ const masterCreativeSpec = defineArtifact('masterCreativeSpec', creativeSchema.c
 const visualBible = defineArtifact('visualBible', creativeSchema.createVisualBible);
 const storyboardArtifact = defineArtifact('storyboard', creativeSchema.createStoryboard);
 
+// ---------------------------------------------------------------------------
+// P0 Hardening (finding G) — P0-4A added Storyboard.blueprintId and
+// StoryboardShot.recommendationIds/visualTreatment as HUMAN_AUTHORED
+// DIRECT_REFERENCE fields, documented as schema-unenforced by design (see
+// creative-schema.js's own comment: no schema file validates another
+// schema's ids or enums — that happens at the service boundary). Nothing
+// enforced that boundary until now: a typo'd or stale id in any of these
+// three fields would previously be accepted silently, corrupting the
+// Blueprint -> Storyboard contract with no error anywhere. Enforced here,
+// the one place every write to these fields passes through.
+// ---------------------------------------------------------------------------
+
+// Throws if blueprintId is non-null and does not resolve to a real
+// CreativeBlueprint in this project. Returns the resolved blueprint (or
+// null for a null blueprintId — clearing/never-setting the reference is
+// always legal).
+function resolveBlueprintForStoryboard(projectId, blueprintId) {
+  if (blueprintId === null || blueprintId === undefined) return null;
+  const blueprint = creativeBlueprintStore.getCreativeBlueprint(projectId, blueprintId);
+  if (!blueprint) {
+    throw new Error(`Storyboard.blueprintId "${blueprintId}" does not resolve to a CreativeBlueprint in project "${projectId}"`);
+  }
+  return blueprint;
+}
+
+// Throws if any id in recommendationIds does not resolve to a real
+// Recommendation within the given Blueprint's own RecommendationSet — or
+// if recommendationIds is non-empty but no Blueprint is referenced at all
+// (there is nothing to validate against, so it cannot be silently accepted).
+function validateShotRecommendationIds(projectId, blueprint, recommendationIds) {
+  if (!Array.isArray(recommendationIds) || recommendationIds.length === 0) return;
+  if (!blueprint) {
+    throw new Error('shot recommendationIds were supplied but this Storyboard has no blueprintId set — recommendationIds cannot be validated without a referenced CreativeBlueprint');
+  }
+  const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+  const validIds = new Set(((recommendationSet && recommendationSet.recommendations) || []).map((r) => r.id));
+  for (const id of recommendationIds) {
+    if (!validIds.has(id)) {
+      throw new Error(`shot recommendationIds references "${id}", which does not resolve to a Recommendation in Blueprint "${blueprint.id}"'s own RecommendationSet ("${blueprint.recommendationSetId}")`);
+    }
+  }
+}
+
+// Throws for a visualTreatment value outside VISUAL_TREATMENTS (visual-
+// beat-schema.js) — null/undefined (unset) is always legal.
+function validateShotVisualTreatment(visualTreatment) {
+  if (visualTreatment === null || visualTreatment === undefined) return;
+  if (!VISUAL_TREATMENTS.includes(visualTreatment)) {
+    throw new Error(`visualTreatment "${visualTreatment}" is not a recognized value. Use one of: ${VISUAL_TREATMENTS.join(', ')}`);
+  }
+}
+
+// Wraps storyboardArtifact.update() to validate a supplied blueprintId
+// before it is ever persisted — the only place update_storyboard writes
+// this field.
+function updateStoryboardWithValidation(projectId, updates = {}, options = {}) {
+  if (updates.blueprintId !== undefined) {
+    resolveBlueprintForStoryboard(projectId, updates.blueprintId);
+  }
+  return storyboardArtifact.update(projectId, updates, options);
+}
+
 // Part 6/10 — convenience adders for storyboard scenes/shots. Each is
 // treated as a deliberate storyboard update (Part 9): the storyboard's
 // version bumps and a history entry is recorded, exactly as update_storyboard
@@ -176,6 +241,11 @@ function addStoryboardShot(projectId, overrides = {}, { updatedBy, changeNote } 
   if (overrides.sceneId && !record.storyboard.scenes.some((s) => s.sceneId === overrides.sceneId)) {
     throw new Error(`Storyboard scene "${overrides.sceneId}" does not belong to project "${projectId}"`);
   }
+  validateShotVisualTreatment(overrides.visualTreatment);
+  if (Array.isArray(overrides.recommendationIds) && overrides.recommendationIds.length > 0) {
+    const blueprint = record.storyboard.blueprintId ? creativeBlueprintStore.getCreativeBlueprint(projectId, record.storyboard.blueprintId) : null;
+    validateShotRecommendationIds(projectId, blueprint, overrides.recommendationIds);
+  }
 
   const shot = creativeSchema.createStoryboardShot(overrides);
   applyVersionedUpdate(
@@ -207,6 +277,11 @@ function updateStoryboardShot(projectId, shotId, updates = {}, { updatedBy, chan
     if (value !== undefined && key !== 'shotId') {
       updatedShot[key] = value;
     }
+  }
+  if (updates.visualTreatment !== undefined) validateShotVisualTreatment(updatedShot.visualTreatment);
+  if (updates.recommendationIds !== undefined && Array.isArray(updatedShot.recommendationIds) && updatedShot.recommendationIds.length > 0) {
+    const blueprint = record.storyboard.blueprintId ? creativeBlueprintStore.getCreativeBlueprint(projectId, record.storyboard.blueprintId) : null;
+    validateShotRecommendationIds(projectId, blueprint, updatedShot.recommendationIds);
   }
 
   const newShots = [...record.storyboard.shots];
@@ -482,7 +557,7 @@ module.exports = {
   getVisualBible: visualBible.get,
   updateVisualBible: visualBible.update,
   getStoryboard: storyboardArtifact.get,
-  updateStoryboard: storyboardArtifact.update,
+  updateStoryboard: updateStoryboardWithValidation,
   addStoryboardScene,
   addStoryboardShot,
   updateStoryboardShot,

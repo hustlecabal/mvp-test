@@ -17,14 +17,54 @@ const path = require('path');
 
 process.env.PROJECT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-p04a-projects-'));
 process.env.CREATIVE_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-p04a-creative-'));
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-p04a-blueprints-'));
+process.env.RECOMMENDATION_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-p04a-recs-'));
 
 const projectStore = require('../services/project-store');
 const creativeStore = require('../services/creative-store');
 const schema = require('../schemas/creative-schema');
 const { deriveBeatGraph } = require('../services/beat-graph-derivation-service');
+const recommendationStore = require('../services/recommendation-store');
+const blueprintStore = require('../services/creative-blueprint-store');
+const { createRecommendation, createRecommendationSet } = require('../schemas/recommendation-schema');
+const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
 
 function newProject() {
   return projectStore.createProject({ title: 'x', topic: 'y' });
+}
+
+// P0 Hardening (finding G) — builds a real, persisted RecommendationSet +
+// APPROVED CreativeBlueprint referencing it, and points a Storyboard at
+// that Blueprint, so recommendationIds validation (creative-store.js) has
+// a real chain to resolve against. Returns { recommendation, blueprintId }.
+function setupBlueprintWithRecommendation(projectId) {
+  const recommendation = createRecommendation({
+    projectId,
+    referenceSetId: 'rs1',
+    recommendationType: 'RECURRING_PATTERN_APPLICATION',
+    derivationType: 'SINGLE_PATTERN',
+    category: 'OPENING_STRUCTURE',
+    statement: 'stmt',
+    rationale: 'rationale',
+    action: 'Consider doing X.',
+    sourcePatternIds: ['pattern-1'],
+    confidence: 'MEDIUM',
+    evidenceSufficiency: 'SUFFICIENT',
+    meetsMinimumEvidenceThreshold: true,
+  });
+  const recSet = createRecommendationSet({ projectId, referenceSetId: 'rs1', patternSetId: 'pattern-set-1', recommendations: [recommendation], status: 'COMPLETE' });
+  const savedSet = recommendationStore.addRecommendationSet(projectId, recSet).recommendationSet;
+  const blueprint = createCreativeBlueprint({
+    projectId,
+    recommendationSetId: savedSet.id,
+    status: 'APPROVED',
+    concept: 'a concept',
+    corePromise: 'a promise',
+    targetDuration: 60,
+  });
+  const savedBlueprint = blueprintStore.addCreativeBlueprint(projectId, blueprint).blueprint;
+  creativeStore.updateStoryboard(projectId, { blueprintId: savedBlueprint.id });
+  return { recommendation: savedSet.recommendations[0], blueprintId: savedBlueprint.id };
 }
 
 // 1. new Storyboard provenance field is accepted
@@ -114,7 +154,15 @@ function writeRawCreativeRecord(record) {
   fs.writeFileSync(creativeRecordFilePath(record.projectId), JSON.stringify(record, null, 2));
 }
 
-test('6b. updateStoryboardShot on a genuinely old (pre-P0-4A) stored shot never throws, and can subsequently have the new fields set explicitly', () => {
+// P0 Hardening (finding G) — updateStoryboardShot/addStoryboardShot now
+// validate recommendationIds/visualTreatment at write time (creative-
+// store.js), closing a silent-corruption gap where a typo'd or stale id
+// was previously accepted with no error anywhere. This test previously
+// asserted the OLD, unvalidated behavior (writing a fabricated "rec-9" id
+// with no real Blueprint/Recommendation behind it succeeded silently) —
+// updated to assert the corrected, intentional behavior: unvalidatable
+// recommendationIds now throw, and a genuinely resolvable id succeeds.
+test('6b. updateStoryboardShot on a genuinely old (pre-P0-4A) stored shot never throws for fields it does not touch, rejects a recommendationId that cannot be validated against any Blueprint, and accepts one that resolves to a real Recommendation', () => {
   const project = newProject();
   const shot = creativeStore.addStoryboardShot(project.id, { purpose: 'intro' });
   // Simulate genuinely old on-disk data by deleting the new keys directly from the persisted record.
@@ -123,10 +171,19 @@ test('6b. updateStoryboardShot on a genuinely old (pre-P0-4A) stored shot never 
   delete record.storyboard.shots[0].visualTreatment;
   writeRawCreativeRecord(record);
 
-  const updated = creativeStore.updateStoryboardShot(project.id, shot.shotId, { recommendationIds: ['rec-9'] }, {});
-  assert.equal(updated.ok !== false, true);
-  assert.deepEqual(updated.recommendationIds, ['rec-9']);
-  assert.equal(updated.purpose, 'intro'); // untouched pre-existing field survives
+  // No blueprintId is set on this storyboard, so a fabricated recommendationId cannot be
+  // validated — this must now throw rather than silently persist an unverifiable reference.
+  assert.throws(() => creativeStore.updateStoryboardShot(project.id, shot.shotId, { recommendationIds: ['rec-9'] }, {}), /no blueprintId set/);
+
+  // A field the new validation doesn't touch (purpose) still updates cleanly on the old shape.
+  const updatedPurpose = creativeStore.updateStoryboardShot(project.id, shot.shotId, { purpose: 'revised intro' }, {});
+  assert.equal(updatedPurpose.purpose, 'revised intro');
+
+  // Once a real Blueprint/RecommendationSet is wired up, a genuinely resolvable recommendationId succeeds.
+  const { recommendation } = setupBlueprintWithRecommendation(project.id);
+  const updated = creativeStore.updateStoryboardShot(project.id, shot.shotId, { recommendationIds: [recommendation.id] }, {});
+  assert.deepEqual(updated.recommendationIds, [recommendation.id]);
+  assert.equal(updated.purpose, 'revised intro'); // untouched pre-existing field survives
 });
 
 // 7. versioned Storyboard updates preserve the new fields
@@ -145,13 +202,19 @@ test('7. setting Storyboard.blueprintId, then performing an unrelated versioned 
   assert.equal(storyboardAfter.scenes.length, 2);
 });
 
+// P0 Hardening (finding G) — recommendationIds must now resolve to a real
+// Recommendation via the Storyboard's own blueprintId (previously accepted
+// any string, including a fabricated "rec-1" with nothing behind it).
+// Updated to set up a real Blueprint/RecommendationSet first, matching the
+// same corrected-behavior pattern as test 6b above.
 test('7b. adding a new shot to a storyboard preserves an existing shot\'s own recommendationIds/visualTreatment', () => {
   const project = newProject();
-  const first = creativeStore.addStoryboardShot(project.id, { recommendationIds: ['rec-1'], visualTreatment: 'WHITEBOARD' });
+  const { recommendation } = setupBlueprintWithRecommendation(project.id);
+  const first = creativeStore.addStoryboardShot(project.id, { recommendationIds: [recommendation.id], visualTreatment: 'WHITEBOARD' });
   creativeStore.addStoryboardShot(project.id, { purpose: 'second shot' });
   const storyboard = creativeStore.getStoryboard(project.id);
   const firstAfter = storyboard.shots.find((s) => s.shotId === first.shotId);
-  assert.deepEqual(firstAfter.recommendationIds, ['rec-1']);
+  assert.deepEqual(firstAfter.recommendationIds, [recommendation.id]);
   assert.equal(firstAfter.visualTreatment, 'WHITEBOARD');
   assert.equal(storyboard.shots.length, 2);
 });
@@ -173,6 +236,54 @@ test('8b. every pre-existing Storyboard field is untouched — exact field-set c
   const storyboard = schema.createStoryboard();
   const preExistingFields = ['id', 'projectId', 'scenes', 'shots', 'version', 'updatedAt', 'updatedBy', 'changeNote', 'history'];
   assert.deepEqual(Object.keys(storyboard).sort(), [...preExistingFields, 'blueprintId'].sort());
+});
+
+// ---------------------------------------------------------------------------
+// P0 Hardening (finding G) — service-boundary validation for the three
+// P0-4A contract fields, closing the silent-corruption gap this file's own
+// tests 3/6b/7b (pre-hardening) explicitly documented as out of scope.
+// ---------------------------------------------------------------------------
+
+test('G1. update_storyboard rejects a blueprintId that does not resolve to a real CreativeBlueprint in this project', () => {
+  const project = newProject();
+  assert.throws(() => creativeStore.updateStoryboard(project.id, { blueprintId: 'not-a-real-blueprint-id' }), /does not resolve to a CreativeBlueprint/);
+  assert.equal(creativeStore.getStoryboard(project.id), null); // never persisted
+});
+
+test('G2. update_storyboard accepts a blueprintId that resolves to a real CreativeBlueprint', () => {
+  const project = newProject();
+  const { blueprintId } = setupBlueprintWithRecommendation(project.id);
+  const storyboard = creativeStore.getStoryboard(project.id);
+  assert.equal(storyboard.blueprintId, blueprintId);
+});
+
+test('G3. create_storyboard_shot rejects a recommendationId that does not resolve to a Recommendation in the referenced Blueprint\'s RecommendationSet', () => {
+  const project = newProject();
+  setupBlueprintWithRecommendation(project.id);
+  assert.throws(() => creativeStore.addStoryboardShot(project.id, { recommendationIds: ['not-a-real-recommendation-id'] }), /does not resolve to a Recommendation/);
+});
+
+test('G4. create_storyboard_shot rejects recommendationIds when the storyboard has no blueprintId set at all', () => {
+  const project = newProject();
+  assert.throws(() => creativeStore.addStoryboardShot(project.id, { recommendationIds: ['whatever'] }), /no blueprintId set/);
+});
+
+test('G5. create_storyboard_shot rejects a visualTreatment outside VISUAL_TREATMENTS', () => {
+  const project = newProject();
+  assert.throws(() => creativeStore.addStoryboardShot(project.id, { visualTreatment: 'NOT_A_REAL_TREATMENT' }), /not a recognized value/);
+});
+
+test('G6. create_storyboard_shot accepts a real visualTreatment with no Blueprint reference required', () => {
+  const project = newProject();
+  const shot = creativeStore.addStoryboardShot(project.id, { visualTreatment: 'BROLL_CLIP' });
+  assert.equal(shot.visualTreatment, 'BROLL_CLIP');
+});
+
+test('G7. update_storyboard_shot rejects an invalid recommendationId/visualTreatment the same way addStoryboardShot does', () => {
+  const project = newProject();
+  const shot = creativeStore.addStoryboardShot(project.id, { purpose: 'intro' });
+  assert.throws(() => creativeStore.updateStoryboardShot(project.id, shot.shotId, { visualTreatment: 'FAKE' }), /not a recognized value/);
+  assert.throws(() => creativeStore.updateStoryboardShot(project.id, shot.shotId, { recommendationIds: ['ghost-rec'] }), /no blueprintId set/);
 });
 
 // 10. the contract does not permit Blueprint strategy text to masquerade as shot-level generated content

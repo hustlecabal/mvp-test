@@ -62,6 +62,38 @@ function register(server) {
     async ({ projectId }) => jsonResult(gate.getBudgetView(requireProject(projectId)))
   );
 
+  // P0 Hardening (finding J) — the primary agent-facing interface (MCP) had
+  // no way to establish a budget ceiling at all: REST's POST /projects/:id/
+  // budget has existed since Stage 3, but none of this file's 5 tools could
+  // call gate.setBudget(). An MCP-only caller could therefore never set a
+  // spend limit greater than the schema default before requesting
+  // generation approval — mirrors the REST route's own validation exactly
+  // (limit must be a positive, finite number).
+  server.registerTool(
+    'set_project_budget',
+    {
+      title: "Set a project's total spend budget (credits)",
+      description:
+        'Sets (or changes) the total number of credits this project is allowed to spend. Mirrors the existing ' +
+        'REST route POST /projects/:id/budget exactly, via the existing Stage 3 approval-gate service ' +
+        '(services/approval-gate.js\'s setBudget). This is the ONLY MCP tool that can establish or change the ' +
+        'budget ceiling that canProceed()/checkKeyframeBudget()/checkVideoBudget() enforce elsewhere.',
+      inputSchema: {
+        projectId: z.string(),
+        limit: z.number(),
+      },
+    },
+    async ({ projectId, limit }) => {
+      if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) {
+        return jsonResult({ ok: false, reason: 'limit must be a positive number' });
+      }
+      const project = requireProject(projectId);
+      gate.setBudget(project, limit);
+      projectStore.touch(project);
+      return jsonResult({ ok: true, budget: gate.getBudgetView(project) });
+    }
+  );
+
   server.registerTool(
     'request_generation_approval',
     {

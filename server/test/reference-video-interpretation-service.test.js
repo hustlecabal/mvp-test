@@ -42,7 +42,13 @@ function newApprovedProject(budget = 100) {
   gate.setBudget(project, budget);
   gate.requestApproval(project, { estimatedCost: budget / 2 });
   gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
-  return project;
+  // P0 Hardening (finding J) — ingestReferenceVideo() (called by
+  // buildRealEvidence() below) now re-reads the project fresh from disk to
+  // check approval-gate.js's budget/approval state before making its real
+  // provider call. The mutations above only exist in memory until
+  // persisted — previously this didn't matter because nothing downstream
+  // ever re-checked project.approvals, but it does now.
+  return projectStore.touch(project);
 }
 
 function makeTwoShotVideo() {
@@ -156,19 +162,34 @@ test('8. checkInterpretationBudget blocks when estimated cost is unknown and not
   assert.match(result.reason, /unknown/i);
 });
 
-test('9. checkInterpretationBudget blocks when estimated cost exceeds remaining budget', () => {
-  const project = newApprovedProject(1); // $1 total budget, $0.50 already "allocated" via requestApproval above
+// P0 Hardening (finding J) — this test previously asserted the OLD, buggy
+// behavior: it compared a USD estimatedCost (999) directly against the
+// project's CREDIT budget as if they were the same unit, and expected that
+// numeric comparison to be the reason for the block. Rewritten to prove
+// the corrected behavior: a KNOWN (non-null) cost is blocked purely
+// because it has not been explicitly acknowledged — the currency-mismatch
+// numeric comparison no longer happens at all (Rule 8).
+test('9. checkInterpretationBudget blocks a KNOWN (non-null) cost that has not been explicitly acknowledged — no USD-vs-credits comparison is performed', () => {
+  const project = newApprovedProject(1);
   const approval = { estimatedCost: 999, unknownCostAcknowledged: false };
   const result = interpretationSvc.checkInterpretationBudget(project, approval);
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /budget/i);
+  assert.match(result.reason, /currency|acknowledg/i);
 });
 
-test('10. checkInterpretationBudget allows a small, known cost within budget', () => {
+// P0 Hardening (finding J) — this test previously asserted the confirmed
+// bug itself: a small known USD cost was silently allowed through by
+// comparing it against the CREDIT remaining budget as if they were
+// interchangeable. Rewritten: a known cost is now blocked without
+// acknowledgment (however small the number looks), and allowed once a
+// human has explicitly acknowledged it via acknowledgeUnknownCost.
+test('10. checkInterpretationBudget blocks a small, known cost without acknowledgment, and allows it once acknowledged', () => {
   const project = newApprovedProject(100);
-  const approval = { estimatedCost: 0.01, unknownCostAcknowledged: false };
-  const result = interpretationSvc.checkInterpretationBudget(project, approval);
-  assert.equal(result.allowed, true);
+  const unacknowledged = { estimatedCost: 0.01, unknownCostAcknowledged: false };
+  assert.equal(interpretationSvc.checkInterpretationBudget(project, unacknowledged).allowed, false);
+
+  const acknowledged = { estimatedCost: 0.01, unknownCostAcknowledged: true };
+  assert.equal(interpretationSvc.checkInterpretationBudget(project, acknowledged).allowed, true);
 });
 
 test('11. estimateInterpretationCost computes a real token estimate and a real dollar figure for a known model', () => {
@@ -194,6 +215,12 @@ test('13. interpretReferenceVideo end-to-end: approved, real evidence, fake prov
   const approvalResult = interpretationSvc.requestInterpretationApproval(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId });
   assert.equal(approvalResult.ok, true);
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
 
   const provider = createFakeInterpretationProvider();
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
@@ -244,6 +271,12 @@ for (const [providerStatus, expectedCode] of [['UNAVAILABLE', 'INTERPRETATION_PR
     const questionId = 'PACING_PATTERN_EXPLANATION';
     interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
     interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
     const provider = createFakeInterpretationProvider({ respond: () => ({ status: providerStatus, diagnostics: [{ code: expectedCode, message: 'simulated' }] }) });
     const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
     assert.equal(interpretation.status, 'FAILED');
@@ -258,6 +291,12 @@ test('17. interpretReferenceVideo returns INTERPRETATION_FAILED when the provide
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const provider = { interpret: async () => { throw new Error('boom'); } };
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
   assert.equal(interpretation.diagnostics[0].code, 'INTERPRETATION_FAILED');
@@ -319,6 +358,12 @@ test('25. a full end-to-end run through interpretReferenceVideo with a provider 
   const questionId = 'OPENING_STRUCTURAL_PURPOSE';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const provider = createFakeInterpretationProvider({
     respond: (input) => ({ status: 'COMPLETED', hypothesis: 'The creator intentionally structured the opening this way.', reasoning: 'r', supportingObservationIds: input.observations.length ? [input.observations[0].observationId] : [], confidence: 'MEDIUM' }),
   });
@@ -336,6 +381,12 @@ test('26. ADVERSARIAL: supportingEvidence.statement is always freshly resolved f
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
 
   const targetId = observationSet.observations.find((o) => ['PACING', 'SHOT_RHYTHM'].includes(o.category)).id;
   const provider = createFakeInterpretationProvider({ respond: () => ({ status: 'COMPLETED', hypothesis: 'h', reasoning: 'r', supportingObservationIds: [targetId], confidence: 'MEDIUM' }) });
@@ -352,6 +403,12 @@ test('26. ADVERSARIAL: supportingEvidence.statement is always freshly resolved f
 
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const second = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
 
   assert.notEqual(second.supportingEvidence[0].statement, originalStatement);
@@ -370,6 +427,12 @@ test('27. ADVERSARIAL: given genuinely contradictory observations, a provider th
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
 
   const provider = createFakeInterpretationProvider({
     respond: () => ({
@@ -397,6 +460,12 @@ test('28. alternativeHypotheses and counterEvidence supplied by the provider are
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const provider = createFakeInterpretationProvider(); // default responder always proposes one alternative when >=2 observations exist
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
   assert.equal(interpretation.status, 'PENDING_REVIEW');
@@ -414,6 +483,12 @@ test('29. reviewInterpretation ACCEPT/REJECT update status without touching hypo
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider: createFakeInterpretationProvider() });
   const originalHypothesis = interpretation.hypothesis;
 
@@ -430,6 +505,12 @@ test('30. reviewInterpretation EDIT creates a NEW record and marks the original 
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider: createFakeInterpretationProvider() });
   const originalHypothesis = interpretation.hypothesis;
 
@@ -452,6 +533,12 @@ test('31. reviewInterpretation EDIT rejects edited text that itself contains ban
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider: createFakeInterpretationProvider() });
   const result = interpretationSvc.reviewInterpretation(project.id, interpretation.id, { decision: 'EDIT', reviewedBy: 'human1', editedHypothesis: 'The creator intentionally did this.' });
   assert.equal(result.ok, false);
@@ -463,6 +550,12 @@ test('32. reviewInterpretation REQUEST_ALTERNATIVE records the request without c
   const questionId = 'PACING_PATTERN_EXPLANATION';
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider: createFakeInterpretationProvider() });
   const result = interpretationSvc.reviewInterpretation(project.id, interpretation.id, { decision: 'REQUEST_ALTERNATIVE', reviewedBy: 'human1' });
   assert.equal(result.ok, true);
@@ -479,6 +572,12 @@ test('33. interpretReferenceVideo never mutates the underlying Measurements or O
   const beforeObservations = JSON.parse(fs.readFileSync(path.join(process.env.REFERENCE_VIDEO_OBSERVATION_DATA_DIR, `${project.id}.json`), 'utf8'));
   interpretationApprovalStore.requestApproval(project.id, rv.id, questionId, { estimatedCost: 0.01 });
   interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  // P0 Hardening (finding J) — a KNOWN (USD) estimatedCost now requires the
+  // same explicit human acknowledgment as an unknown one (currency mismatch
+  // vs the project's credit budget — see checkInterpretationBudget's own
+  // comment). Every happy-path test below needs this or it is blocked by
+  // INTERPRETATION_COST_BLOCKED before ever reaching the provider.
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
   await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider: createFakeInterpretationProvider() });
   const afterMeasurements = JSON.parse(fs.readFileSync(path.join(process.env.REFERENCE_VIDEO_MEASUREMENT_DATA_DIR, `${project.id}.json`), 'utf8'));
   const afterObservations = JSON.parse(fs.readFileSync(path.join(process.env.REFERENCE_VIDEO_OBSERVATION_DATA_DIR, `${project.id}.json`), 'utf8'));

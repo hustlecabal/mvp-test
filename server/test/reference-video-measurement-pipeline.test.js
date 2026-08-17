@@ -32,6 +32,7 @@ const measurementTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-rvm-re
 process.env.REFERENCE_VIDEO_MEASUREMENT_DATA_DIR = measurementTempDir;
 
 const projectStore = require('../services/project-store');
+const gate = require('../services/approval-gate');
 const timelineStore = require('../services/timeline-store');
 const assetStorage = require('../services/asset-storage');
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
@@ -104,6 +105,13 @@ test('REAL PROOF — measuring a real, publicly-verifiable YouTube video ("Me at
   }
 
   const project = projectStore.createProject({ title: 'EVOLINK INT-1B REAL MEASUREMENT PROOF', topic: 'Me at the zoo' });
+  // P0 Hardening (finding J) — ingestReferenceVideo() now requires the
+  // project's approval-gate.js budget/approval checkpoint before it will
+  // make any real provider call.
+  gate.setBudget(project, 1);
+  gate.requestApproval(project, { estimatedCost: 0 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  projectStore.touch(project);
   const rv = await ingestReferenceVideo(project.id, { url: REAL_VIDEO_URL, provider: realRelayProvider() });
   assert.equal(rv.status, 'COMPLETE');
 

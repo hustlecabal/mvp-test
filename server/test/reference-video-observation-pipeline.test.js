@@ -24,6 +24,7 @@ process.env.REFERENCE_VIDEO_MEASUREMENT_DATA_DIR = fs.mkdtempSync(path.join(os.t
 process.env.REFERENCE_VIDEO_OBSERVATION_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-rvo-real-ostore-'));
 
 const projectStore = require('../services/project-store');
+const gate = require('../services/approval-gate');
 const measurementStore = require('../services/reference-video-measurement-store');
 const { ingestReferenceVideo } = require('../services/reference-video-ingestion-service');
 const { measureReferenceVideo } = require('../services/reference-video-measurement-service');
@@ -100,6 +101,13 @@ test('REAL PROOF — deriving observations from the real "Me at the zoo" measure
   }
 
   const project = projectStore.createProject({ title: 'EVOLINK INT-1C REAL OBSERVATION PROOF', topic: 'Me at the zoo' });
+  // P0 Hardening (finding J) — ingestReferenceVideo() now requires the
+  // project's approval-gate.js budget/approval checkpoint before it will
+  // make any real provider call.
+  gate.setBudget(project, 1);
+  gate.requestApproval(project, { estimatedCost: 0 });
+  gate.decideApproval(project, { approve: true, decidedBy: 'tester' });
+  projectStore.touch(project);
   const rv = await ingestReferenceVideo(project.id, { url: REAL_VIDEO_URL, provider: realRelayProvider() });
   assert.equal(rv.status, 'COMPLETE');
 

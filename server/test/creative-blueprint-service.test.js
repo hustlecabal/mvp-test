@@ -356,7 +356,7 @@ test('26. reviewCreativeBlueprint APPROVE succeeds for a clean draft and require
   assert.equal(result.blueprint.reviews[0].reviewedBy, 'human1');
 });
 
-test('27. an APPROVED blueprint\'s own content fields are immutable — reviewCreativeBlueprint APPROVE cannot be called again to change status/content, and content is unchanged by the review call itself', () => {
+test('27. an APPROVED blueprint\'s own content fields are immutable — reviewCreativeBlueprint APPROVE cannot be called again to change status/content, and content is unchanged by the review call itself. REJECT IS reachable from APPROVED (P0 Hardening finding A) — this is the pre-production gate\'s own only path to a human REJECT decision, since the gate\'s documented precondition is an already-APPROVED Blueprint.', () => {
   const project = newProject();
   const recSet = setupRecommendationSet(project.id, 'rs1', [{}]);
   const draft = buildCreativeBlueprintDraft(project.id, {
@@ -372,7 +372,9 @@ test('27. an APPROVED blueprint\'s own content fields are immutable — reviewCr
   const secondApprove = reviewCreativeBlueprint(project.id, draft.id, { decision: 'APPROVE', reviewedBy: 'human2' });
   assert.equal(secondApprove.ok, false);
   const rejectAfterApprove = reviewCreativeBlueprint(project.id, draft.id, { decision: 'REJECT', reviewedBy: 'human2' });
-  assert.equal(rejectAfterApprove.ok, false);
+  assert.equal(rejectAfterApprove.ok, true);
+  assert.equal(rejectAfterApprove.blueprint.status, 'REJECTED');
+  assert.equal(rejectAfterApprove.blueprint.concept, 'original concept'); // content still untouched by the status transition itself
 });
 
 test('28. reviewCreativeBlueprint REJECT transitions DRAFT/PENDING_REVIEW -> REJECTED', () => {

@@ -100,20 +100,31 @@ function addGateResult(projectId, gateResult) {
   return { ok: true, gateResult: stored };
 }
 
-// Spec Part 11 — records ONLY the human's decision fields on an EXISTING
-// gate result, in place. Never touches machineAssessment/blockers/
-// warnings/information/reasoning. Returns null for a non-existent
-// project/gate result (same convention as creative-blueprint-store.js's
-// updateCreativeBlueprintReviewState()).
+// Spec Part 11 — records the human's decision on an EXISTING gate result.
+// Never touches machineAssessment/blockers/warnings/information/reasoning.
+// Returns null for a non-existent project/gate result (same convention as
+// creative-blueprint-store.js's updateCreativeBlueprintReviewState()).
+//
+// P0 Hardening (finding D) — APPENDS to humanDecisions[] rather than
+// overwriting scalars in place. A later decision's own rationale can
+// legitimately be null (e.g. a plain ACCEPT never needs one) WITHOUT that
+// erasing an earlier decision's own rationale (e.g. a mandatory OVERRIDE
+// justification) — the earlier entry stays exactly as it was pushed. The
+// four scalar fields are still updated, as a read-convenience mirror of
+// the array's own newest entry — every existing caller reading them
+// unchanged still sees the correct "latest decision" value.
 function recordHumanDecision(projectId, gateResultId, { humanDecision, humanDecidedBy, humanRationale }) {
   const library = ensureLibrary(projectId);
   if (!library) return null;
   const gateResult = library.gateResults.find((g) => g.id === gateResultId);
   if (!gateResult) return null;
+  const decidedAt = new Date().toISOString();
+  if (!Array.isArray(gateResult.humanDecisions)) gateResult.humanDecisions = [];
+  gateResult.humanDecisions.push({ decision: humanDecision, decidedBy: humanDecidedBy || null, decidedAt, rationale: humanRationale !== undefined ? humanRationale : null });
   gateResult.humanDecision = humanDecision;
   gateResult.humanDecidedBy = humanDecidedBy || null;
-  gateResult.humanDecidedAt = new Date().toISOString();
-  gateResult.humanRationale = humanRationale !== undefined ? humanRationale : gateResult.humanRationale;
+  gateResult.humanDecidedAt = decidedAt;
+  gateResult.humanRationale = humanRationale !== undefined ? humanRationale : null;
   saveLibrary(library);
   return gateResult;
 }

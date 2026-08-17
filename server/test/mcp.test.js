@@ -103,8 +103,12 @@ test('a real MCP client can discover all 76 tools', async () => {
   // review of a completed video asset, mirroring approve_generated_keyframe/
   // reject_generated_keyframe). None of these generate, approve a
   // generation request, or select a canonical asset.
+  // P0 Hardening (finding J) added 1 tool: set_project_budget — mirrors
+  // the pre-existing REST route POST /projects/:id/budget; previously the
+  // primary agent-facing interface (MCP) had no way to establish a budget
+  // ceiling at all.
   // Everything else is unchanged.
-  assert.equal(names.length, 91);
+  assert.equal(names.length, 92);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_video_unknown_cost',
@@ -189,6 +193,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'run_fixture_keyframe_execution',
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
+    'set_project_budget',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',

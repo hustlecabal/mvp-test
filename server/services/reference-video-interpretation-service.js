@@ -152,26 +152,40 @@ function estimateInterpretationCost(input, { provider = 'claude', model = 'claud
   return { estimatedInputTokens, estimatedOutputTokens: ESTIMATED_OUTPUT_TOKENS, estimatedCostUsd };
 }
 
-// Mirrors services/keyframe-generation-service.js's checkKeyframeBudget()
-// exactly (Part 17/18) — same unknown-cost/remaining-budget logic, reused
-// verbatim rather than re-invented, reading the interpretation's OWN
-// approval object but the project's SHARED credit ledger.
+// P0 Hardening (finding J) — this previously mirrored services/keyframe-
+// generation-service.js's checkKeyframeBudget() verbatim, including its
+// `estimatedCost > remaining` comparison. That comparison is a currency-
+// unit-mismatch bug here: approval.estimatedCost is USD (from
+// reference-video-interpretation-model-registry.js's estimateCostUsd —
+// see the schema's own field comment), while project.creditLedger is
+// denominated in EvoLink credits (approval-gate.js). A $0.01 USD estimate
+// and a 0.01-credit estimate are not the same amount of money, and no
+// verified USD -> credits conversion rate exists anywhere in this codebase
+// (Rule 8: never invent one to make an incompatible comparison "work").
+// The prior comparison could therefore let a real, unbounded USD spend
+// through as long as the raw number looked small next to the remaining
+// credit figure — the definition of "money without a real ceiling" (Rule
+// 6/7). The only honest fix: a non-null (known) USD estimate is exactly as
+// incomparable to the credit ledger as a genuinely unknown one, so it
+// requires the SAME explicit human unknownCostAcknowledged acknowledgment
+// this function already required for a null estimate — a human looking at
+// the real USD figure (visible on the approval record) confirms they
+// understand it is a real-currency charge, not a credits charge, before
+// interpretReferenceVideo() may call the provider.
 function checkInterpretationBudget(project, approval) {
   gate.ensureShape(project);
 
   if (project.creditLedger.blocked) {
     return { allowed: false, reason: project.creditLedger.blockedReason || 'Project is blocked pending resolution of a budget overage.' };
   }
-  if (approval.estimatedCost == null && !approval.unknownCostAcknowledged) {
+  if (!approval.unknownCostAcknowledged) {
     return {
       allowed: false,
-      reason: `Estimated cost is unknown and has not been explicitly acknowledged by a human (policy: ${gate.UNKNOWN_COST_POLICY}).`,
+      reason:
+        approval.estimatedCost == null
+          ? `Estimated cost is unknown and has not been explicitly acknowledged by a human (policy: ${gate.UNKNOWN_COST_POLICY}).`
+          : `Estimated cost ($${approval.estimatedCost} USD) is denominated in a different currency than the project's credit budget, with no verified conversion rate available — it cannot be validated against the remaining credit budget and must be explicitly acknowledged by a human (policy: ${gate.UNKNOWN_COST_POLICY}) before this interpretation can proceed.`,
     };
-  }
-  const estimatedCost = approval.estimatedCost || 0;
-  const remaining = gate.getRemainingBudget(project);
-  if (remaining != null && estimatedCost > remaining) {
-    return { allowed: false, reason: 'Approved interpretation cost would exceed the remaining project budget.' };
   }
   return { allowed: true, reason: null };
 }
