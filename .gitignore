@@ -18,6 +18,7 @@ server/data/identity-consistency-reviews/*.json
 server/data/video-prompt-packages/*.json
 server/data/video-generation-approvals/*.json
 server/data/broll/*.json
+server/data/production-jobs/*.json
 
 # INT-1/INT-2 — video-intelligence pipeline data (real acquired reference
 # videos, derived measurements/observations/interpretations/patterns/
