@@ -31,6 +31,7 @@
 // nothing is written to services/reference-video-interpretation-store.js
 // unless the result is genuinely valid.
 
+const crypto = require('crypto');
 const projectStore = require('./project-store');
 const gate = require('./approval-gate');
 const measurementStore = require('./reference-video-measurement-store');
@@ -280,16 +281,61 @@ async function interpretReferenceVideo(projectId, { referenceVideoId, measuremen
     return createInterpretation({ projectId, referenceVideoId, measurementsId, observationSetId, status: 'FAILED', diagnostics: [diag('INTERPRETATION_PROVIDER_UNAVAILABLE', error.message)] });
   }
 
+  // P0-HARDENING-2, Part 6/7/12 — reserve Anthropic USD exposure BEFORE
+  // the billed call, in its own explicitly-labelled sub-ledger — never
+  // merged with the credits ledger above (Part 7). approval.estimatedCost
+  // is the same estimate checkInterpretationBudget already required a
+  // human to approve/acknowledge; reserving it here is bookkeeping, not a
+  // second budget check (there is no numeric USD ceiling anywhere in this
+  // codebase to enforce against — see approval-gate.js's reserveBudget).
+  const anthropicOperationId = crypto.randomUUID();
+  await gate.reserveBudget(projectId, {
+    jobId: anthropicOperationId,
+    provider: 'anthropic',
+    operation: questionId,
+    amount: approval.estimatedCost,
+    currency: 'usd',
+    unknownCostAcknowledged: approval.unknownCostAcknowledged,
+  });
+
   const requestedAt = new Date().toISOString();
   let result;
   try {
     result = await provider.interpret(input);
   } catch (error) {
+    // The provider threw before returning any structured result at all —
+    // no HTTP response was ever received (see claude-interpretation-
+    // provider.js's own try/catch, which normally converts this into a
+    // TIMEOUT/FAILED result instead of throwing). Genuinely ambiguous
+    // whether Anthropic's servers processed anything billable, so this is
+    // settled UNKNOWN, never released (Part 1 Rule 12).
+    await gate.settleUsdSpend(projectId, { jobId: anthropicOperationId, provider: 'anthropic', operation: questionId, amount: null, note: `Provider threw before returning a result: ${error.message}` });
     return createInterpretation({ projectId, referenceVideoId, measurementsId, observationSetId, status: 'FAILED', diagnostics: [diag('INTERPRETATION_FAILED', `provider threw: ${error.message}`)] });
   }
   const respondedAt = new Date().toISOString();
 
+  // P0-HARDENING-2, Part 12 — real usage, when the provider reported one,
+  // converted to a real actual cost via the SAME registry function that
+  // produced the estimate — never replacing estimatedCostUsd, always
+  // alongside it (see createInterpretationAuditTrail's own comment).
+  const actualCostUsd = result.usage ? modelRegistry.estimateCostUsd({ provider: providerName, model: result.model || model, estimatedInputTokens: result.usage.inputTokens, estimatedOutputTokens: result.usage.outputTokens }) : null;
+
   if (result.status !== 'COMPLETED') {
+    if (result.status === 'UNAVAILABLE') {
+      // Confirmed never reached the provider (e.g. no API key configured
+      // — see claude-interpretation-provider.js) — safe to release.
+      await gate.releaseReservation(projectId, { jobId: anthropicOperationId, provider: 'anthropic', currency: 'usd', amount: approval.estimatedCost, note: 'Provider reported UNAVAILABLE; never actually called.' });
+    } else if (result.usage) {
+      // INVALID with real usage attached: the HTTP call DID reach
+      // Anthropic and WAS billed — this adapter's own parsing of the
+      // model's JSON content failed, not the API call itself.
+      await gate.settleUsdSpend(projectId, { jobId: anthropicOperationId, provider: 'anthropic', operation: questionId, amount: actualCostUsd, note: `Provider returned status ${result.status} but reported real usage; response reached Anthropic and was billed.` });
+    } else {
+      // TIMEOUT/FAILED/INVALID-without-usage: genuinely ambiguous whether
+      // Anthropic processed and billed this request. Settled UNKNOWN,
+      // never released (Part 1 Rule 12/13).
+      await gate.settleUsdSpend(projectId, { jobId: anthropicOperationId, provider: 'anthropic', operation: questionId, amount: null, note: `Provider returned status ${result.status}; outcome/billing cannot be confirmed from here.` });
+    }
     const codeByStatus = { UNAVAILABLE: 'INTERPRETATION_PROVIDER_UNAVAILABLE', TIMEOUT: 'INTERPRETATION_TIMEOUT', INVALID: 'INTERPRETATION_INVALID', FAILED: 'INTERPRETATION_FAILED' };
     const code = codeByStatus[result.status] || 'INTERPRETATION_FAILED';
     const message = (result.diagnostics[0] && result.diagnostics[0].message) || `provider returned status ${result.status}`;
@@ -299,8 +345,14 @@ async function interpretReferenceVideo(projectId, { referenceVideoId, measuremen
   // --- Part 7 — strict structural + semantic validation, no repair ---
   const validation = validateProviderResult(result, included);
   if (!validation.ok) {
+    // Anthropic was genuinely called and billed for a COMPLETED response
+    // that this codebase's own stricter validation then rejected — settle
+    // with whatever real usage was reported, never released.
+    await gate.settleUsdSpend(projectId, { jobId: anthropicOperationId, provider: 'anthropic', operation: questionId, amount: actualCostUsd, note: `Provider result rejected by local validation: ${validation.reason}` });
     return createInterpretation({ projectId, referenceVideoId, measurementsId, observationSetId, status: 'FAILED', diagnostics: [diag('INTERPRETATION_INVALID', validation.reason)] });
   }
+
+  await gate.settleUsdSpend(projectId, { jobId: anthropicOperationId, provider: 'anthropic', operation: questionId, amount: actualCostUsd, note: actualCostUsd == null ? 'Provider completed but reported no usage; actual cost stays UNKNOWN.' : null });
 
   const observationById = new Map(included.map((o) => [o.id, o]));
   const evidenceRef = (id) => {
@@ -329,6 +381,9 @@ async function interpretReferenceVideo(projectId, { referenceVideoId, measuremen
       requestedAt,
       respondedAt,
       estimatedCostUsd: approval.estimatedCost,
+      actualInputTokens: result.usage ? result.usage.inputTokens : null,
+      actualOutputTokens: result.usage ? result.usage.outputTokens : null,
+      actualCostUsd,
     },
     status: 'PENDING_REVIEW',
   });

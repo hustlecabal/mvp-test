@@ -147,6 +147,19 @@ function createInterpretationAuditTrail(overrides = {}) {
     requestedAt: null,
     respondedAt: null,
     estimatedCostUsd: null, // from the Part 18 cost gate — null when unknown
+    // P0-HARDENING-2, Part 12 — additive. actualCostUsd is computed from
+    // the provider's OWN reported real token usage (actualInputTokens/
+    // actualOutputTokens) via reference-video-interpretation-model-
+    // registry.js's estimateCostUsd, fed real numbers instead of
+    // estimates. estimatedCostUsd above is NEVER overwritten by these —
+    // both are kept, side by side, so a human can see the estimate that
+    // gated approval next to what the call actually cost. All three stay
+    // null when the provider's response never exposed real usage (e.g. it
+    // never reached Anthropic, or reached it but the response carried no
+    // usage object) — never a fabricated substitute.
+    actualInputTokens: null,
+    actualOutputTokens: null,
+    actualCostUsd: null,
   };
   return withDefaults(base, rest);
 }

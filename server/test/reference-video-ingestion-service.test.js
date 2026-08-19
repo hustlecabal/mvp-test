@@ -416,6 +416,55 @@ test('G5. a project blocked by a prior unacknowledged budget overage is blocked 
   assert.match(rv.diagnostics[0].message, /overage/i);
 });
 
+// --- P0-HARDENING-2 — Part 14 auditability: Apify spend now enters the
+// project's own USD sub-ledger (P0-2), reconstructable from ledgerEvents. ---
+
+test('P0H2-A1. a successful ingestion: the ledger reconstructs Apify reservation -> settlement for BOTH billed operations, in their own USD sub-ledger, never merged with credits', async () => {
+  const project = newProject();
+  const src = makeVideoFile({ durationSeconds: 2 });
+  await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider: fakeProvider(), fetchImpl: fetchImplServing(src) });
+
+  const reloaded = projectStore.getProject(project.id);
+  const apifyEvents = reloaded.creditLedger.ledgerEvents.filter((e) => e.provider === 'apify');
+  const events = apifyEvents.map((e) => ({ event: e.event, operation: e.operation, currency: e.currency, amount: e.amount }));
+
+  // metadata_transcript: a real, known, fixed price — reserved then
+  // settled with that exact real number.
+  assert.ok(events.some((e) => e.event === 'RESERVED' && e.operation === 'metadata_transcript' && e.currency === 'usd' && e.amount === 0.005));
+  assert.ok(events.some((e) => e.event === 'SETTLED' && e.operation === 'metadata_transcript' && e.amount === 0.005));
+
+  // video_download: genuinely unknown pre-call AND post-call cost — never
+  // fabricated, always null, but still an honest audit trail entry proving
+  // the paid operation happened.
+  assert.ok(events.some((e) => e.event === 'RESERVED' && e.operation === 'video_download' && e.amount === null));
+  assert.ok(events.some((e) => e.event === 'SETTLED' && e.operation === 'video_download' && e.amount === null));
+
+  const usd = reloaded.creditLedger.usdSpend.apify;
+  assert.equal(usd.settledUsd, 0.005);
+  assert.equal(usd.unknownSettlements, 1);
+
+  // Never merged with the credits ledger — the credits ledger's `reserved`
+  // stays whatever the (unrelated) approval flow set it to, no USD number
+  // bleeding into it.
+  assert.equal(typeof reloaded.creditLedger.reserved, 'number');
+  assert.notEqual(reloaded.creditLedger.reserved, 0.005);
+});
+
+test('P0H2-A2. a video acquisition failure that reached Apify: settled UNKNOWN, never released (Apify bills for compute time regardless of usefulness)', async () => {
+  const project = newProject();
+  const rv = await ingestReferenceVideo(project.id, {
+    url: 'https://www.youtube.com/watch?v=abc12345678',
+    provider: fakeProvider({ acquireVideo: async () => ({ status: 'FAILED', resultUrl: null, diagnostics: [{ code: 'VIDEO_ACQUISITION_FAILED', message: 'Apify returned HTTP 500' }] }) }),
+  });
+  assert.equal(rv.status, 'FAILED');
+
+  const reloaded = projectStore.getProject(project.id);
+  const videoEvents = reloaded.creditLedger.ledgerEvents.filter((e) => e.provider === 'apify' && e.operation === 'video_download');
+  assert.deepEqual(videoEvents.map((e) => e.event), ['RESERVED', 'SETTLED']);
+  assert.equal(videoEvents[1].amount, null);
+  assert.equal(reloaded.creditLedger.usdSpend.apify.unknownSettlements, 1);
+});
+
 // --- 21. security ------------------------------------------------------------------------------
 
 test('21. services/reference-video-ingestion-service.js only invokes child_process via execFileSync with explicit argument arrays; no shell/eval', () => {

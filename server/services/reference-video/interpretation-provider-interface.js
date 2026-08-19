@@ -93,7 +93,7 @@ function createInterpretationInput(overrides = {}) {
 // this shape is INTERPRETATION_INVALID — never best-effort repaired.
 // ---------------------------------------------------------------------------
 function createInterpretationProviderResult(overrides = {}) {
-  const { supportingObservationIds, counterObservationIds, alternativeHypotheses, limitations, diagnostics, ...rest } = overrides;
+  const { supportingObservationIds, counterObservationIds, alternativeHypotheses, limitations, diagnostics, usage, ...rest } = overrides;
   const base = {
     status: null, // one of PROVIDER_RESULT_STATUSES
     hypothesis: null,
@@ -105,6 +105,15 @@ function createInterpretationProviderResult(overrides = {}) {
     limitations: Array.isArray(limitations) ? [...limitations] : [],
     model: null, // free text, e.g. "claude-opus-5" — never a credential
     diagnostics: Array.isArray(diagnostics) ? diagnostics.map((d) => createInterpretationDiagnostic(d)) : [],
+    // P0-HARDENING-2, Part 12 — additive: the provider's OWN reported real
+    // token usage for this call, when it has one to report (only ever set
+    // by a provider that actually received a billable response from its
+    // vendor — e.g. claude-interpretation-provider.js's real Anthropic
+    // usage.input_tokens/output_tokens). null (not {inputTokens: 0, ...})
+    // whenever the provider has no real usage to report — never a
+    // fabricated/estimated substitute for a genuine provider-reported
+    // number. Shape: { inputTokens, outputTokens }.
+    usage: usage && typeof usage.inputTokens === 'number' && typeof usage.outputTokens === 'number' ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : null,
   };
   return withDefaults(base, rest);
 }

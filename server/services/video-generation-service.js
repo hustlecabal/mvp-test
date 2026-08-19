@@ -46,6 +46,7 @@ const keyframeHandoffService = require('./keyframe-handoff-service');
 const generationStore = require('./generation-store');
 const generationModelRegistry = require('./generation-model-registry');
 const gate = require('./approval-gate');
+const recoveryService = require('./generation-recovery-service');
 const assetArchiveService = require('./asset-archive-service');
 const evolinkProvider = require('../providers/evolink/evolink-provider');
 const evolinkReferenceResolver = require('./evolink-reference-resolver');
@@ -128,6 +129,24 @@ function findActiveDuplicate(projectId, shotId, videoPromptPackageId, videoPromp
           job.videoPromptPackageVersion === videoPromptPackageVersion &&
           job.canonicalKeyframeAssetId === canonicalKeyframeAssetId &&
           ACTIVE_VIDEO_GENERATION_STATUSES.includes(job.status)
+      ) || null
+  );
+}
+
+// P0-HARDENING-2, Part 10 — same match as findActiveDuplicate, but for a
+// TIMED_OUT job. See generation-service.js's findStaleTimedOutDuplicate for
+// the full rationale.
+function findStaleTimedOutDuplicate(projectId, shotId, videoPromptPackageId, videoPromptPackageVersion, canonicalKeyframeAssetId) {
+  return (
+    generationStore
+      .listGenerationJobs({ projectId, shotId })
+      .find(
+        (job) =>
+          job.generationType === 'VIDEO' &&
+          job.videoPromptPackageId === videoPromptPackageId &&
+          job.videoPromptPackageVersion === videoPromptPackageVersion &&
+          job.canonicalKeyframeAssetId === canonicalKeyframeAssetId &&
+          job.status === 'TIMED_OUT'
       ) || null
   );
 }
@@ -354,7 +373,52 @@ async function generateVideo(
     return normalizeJobToResult(checks.duplicate);
   }
 
-  const { project, keyframe, pkg, approval, canonicalAsset, providerAdapter } = checks;
+  const { keyframe, pkg, approval, canonicalAsset, providerAdapter } = checks;
+
+  // P0-HARDENING-2, Part 10 — resolve a stale TIMED_OUT attempt for this
+  // exact shot/package version/canonical asset before allowing a new one.
+  const staleJob = findStaleTimedOutDuplicate(projectId, keyframe.shotId, pkg.packageId, pkg.version, pkg.canonicalKeyframeAssetId);
+  if (staleJob) {
+    const recovery = await recoveryService.classifyJobRecovery(staleJob, providerAdapter);
+
+    if (recovery.classification === 'ALREADY_COMPLETED') {
+      const updatedJob = generationStore.updateGenerationJob(staleJob.id, {
+        status: 'COMPLETED',
+        progress: recovery.providerStatus.progress,
+        reservedCost: recovery.providerStatus.reservedCost !== null ? recovery.providerStatus.reservedCost : staleJob.reservedCost,
+        result: { results: recovery.providerStatus.results },
+        completedAt: new Date().toISOString(),
+      });
+      await gate.settleGenerationCost(projectId, updatedJob);
+      return normalizeJobToResult(updatedJob);
+    }
+
+    if (recovery.classification === 'PROVIDER_OUTCOME_UNKNOWN') {
+      return createVideoGenerationResult({
+        projectId,
+        keyframeId,
+        status: 'BLOCKED',
+        code: 'STALE_JOB_OUTCOME_UNKNOWN',
+        reason: `Cannot safely retry: ${recovery.reason}`,
+      });
+    }
+
+    if (recovery.classification === 'FAILED_CONFIRMED') {
+      await gate.releaseReservation(projectId, {
+        jobId: staleJob.id,
+        provider: staleJob.provider,
+        currency: 'credits',
+        note: 'Provider confirmed failure for a previously TIMED_OUT job; releasing before allowing a new attempt.',
+      });
+      generationStore.updateGenerationJob(staleJob.id, {
+        status: 'FAILED',
+        error: (recovery.providerStatus && recovery.providerStatus.error) || { message: 'Provider confirmed failure after a local timeout.' },
+        failedAt: new Date().toISOString(),
+      });
+    }
+    // FAILED_CONFIRMED and SAFE_TO_RETRY both fall through to submit a
+    // genuinely new request below.
+  }
 
   // Part 11 — resolve the canonical asset into a provider-ready reference
   // BEFORE creating a job or calling the provider. Never exposes the
@@ -406,10 +470,41 @@ async function generateVideo(
     estimatedCost: approval.estimatedCost,
   });
 
+  // P0-HARDENING-2, Part 5/6/8 — reserve budget atomically BEFORE the
+  // provider call, exactly like generation-service.js/keyframe-generation-
+  // service.js. reserveBudget() does its own fresh read of the project
+  // inside a per-project lock, so two concurrent video generations for the
+  // same project can never both reserve against the same remaining budget.
+  const reservation = await gate.reserveBudget(projectId, {
+    jobId: job.id,
+    provider: pkg.provider,
+    operation: pkg.model,
+    amount: approval.estimatedCost,
+    currency: 'credits',
+    unknownCostAcknowledged: approval.unknownCostAcknowledged,
+  });
+  if (!reservation.allowed) {
+    job = generationStore.updateGenerationJob(job.id, {
+      status: 'FAILED',
+      error: { code: 'BUDGET_RESERVATION_BLOCKED', message: reservation.reason },
+      failedAt: new Date().toISOString(),
+    });
+    return normalizeJobToResult(job);
+  }
+
   let providerStatus;
   try {
     providerStatus = await providerAdapter.createGeneration(genericRequest);
   } catch (err) {
+    // Reservation is released, never left stranded — see
+    // generation-service.js's requestGeneration for the same EvoLink
+    // release-on-pre-creation-failure policy and why it's correct.
+    await gate.releaseReservation(projectId, {
+      jobId: job.id,
+      provider: pkg.provider,
+      currency: 'credits',
+      note: 'Provider submission failed before task creation; assumed not billed.',
+    });
     job = generationStore.updateGenerationJob(job.id, { status: 'FAILED', error: { message: err.message }, failedAt: new Date().toISOString() });
     return normalizeJobToResult(job);
   }
@@ -421,8 +516,7 @@ async function generateVideo(
     reservedCost: providerStatus.reservedCost,
     submittedAt: new Date().toISOString(),
   });
-  gate.reconcileGenerationCost(project, job);
-  projectStore.touch(project);
+  await gate.settleGenerationCost(projectId, job);
 
   // Part 14, step 11 — poll to completion. Same shape as keyframe-
   // generation-service.js's own local polling loop.
@@ -450,8 +544,7 @@ async function generateVideo(
       updates.failedAt = new Date().toISOString();
     }
     job = generationStore.updateGenerationJob(job.id, updates);
-    gate.reconcileGenerationCost(project, job);
-    projectStore.touch(project);
+    await gate.settleGenerationCost(projectId, job);
 
     if (ACTIVE_VIDEO_GENERATION_STATUSES.includes(job.status) && attempt < maxAttempts) {
       await sleepImpl(intervalMs);

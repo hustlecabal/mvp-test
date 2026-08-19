@@ -36,6 +36,7 @@ const keyframePromptService = require('./keyframe-prompt-service');
 const keyframeGenerationApprovalStore = require('./keyframe-generation-approval-store');
 const generationStore = require('./generation-store');
 const gate = require('./approval-gate');
+const recoveryService = require('./generation-recovery-service');
 const assetArchiveService = require('./asset-archive-service');
 const { FakeImageGenerationExecutor } = require('./image-generation-executor');
 const fakeImageProvider = require('../providers/fake-image/fake-image-provider');
@@ -120,6 +121,19 @@ function findInFlightDuplicate(projectId, keyframeId, promptPackageVersion) {
           job.keyframePromptPackageVersion === promptPackageVersion &&
           IN_FLIGHT_STATUSES.includes(job.status)
       ) || null
+  );
+}
+
+// P0-HARDENING-2, Part 10 — same match as findInFlightDuplicate, but for a
+// TIMED_OUT job. See generation-service.js's findStaleTimedOutDuplicate for
+// the full rationale — a TIMED_OUT job must have its provider outcome
+// resolved before generateKeyframe() treats "the old attempt is gone" as
+// true.
+function findStaleTimedOutDuplicate(projectId, keyframeId, promptPackageVersion) {
+  return (
+    generationStore
+      .listGenerationJobs({ projectId })
+      .find((job) => job.keyframeId === keyframeId && job.keyframePromptPackageVersion === promptPackageVersion && job.status === 'TIMED_OUT') || null
   );
 }
 
@@ -231,13 +245,52 @@ async function generateKeyframe(
     return { ok: true, job: checks.duplicate, deduplicated: true };
   }
 
-  const { project, keyframe, pkg, approval } = checks;
+  const { keyframe, pkg, approval } = checks;
 
   let providerAdapter;
   try {
     providerAdapter = resolveProvider(providerName, providers);
   } catch (err) {
     return { ok: false, reason: err.message };
+  }
+
+  // P0-HARDENING-2, Part 10 — resolve a stale TIMED_OUT attempt for this
+  // exact keyframe/package version before allowing a new one.
+  const staleJob = findStaleTimedOutDuplicate(projectId, keyframeId, pkg.version);
+  if (staleJob) {
+    const recovery = await recoveryService.classifyJobRecovery(staleJob, providerAdapter);
+
+    if (recovery.classification === 'ALREADY_COMPLETED') {
+      const updatedJob = generationStore.updateGenerationJob(staleJob.id, {
+        status: 'COMPLETED',
+        progress: recovery.providerStatus.progress,
+        reservedCost: recovery.providerStatus.reservedCost !== null ? recovery.providerStatus.reservedCost : staleJob.reservedCost,
+        result: { results: recovery.providerStatus.results },
+        completedAt: new Date().toISOString(),
+      });
+      await gate.settleGenerationCost(projectId, updatedJob);
+      return { ok: true, job: updatedJob, deduplicated: true, recovery: recovery.classification };
+    }
+
+    if (recovery.classification === 'PROVIDER_OUTCOME_UNKNOWN') {
+      return { ok: false, reason: `Cannot safely retry: ${recovery.reason}`, job: staleJob, recovery: recovery.classification };
+    }
+
+    if (recovery.classification === 'FAILED_CONFIRMED') {
+      await gate.releaseReservation(projectId, {
+        jobId: staleJob.id,
+        provider: staleJob.provider,
+        currency: 'credits',
+        note: 'Provider confirmed failure for a previously TIMED_OUT job; releasing before allowing a new attempt.',
+      });
+      generationStore.updateGenerationJob(staleJob.id, {
+        status: 'FAILED',
+        error: (recovery.providerStatus && recovery.providerStatus.error) || { message: 'Provider confirmed failure after a local timeout.' },
+        failedAt: new Date().toISOString(),
+      });
+    }
+    // FAILED_CONFIRMED and SAFE_TO_RETRY both fall through to submit a
+    // genuinely new request below.
   }
 
   const normalizedRequest = FakeImageGenerationExecutor.buildRequest(pkg, { parameters: imageParameters });
@@ -262,12 +315,43 @@ async function generateKeyframe(
     estimatedCost: approval.estimatedCost,
   });
 
+  // P0-HARDENING-2, Part 5/6/8 — reserve budget atomically BEFORE the
+  // provider call, exactly like generation-service.js's requestGeneration.
+  // reserveBudget() does its own fresh read of the project inside a
+  // per-project lock, so two concurrent keyframe generations for the same
+  // project can never both reserve against the same remaining budget.
+  const reservation = await gate.reserveBudget(projectId, {
+    jobId: job.id,
+    provider: providerName,
+    operation: 'image-keyframe-generation',
+    amount: approval.estimatedCost,
+    currency: 'credits',
+    unknownCostAcknowledged: approval.unknownCostAcknowledged,
+  });
+  if (!reservation.allowed) {
+    job = generationStore.updateGenerationJob(job.id, {
+      status: 'FAILED',
+      error: { code: 'BUDGET_RESERVATION_BLOCKED', message: reservation.reason },
+      failedAt: new Date().toISOString(),
+    });
+    return { ok: false, reason: reservation.reason, job };
+  }
+
   keyframeStore.setKeyframeGenerationStatus(projectId, keyframeId, 'GENERATING');
 
   let providerStatus;
   try {
     providerStatus = await providerAdapter.createImageGeneration(normalizedRequest);
   } catch (err) {
+    // Reservation is released, never left stranded — see
+    // generation-service.js's requestGeneration for the same EvoLink
+    // release-on-pre-creation-failure policy and why it's correct.
+    await gate.releaseReservation(projectId, {
+      jobId: job.id,
+      provider: providerName,
+      currency: 'credits',
+      note: 'Provider submission failed before task creation; assumed not billed.',
+    });
     job = generationStore.updateGenerationJob(job.id, { status: 'FAILED', error: { message: err.message }, failedAt: new Date().toISOString() });
     keyframeStore.setKeyframeGenerationStatus(projectId, keyframeId, 'GENERATION_APPROVED');
     return { ok: false, reason: `Provider submission failed: ${err.message}`, job };
@@ -281,8 +365,7 @@ async function generateKeyframe(
     model: providerStatus.model,
     submittedAt: new Date().toISOString(),
   });
-  gate.reconcileGenerationCost(project, job);
-  projectStore.touch(project);
+  await gate.settleGenerationCost(projectId, job);
 
   // Part 4, step 10 — poll to completion. Same shape as
   // generation-poller.js's loop, kept local to this file (see header) so
@@ -311,8 +394,7 @@ async function generateKeyframe(
       updates.failedAt = new Date().toISOString();
     }
     job = generationStore.updateGenerationJob(job.id, updates);
-    gate.reconcileGenerationCost(project, job);
-    projectStore.touch(project);
+    await gate.settleGenerationCost(projectId, job);
 
     if (IN_FLIGHT_STATUSES.includes(job.status) && attempt < maxAttempts) {
       await sleepImpl(intervalMs);

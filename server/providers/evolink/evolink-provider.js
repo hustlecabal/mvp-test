@@ -37,7 +37,21 @@ async function getGenerationResult(generationId, options = {}) {
 
 // Not part of the required provider interface. A safe, read-only,
 // non-generation way to confirm an API key works — see
-// docs/integrations/evolink-api.md. Not called anywhere yet.
+// docs/integrations/evolink-api.md.
+//
+// P0-HARDENING-2, Part 13 — deliberately still not wired into any
+// generation call path. This reports the EvoLink ACCOUNT's real credit
+// balance, a genuinely different signal than this project's OWN
+// creditLedger (approval-gate.js) — it could catch "the project's budget
+// says proceed, but the account is actually out of real credits," which
+// the project-level gate structurally cannot see. But calling it on every
+// generation request would add a real network round-trip (latency + a new
+// failure mode) to the hot path for a cross-cutting, account-wide health
+// check that is not this project's own authorization decision — and no
+// P0/P1 finding in this stage's forensic audit required it. It is
+// intentionally left available for a future operational/diagnostic tool
+// (e.g. a manual "check EvoLink account health" action) rather than
+// inserted here.
 async function checkAccountCredits(options = {}) {
   return client.getCredits(options);
 }

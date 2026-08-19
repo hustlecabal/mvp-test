@@ -587,6 +587,87 @@ test('33. interpretReferenceVideo never mutates the underlying Measurements or O
 
 // --- security (Part 22/25) ---
 
+// --- P0-HARDENING-2, Part 14 auditability: Anthropic spend now enters the
+// project's own USD sub-ledger (P0-3), with REAL usage-derived actual cost
+// captured whenever the provider reports one. ---
+
+async function approvedInterpretationSetup(questionId = 'PACING_PATTERN_EXPLANATION') {
+  const project = newApprovedProject();
+  const { rv, measurements, observationSet } = await buildRealEvidence(project);
+  interpretationSvc.requestInterpretationApproval(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId });
+  interpretationApprovalStore.decideApproval(project.id, rv.id, questionId, { approve: true, decidedBy: 'tester' });
+  interpretationApprovalStore.acknowledgeUnknownCost(project.id, rv.id, questionId, { acknowledgedBy: 'tester' });
+  return { project, rv, measurements, observationSet, questionId };
+}
+
+test('P0H2-I1. a successful interpretation with real usage: the ledger reconstructs reservation -> settlement with a REAL actual cost, never merged with credits', async () => {
+  const { project, rv, measurements, observationSet, questionId } = await approvedInterpretationSetup();
+  const provider = createFakeInterpretationProvider({
+    respond: (input) => ({
+      status: 'COMPLETED',
+      hypothesis: 'h',
+      reasoning: 'r',
+      supportingObservationIds: [input.observations[0].observationId],
+      confidence: 'MEDIUM',
+      // A real registry model name — actualCostUsd is only ever computed
+      // for a model reference-video-interpretation-model-registry.js
+      // actually has pricing for (never fabricated for an unknown one).
+      model: 'claude-sonnet-5',
+      usage: { inputTokens: 500, outputTokens: 100 },
+    }),
+  });
+
+  const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
+  assert.equal(interpretation.status, 'PENDING_REVIEW');
+
+  // The persisted audit trail carries BOTH the pre-call estimate and the
+  // real, usage-derived actual cost, side by side.
+  assert.ok(interpretation.audit.estimatedCostUsd > 0);
+  assert.ok(interpretation.audit.actualCostUsd > 0);
+  assert.equal(interpretation.audit.actualInputTokens, 500);
+  assert.equal(interpretation.audit.actualOutputTokens, 100);
+
+  const reloaded = projectStore.getProject(project.id);
+  const events = reloaded.creditLedger.ledgerEvents.filter((e) => e.provider === 'anthropic');
+  assert.deepEqual(events.map((e) => e.event), ['RESERVED', 'SETTLED']);
+  assert.equal(events[1].amount, interpretation.audit.actualCostUsd);
+  assert.equal(reloaded.creditLedger.usdSpend.anthropic.settledUsd, interpretation.audit.actualCostUsd);
+  assert.equal(reloaded.creditLedger.usdSpend.anthropic.unknownSettlements, 0);
+
+  // Never merged with credits.
+  assert.notEqual(reloaded.creditLedger.reserved, interpretation.audit.actualCostUsd);
+});
+
+test('P0H2-I2. a COMPLETED interpretation with no usage reported: actual cost stays explicitly UNKNOWN, never estimated as a substitute', async () => {
+  const { project, rv, measurements, observationSet, questionId } = await approvedInterpretationSetup();
+  const provider = createFakeInterpretationProvider(); // default responder reports no usage
+
+  const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
+  assert.equal(interpretation.status, 'PENDING_REVIEW');
+  assert.equal(interpretation.audit.actualCostUsd, null);
+  assert.equal(interpretation.audit.actualInputTokens, null);
+
+  const reloaded = projectStore.getProject(project.id);
+  const events = reloaded.creditLedger.ledgerEvents.filter((e) => e.provider === 'anthropic');
+  assert.deepEqual(events.map((e) => e.event), ['RESERVED', 'SETTLED']);
+  assert.equal(events[1].amount, null);
+  assert.equal(reloaded.creditLedger.usdSpend.anthropic.unknownSettlements, 1);
+  assert.equal(reloaded.creditLedger.usdSpend.anthropic.settledUsd, 0);
+});
+
+test('P0H2-I3. an UNAVAILABLE provider (no credential configured): the reservation is released, never left stranded', async () => {
+  const { project, rv, measurements, observationSet, questionId } = await approvedInterpretationSetup();
+  const provider = createFakeInterpretationProvider({ respond: () => ({ status: 'UNAVAILABLE', diagnostics: [{ code: 'INTERPRETATION_PROVIDER_UNAVAILABLE', message: 'no credential configured' }] }) });
+
+  const interpretation = await interpretationSvc.interpretReferenceVideo(project.id, { referenceVideoId: rv.id, measurementsId: measurements.id, observationSetId: observationSet.id, questionId, provider });
+  assert.equal(interpretation.status, 'FAILED');
+
+  const reloaded = projectStore.getProject(project.id);
+  const events = reloaded.creditLedger.ledgerEvents.filter((e) => e.provider === 'anthropic');
+  assert.deepEqual(events.map((e) => e.event), ['RESERVED', 'RELEASED']);
+  assert.equal(reloaded.creditLedger.usdSpend.anthropic.reservedUsd, 0);
+});
+
 test('34. this file only ever invokes the injected provider — no network, no child_process, no eval', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'services', 'reference-video-interpretation-service.js'), 'utf8');
   assert.doesNotMatch(source, /\bfetch\(/);

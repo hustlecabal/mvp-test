@@ -53,6 +53,35 @@ const { createReferenceVideo, createAcquisitionStageResult, createReferenceVideo
 
 const defaultProvider = createApifyAcquisitionProvider();
 
+// P0-HARDENING-2, Part 7/11 — Apify's own documented, FIXED per-result
+// price for the metadata+transcript actor (see reference-video/apify-
+// acquisition-provider.js's own header — starvibe/youtube-video-transcript
+// at $0.005/result, independently re-verified for that stage, not
+// estimated here). This is a genuinely KNOWN pre-call cost (every
+// successful call costs exactly this, regardless of video length), unlike
+// the video-downloader actor below, whose per-second price cannot be
+// turned into a real cost without a duration this codebase never obtains
+// from Apify (see acquireVideo's own comments) — so that one is reserved
+// and settled as explicitly UNKNOWN, never computed from a locally
+// ffprobe-measured duration (that would be inventing a number Apify never
+// reported).
+const APIFY_METADATA_TRANSCRIPT_PRICE_USD = 0.005;
+
+// The exact, literal diagnostic message runActorSync() (apify-acquisition-
+// provider.js) returns when APIFY_API_TOKEN is not configured — the ONE
+// case where this service can be certain Apify's network layer was never
+// reached, so a reservation may be safely released rather than settled as
+// an unknown-but-real spend. Any other failure reason is treated
+// conservatively as "may have reached Apify's billing layer" and settled
+// UNKNOWN, never released — matching Apify's own documented pricing model
+// (billed for compute time regardless of whether the run was useful).
+const APIFY_NO_TOKEN_MESSAGE = 'no APIFY_API_TOKEN configured in this environment';
+
+function apifyFailureReachedNetwork(diagnostics) {
+  const message = diagnostics && diagnostics[0] && diagnostics[0].message;
+  return message !== APIFY_NO_TOKEN_MESSAGE;
+}
+
 function isExecutable(candidate) {
   try {
     fs.accessSync(candidate, fs.constants.X_OK);
@@ -227,20 +256,91 @@ async function ingestReferenceVideo(projectId, options = {}) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-reference-video-'));
   try {
     // --- Part 11 — metadata (non-fatal) ---
+    // P0-HARDENING-2, Part 7/11 — reserve the known, fixed Apify price
+    // BEFORE the billed call. acquireTranscript() below shares this exact
+    // same underlying actor call (see apify-acquisition-provider.js's own
+    // per-externalId cache) — it gets no separate reservation/settlement
+    // of its own, since it is not a second billed operation.
+    const apifyMetadataOperationId = crypto.randomUUID();
+    await gate.reserveBudget(projectId, {
+      jobId: apifyMetadataOperationId,
+      provider: 'apify',
+      operation: 'metadata_transcript',
+      amount: APIFY_METADATA_TRANSCRIPT_PRICE_USD,
+      currency: 'usd',
+    });
+
     let metadata = null;
     const metaResult = await provider.acquireMetadata({ source });
     if (metaResult.status === 'COMPLETED') {
       metadata = metaResult.metadata;
       stages.push(stage('ACQUIRE_METADATA', 'SUCCEEDED'));
+      await gate.settleUsdSpend(projectId, {
+        jobId: apifyMetadataOperationId,
+        provider: 'apify',
+        operation: 'metadata_transcript',
+        amount: APIFY_METADATA_TRANSCRIPT_PRICE_USD,
+        note: 'starvibe/youtube-video-transcript — fixed per-result price, billed on a successful run regardless of which fields it returned.',
+      });
     } else {
       stages.push(stage('ACQUIRE_METADATA', 'FAILED', metaResult.diagnostics[0] && metaResult.diagnostics[0].message));
       diagnostics.push(diag('METADATA_UNAVAILABLE', (metaResult.diagnostics[0] && metaResult.diagnostics[0].message) || 'metadata unavailable', 'ACQUIRE_METADATA'));
+      if (apifyFailureReachedNetwork(metaResult.diagnostics)) {
+        await gate.settleUsdSpend(projectId, {
+          jobId: apifyMetadataOperationId,
+          provider: 'apify',
+          operation: 'metadata_transcript',
+          amount: null,
+          note: `ACQUIRE_METADATA failed after Apify's network layer may have been reached (${(metaResult.diagnostics[0] && metaResult.diagnostics[0].message) || 'unknown error'}); settling as UNKNOWN rather than assuming free.`,
+        });
+      } else {
+        await gate.releaseReservation(projectId, {
+          jobId: apifyMetadataOperationId,
+          provider: 'apify',
+          currency: 'usd',
+          amount: APIFY_METADATA_TRANSCRIPT_PRICE_USD,
+          note: 'No APIFY_API_TOKEN configured; Apify was never actually called, so nothing was billed.',
+        });
+      }
     }
 
     // --- Part 4 — video acquisition (FATAL if it fails) ---
+    // P0-HARDENING-2, Part 6/11 — the video-downloader actor bills per
+    // second of output, but this adapter never learns the duration (see
+    // apify-acquisition-provider.js's acquireVideo — no duration/cost
+    // field exists in its mapped result). There is no known pre-call cost
+    // to reserve, so this is reserved with an explicit UNKNOWN amount
+    // (never a fabricated number) and settled the same way — never
+    // computed after the fact from a locally ffprobe-measured duration,
+    // which would just be a different way of inventing the same number.
+    const apifyVideoOperationId = crypto.randomUUID();
+    await gate.reserveBudget(projectId, {
+      jobId: apifyVideoOperationId,
+      provider: 'apify',
+      operation: 'video_download',
+      amount: null,
+      currency: 'usd',
+    });
+
     const videoResult = await provider.acquireVideo({ source });
     if (videoResult.status !== 'COMPLETED' || !videoResult.resultUrl) {
       stages.push(stage('ACQUIRE_VIDEO', 'FAILED', videoResult.diagnostics[0] && videoResult.diagnostics[0].message));
+      if (apifyFailureReachedNetwork(videoResult.diagnostics)) {
+        await gate.settleUsdSpend(projectId, {
+          jobId: apifyVideoOperationId,
+          provider: 'apify',
+          operation: 'video_download',
+          amount: null,
+          note: `ACQUIRE_VIDEO failed after Apify's network layer may have been reached (${(videoResult.diagnostics[0] && videoResult.diagnostics[0].message) || 'unknown error'}); settling as UNKNOWN rather than assuming free.`,
+        });
+      } else {
+        await gate.releaseReservation(projectId, {
+          jobId: apifyVideoOperationId,
+          provider: 'apify',
+          currency: 'usd',
+          note: 'No APIFY_API_TOKEN configured; Apify was never actually called, so nothing was billed.',
+        });
+      }
       return createReferenceVideo({
         projectId,
         source,
@@ -257,6 +357,16 @@ async function ingestReferenceVideo(projectId, options = {}) {
       downloaded = await assetStorage.downloadAsset(videoResult.resultUrl, videoAssetId, { fetchImpl: fetchImpl || fetch, maxBytes: maxVideoBytes });
     } catch (error) {
       stages.push(stage('ACQUIRE_VIDEO', 'FAILED', error.message));
+      // The Apify actor call itself already succeeded (videoResult.status
+      // was COMPLETED above) — only this server's own local download
+      // failed. Settle, never release: Apify already ran.
+      await gate.settleUsdSpend(projectId, {
+        jobId: apifyVideoOperationId,
+        provider: 'apify',
+        operation: 'video_download',
+        amount: null,
+        note: `Apify's actor run succeeded, but downloading the result locally failed (${error.message}); the Apify run itself was still real and billed. Amount stays UNKNOWN.`,
+      });
       return createReferenceVideo({
         projectId,
         source,
@@ -267,6 +377,13 @@ async function ingestReferenceVideo(projectId, options = {}) {
       });
     }
     stages.push(stage('ACQUIRE_VIDEO', 'SUCCEEDED'));
+    await gate.settleUsdSpend(projectId, {
+      jobId: apifyVideoOperationId,
+      provider: 'apify',
+      operation: 'video_download',
+      amount: null,
+      note: 'epctex/youtube-video-downloader billed per second of output; this adapter never obtains the duration/cost, so the real amount stays UNKNOWN.',
+    });
 
     timelineStore.addAsset(projectId, { assetId: videoAssetId, type: 'video', provider: 'apify' });
     timelineStore.updateAssetStorage(projectId, videoAssetId, {
@@ -322,6 +439,10 @@ async function ingestReferenceVideo(projectId, options = {}) {
 
     // --- Part 8/10 — transcript: provider first, LOCAL_WHISPER only as an
     // explicit fallback, never silently overwriting a retrieved one. ---
+    // P0-HARDENING-2, Part 7/11 — no separate Apify reservation/settlement
+    // here: acquireTranscript() shares the exact same underlying billed
+    // actor call as ACQUIRE_METADATA above (apify-acquisition-provider.js's
+    // own per-externalId cache), already reserved and settled once.
     let transcript = null;
     const transcriptResult = await provider.acquireTranscript({ source });
     if (transcriptResult.status === 'COMPLETED' && transcriptResult.transcript) {

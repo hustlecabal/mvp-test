@@ -59,9 +59,27 @@ test('7. createAlternativeHypothesis / createCounterEvidence default to empty st
 
 test('8. createInterpretationAuditTrail defaults every field to null/[] — nothing pre-filled, no credential field exists at all', () => {
   const audit = schema.createInterpretationAuditTrail();
-  assert.deepEqual(Object.keys(audit).sort(), ['questionId', 'suppliedObservationIds', 'provider', 'model', 'requestedAt', 'respondedAt', 'estimatedCostUsd'].sort());
-  for (const forbidden of ['apiKey', 'api_key', 'secret', 'token', 'chainOfThought', 'chain_of_thought']) {
-    assert.ok(!Object.keys(audit).some((k) => k.toLowerCase().includes(forbidden.toLowerCase())), `audit trail must never have a "${forbidden}" field`);
+  // P0-HARDENING-2, Part 12 — actualInputTokens/actualOutputTokens/
+  // actualCostUsd are additive fields alongside the pre-existing estimate,
+  // never replacing it (see createInterpretationAuditTrail's own comment).
+  assert.deepEqual(
+    Object.keys(audit).sort(),
+    ['questionId', 'suppliedObservationIds', 'provider', 'model', 'requestedAt', 'respondedAt', 'estimatedCostUsd', 'actualInputTokens', 'actualOutputTokens', 'actualCostUsd'].sort()
+  );
+  assert.equal(audit.actualInputTokens, null);
+  assert.equal(audit.actualOutputTokens, null);
+  assert.equal(audit.actualCostUsd, null);
+  // "token" alone would also flag actualInputTokens/actualOutputTokens —
+  // real LLM usage COUNTS (P0-HARDENING-2, Part 12), not credentials. The
+  // check below still catches an actual credential-shaped field name
+  // (apiToken, authToken, bearerToken, a bare "token") without flagging a
+  // "*Tokens" usage-count field.
+  const CREDENTIAL_TOKEN_PATTERN = /(^|[a-z])token(?!s)/i;
+  for (const key of Object.keys(audit)) {
+    for (const forbidden of ['apiKey', 'api_key', 'secret', 'chainOfThought', 'chain_of_thought']) {
+      assert.ok(!key.toLowerCase().includes(forbidden.toLowerCase()), `audit trail must never have a "${forbidden}" field (found "${key}")`);
+    }
+    assert.ok(!CREDENTIAL_TOKEN_PATTERN.test(key), `audit trail must never have a credential-shaped "token" field (found "${key}")`);
   }
 });
 

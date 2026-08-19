@@ -15,6 +15,7 @@ const projectStore = require('./project-store');
 const timelineStore = require('./timeline-store');
 const generationStore = require('./generation-store');
 const gate = require('./approval-gate');
+const recoveryService = require('./generation-recovery-service');
 const stateMachine = require('../schemas/state-machine');
 const productionSchema = require('../schemas/production-schema');
 const evolinkProvider = require('../providers/evolink/evolink-provider');
@@ -105,6 +106,20 @@ function findInFlightDuplicate(input) {
   return candidates.find((job) => IN_FLIGHT_STATUSES.includes(job.status) && requestKey(job) === key) || null;
 }
 
+// P0-HARDENING-2, Part 10 — the same exact-request match as
+// findInFlightDuplicate, but for a job that TIMED_OUT (not IN_FLIGHT).
+// findInFlightDuplicate deliberately does NOT match TIMED_OUT jobs (a
+// fresh explicit request after a genuine, confirmed failure/timeout must
+// stay possible) — but requestGeneration() must resolve what actually
+// happened to a TIMED_OUT job before treating "the old attempt is gone" as
+// true, or it risks a second real charge for work that may still be
+// running or may have already completed.
+function findStaleTimedOutDuplicate(input) {
+  const key = requestKey(input);
+  const candidates = generationStore.listGenerationJobs({ projectId: input.projectId, shotId: input.shotId });
+  return candidates.find((job) => job.status === 'TIMED_OUT' && requestKey(job) === key) || null;
+}
+
 // Submits a real generation, but ONLY if every safety check passes. This
 // is the one function in the whole system that is allowed to cause real
 // provider spending.
@@ -128,6 +143,52 @@ async function requestGeneration(input, { providers = PROVIDERS } = {}) {
     return { ok: false, reason: err.message };
   }
 
+  // P0-HARDENING-2, Part 10 — resolve a stale TIMED_OUT attempt for this
+  // exact request before allowing a new one.
+  const staleJob = findStaleTimedOutDuplicate({ projectId, shotId, provider, model, task, prompt, references, parameters });
+  if (staleJob) {
+    const recovery = await recoveryService.classifyJobRecovery(staleJob, providerAdapter);
+
+    if (recovery.classification === 'ALREADY_COMPLETED') {
+      const updatedJob = generationStore.updateGenerationJob(staleJob.id, {
+        status: 'COMPLETED',
+        progress: recovery.providerStatus.progress,
+        reservedCost: recovery.providerStatus.reservedCost !== null ? recovery.providerStatus.reservedCost : staleJob.reservedCost,
+        result: { results: recovery.providerStatus.results },
+        completedAt: new Date().toISOString(),
+      });
+      await gate.settleGenerationCost(projectId, updatedJob);
+      return { ok: true, job: updatedJob, deduplicated: true, recovery: recovery.classification };
+    }
+
+    if (recovery.classification === 'PROVIDER_OUTCOME_UNKNOWN') {
+      // Never create a new paid request while the prior attempt's outcome
+      // (and therefore its final cost) is unresolved.
+      return { ok: false, reason: `Cannot safely retry: ${recovery.reason}`, job: staleJob, recovery: recovery.classification };
+    }
+
+    if (recovery.classification === 'FAILED_CONFIRMED') {
+      // The stale job never went through a normal catch block (polling
+      // simply timed out), so its reservation — if the provider never
+      // actually billed it, per this confirmed failure — was never
+      // released. Release it now, then fall through to submit a genuinely
+      // new request below.
+      await gate.releaseReservation(projectId, {
+        jobId: staleJob.id,
+        provider: staleJob.provider,
+        currency: 'credits',
+        note: 'Provider confirmed failure for a previously TIMED_OUT job; releasing before allowing a new attempt.',
+      });
+      generationStore.updateGenerationJob(staleJob.id, {
+        status: 'FAILED',
+        error: (recovery.providerStatus && recovery.providerStatus.error) || { message: 'Provider confirmed failure after a local timeout.' },
+        failedAt: new Date().toISOString(),
+      });
+    }
+    // FAILED_CONFIRMED and SAFE_TO_RETRY both fall through to submit a
+    // genuinely new request below.
+  }
+
   const genericRequest = productionSchema.createGenerationRequest({ provider, model, task, prompt, references, parameters });
 
   // Create and persist the job BEFORE calling the provider, so a record
@@ -146,10 +207,49 @@ async function requestGeneration(input, { providers = PROVIDERS } = {}) {
     estimatedCost: checks.project.approvals.estimatedCost,
   });
 
+  // P0-HARDENING-2, Part 5/6/8/9 — reserve budget atomically BEFORE the
+  // provider call. reserveBudget() does its OWN fresh read of the project
+  // (inside a per-project lock), so two concurrent requests for the same
+  // project can never both reserve against the same remaining budget —
+  // the exact lost-update race the forensic audit reproduced. This is why
+  // the job is created (above) before the reservation: the reservation's
+  // ledger event and the seeded reconciledJobs delta-baseline both need a
+  // jobId to key off. `checks.project.approvals` here is only the basis
+  // for the amount/policy passed in — reserveBudget re-validates against
+  // a fresh read rather than trusting it.
+  const reservation = await gate.reserveBudget(projectId, {
+    jobId: job.id,
+    provider: 'evolink',
+    operation: task,
+    amount: checks.project.approvals.estimatedCost,
+    currency: 'credits',
+    unknownCostAcknowledged: checks.project.approvals.unknownCostAcknowledged,
+  });
+  if (!reservation.allowed) {
+    job = generationStore.updateGenerationJob(job.id, {
+      status: 'FAILED',
+      error: { code: 'BUDGET_RESERVATION_BLOCKED', message: reservation.reason },
+      failedAt: new Date().toISOString(),
+    });
+    return { ok: false, reason: reservation.reason, job };
+  }
+
   let providerStatus;
   try {
     providerStatus = await providerAdapter.createGeneration(genericRequest);
   } catch (err) {
+    // EvoLink's own documented model reserves credits only as part of a
+    // SUCCESSFUL task-creation response (see evolink-mapper.js's
+    // fromEvolinkTask, which only ever maps reservedCost off that
+    // response) — a throw here means task creation never happened on
+    // EvoLink's side, so the reservation is released rather than left
+    // stranded against a job that was never actually billed.
+    await gate.releaseReservation(projectId, {
+      jobId: job.id,
+      provider: 'evolink',
+      currency: 'credits',
+      note: 'Provider submission failed before task creation; assumed not billed.',
+    });
     job = generationStore.updateGenerationJob(job.id, {
       status: 'FAILED',
       error: { code: err.code || null, message: err.message },
@@ -168,13 +268,13 @@ async function requestGeneration(input, { providers = PROVIDERS } = {}) {
     submittedAt: new Date().toISOString(),
   });
 
-  // Fold the provider's reserved cost into the project's ledger the moment
-  // it's known (Part 3/6 of docs/architecture/budget-safety.md) — this is
-  // also the earliest point an overage can be detected, even though it's
-  // already too late to stop THIS submission (EvoLink gave no
-  // pre-submission quote to check against).
-  gate.reconcileGenerationCost(checks.project, job);
-  projectStore.touch(checks.project);
+  // Fold the provider's real reserved cost into the project's ledger,
+  // atomically. settleGenerationCost() re-reads the project fresh (inside
+  // the same per-project lock) and delegates to the existing, unmodified
+  // reconcileGenerationCost() delta math, which corrects the estimate
+  // reserveBudget() seeded above to this real number without
+  // double-counting (Part 3/6 of docs/architecture/budget-safety.md).
+  await gate.settleGenerationCost(projectId, job);
 
   return { ok: true, job };
 }
@@ -229,11 +329,11 @@ async function checkGenerationOnce(jobId, { providers = PROVIDERS } = {}) {
   // an actualCost on completion — EvoLink currently never does, but this
   // stays correct if that ever changes). reconcileGenerationCost is
   // delta-based, so this never double-counts the reservedCost already
-  // folded in at submission time.
-  const project = projectStore.getProject(updatedJob.projectId);
-  if (project) {
-    gate.reconcileGenerationCost(project, updatedJob);
-    projectStore.touch(project);
+  // folded in at submission time. settleGenerationCost() is the
+  // concurrency-safe wrapper (fresh read + per-project lock) around that
+  // same unmodified function — see approval-gate.js.
+  if (projectStore.getProject(updatedJob.projectId)) {
+    await gate.settleGenerationCost(updatedJob.projectId, updatedJob);
   }
 
   if (updatedJob.status === 'COMPLETED' && !updatedJob.assetId) {

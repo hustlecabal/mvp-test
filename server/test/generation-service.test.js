@@ -482,3 +482,150 @@ test('checking an already-completed job a second time does not create a second a
   const assets = timelineStore.listAssets(job.projectId, { shotId: job.shotId });
   assert.equal(assets.length, 1);
 });
+
+// ===========================================================================
+// P0-HARDENING-2 — Part 14 auditability + Part 15/16 concurrency/crash
+// tests, exercised through the REAL requestGeneration()/checkGenerationOnce()
+// call sites (not just approval-gate.js directly — see
+// test/p0-hardening-2-ledger.test.js for the lower-level mechanics).
+// ===========================================================================
+
+test('P0H2-1. a successful operation: the project ledger reconstructs approval -> reservation -> provider call -> settlement', async () => {
+  const { projectId, shotId } = setupReadyProject({ estimatedCost: 50 });
+  const providers = { evolink: fakeProvider() }; // reservedCost: 42 on submission
+
+  const result = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+  assert.equal(result.ok, true);
+
+  const project = projectStore.getProject(projectId);
+  const events = project.creditLedger.ledgerEvents;
+  assert.equal(events.length, 1, 'one RESERVED event for this job — EvoLink never reports an actualCost, so there is nothing to SETTLE separately (see budget-safety.md)');
+  assert.equal(events[0].event, 'RESERVED');
+  assert.equal(events[0].jobId, result.job.id);
+  assert.equal(events[0].amount, 50, 'the reservation is seeded from the approved estimate, before the provider is ever called');
+
+  // The provider's REAL reservedCost (42) corrects the ledger via the
+  // existing, unmodified reconcileGenerationCost delta math — never
+  // double-counted against the original 50-credit reservation.
+  assert.equal(project.creditLedger.reserved, 42);
+});
+
+test('P0H2-2. a provider failure: the reservation is released, reconstructable from the ledger as RESERVED then RELEASED', async () => {
+  const { projectId, shotId } = setupReadyProject({ estimatedCost: 20 });
+  const providers = { evolink: fakeProvider({ createGeneration: async () => { throw new Error('provider rejected the request'); } }) };
+
+  const result = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+  assert.equal(result.ok, false);
+  assert.equal(result.job.status, 'FAILED');
+
+  const project = projectStore.getProject(projectId);
+  const events = project.creditLedger.ledgerEvents;
+  assert.deepEqual(events.map((e) => e.event), ['RESERVED', 'RELEASED']);
+  assert.equal(project.creditLedger.reserved, 0);
+});
+
+test('P0H2-3. two concurrent requestGeneration calls for the SAME project (different shots) never lose a reservation update', async () => {
+  const created = projectStore.createProject({ title: 'concurrent shots', topic: 'x' });
+  const scene = timelineStore.addScene(created.id, { title: 'S1', description: 'd' });
+  const shotA = timelineStore.addShot(created.id, { sceneId: scene.sceneId, narrativePurpose: 'shot A' });
+  const shotB = timelineStore.addShot(created.id, { sceneId: scene.sceneId, narrativePurpose: 'shot B' });
+  const project = projectStore.getProject(created.id);
+  gate.setBudget(project, 10);
+  gate.requestApproval(project, { estimatedCost: 7 });
+  gate.decideApproval(project, { approve: true });
+  walkTo(project, 'KEYFRAME_GENERATION');
+  projectStore.touch(project);
+
+  const providers = { evolink: fakeProvider({ createGeneration: async () => ({ generationId: 'concurrent-task', status: 'SUBMITTED', progress: 0, reservedCost: 7, results: [], error: null }) }) };
+
+  const [resA, resB] = await Promise.all([
+    generationService.requestGeneration({ projectId: created.id, shotId: shotA.shotId, ...baseInput() }, { providers }),
+    generationService.requestGeneration({ projectId: created.id, shotId: shotB.shotId, ...baseInput() }, { providers }),
+  ]);
+
+  const succeeded = [resA, resB].filter((r) => r.ok && r.job && r.job.status !== 'FAILED');
+  // Exactly one of the two £7 requests against a £10 budget can succeed;
+  // the other must be blocked by the reservation gate, never silently lost.
+  assert.equal(succeeded.length, 1, `expected exactly one of two concurrent £7 requests against a £10 budget to succeed, got: ${JSON.stringify([resA, resB])}`);
+
+  const reloaded = projectStore.getProject(created.id);
+  assert.equal(reloaded.creditLedger.reserved, 7, 'the ledger must reflect exactly one £7 reservation, never a lost update showing 0 and never a double-count showing 14');
+});
+
+test('P0H2-4. TIMED_OUT retry does not double-charge: a still-active provider operation is returned as-is, never resubmitted', async () => {
+  const { projectId, shotId } = setupReadyProject({ estimatedCost: 20 });
+  let submissionCount = 0;
+  const providers = {
+    evolink: fakeProvider({
+      createGeneration: async () => {
+        submissionCount += 1;
+        return { generationId: 'timeout-task-1', status: 'SUBMITTED', progress: 0, reservedCost: 5, results: [], error: null };
+      },
+      getGenerationStatus: async () => ({ status: 'PROCESSING', progress: 60, results: [], error: null, reservedCost: null }),
+    }),
+  };
+
+  const first = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+  assert.equal(first.ok, true);
+  // Simulate this process giving up on polling (the exact TIMED_OUT
+  // scenario Part 10 describes) while the real provider op is still active.
+  generationStore.updateGenerationJob(first.job.id, { status: 'TIMED_OUT', timedOutAt: new Date().toISOString() });
+
+  const retry = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+
+  assert.equal(submissionCount, 1, 'the provider must NOT be called a second time while the original operation is still active — this is the exact double-charge risk P1-2 fixes');
+  assert.equal(retry.ok, false);
+  assert.equal(retry.recovery, 'PROVIDER_OUTCOME_UNKNOWN');
+});
+
+test('P0H2-5. TIMED_OUT retry after provider-confirmed completion reconciles and returns the existing result, never creating a second job', async () => {
+  const { projectId, shotId } = setupReadyProject({ estimatedCost: 20 });
+  let submissionCount = 0;
+  const providers = {
+    evolink: fakeProvider({
+      createGeneration: async () => {
+        submissionCount += 1;
+        return { generationId: 'timeout-task-2', status: 'SUBMITTED', progress: 0, reservedCost: 5, results: [], error: null };
+      },
+      getGenerationStatus: async () => ({ status: 'COMPLETED', progress: 100, results: ['https://example.com/done.mp4'], error: null, reservedCost: 5 }),
+    }),
+  };
+
+  const first = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+  generationStore.updateGenerationJob(first.job.id, { status: 'TIMED_OUT', timedOutAt: new Date().toISOString() });
+
+  const retry = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+
+  assert.equal(submissionCount, 1, 'the provider must not be called again once it confirms the original operation already completed');
+  assert.equal(retry.ok, true);
+  assert.equal(retry.job.id, first.job.id);
+  assert.equal(retry.job.status, 'COMPLETED');
+});
+
+test('P0H2-6. TIMED_OUT retry after provider-confirmed failure releases the stale reservation and allows a genuinely new attempt', async () => {
+  const { projectId, shotId } = setupReadyProject({ estimatedCost: 20 });
+  let submissionCount = 0;
+  const providers = {
+    evolink: fakeProvider({
+      createGeneration: async () => {
+        submissionCount += 1;
+        return { generationId: `timeout-task-3-${submissionCount}`, status: 'SUBMITTED', progress: 0, reservedCost: 5, results: [], error: null };
+      },
+      getGenerationStatus: async () => ({ status: 'FAILED', progress: null, results: null, error: { message: 'provider confirms this run failed' }, reservedCost: null }),
+    }),
+  };
+
+  const first = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+  generationStore.updateGenerationJob(first.job.id, { status: 'TIMED_OUT', timedOutAt: new Date().toISOString() });
+
+  const retry = await generationService.requestGeneration({ projectId, shotId, ...baseInput() }, { providers });
+
+  assert.equal(submissionCount, 2, 'a genuinely NEW attempt is allowed once the provider confirms the original one failed');
+  assert.equal(retry.ok, true);
+  assert.notEqual(retry.job.id, first.job.id);
+
+  const project = projectStore.getProject(projectId);
+  // Only the SECOND job's reservation remains outstanding — the first
+  // job's stale reservation was released, not left stranded.
+  assert.equal(project.creditLedger.reserved, 5);
+});

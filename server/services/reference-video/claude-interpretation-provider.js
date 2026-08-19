@@ -145,19 +145,34 @@ function createClaudeInterpretationProvider({ apiKey = process.env.ANTHROPIC_API
         return createInterpretationProviderResult({ status: 'INVALID', model, diagnostics: [diag('INTERPRETATION_INVALID', 'response body was not valid JSON')] });
       }
 
+      // P0-HARDENING-2, Part 12 — the real Anthropic response's `usage`
+      // object ({input_tokens, output_tokens}) is always present on a 200
+      // response, regardless of whether THIS adapter can successfully
+      // parse the model's own JSON content out of it — a response that
+      // reaches this point was genuinely processed and billed by
+      // Anthropic. Captured here, once, and attached to every result
+      // returned from this point on (INVALID included) so the caller can
+      // record a REAL actual cost instead of an unknown one whenever
+      // possible.
+      const usage =
+        body && body.usage && typeof body.usage.input_tokens === 'number' && typeof body.usage.output_tokens === 'number'
+          ? { inputTokens: body.usage.input_tokens, outputTokens: body.usage.output_tokens }
+          : null;
+
       const text = body && Array.isArray(body.content) && body.content[0] && body.content[0].text;
       const parsed = safeParseJsonObject(text);
       if (!parsed) {
-        return createInterpretationProviderResult({ status: 'INVALID', model, diagnostics: [diag('INTERPRETATION_INVALID', 'model response was not a single parseable JSON object')] });
+        return createInterpretationProviderResult({ status: 'INVALID', model, usage, diagnostics: [diag('INTERPRETATION_INVALID', 'model response was not a single parseable JSON object')] });
       }
       const missingKeys = REQUIRED_OUTPUT_KEYS.filter((k) => parsed[k] === undefined);
       if (missingKeys.length > 0) {
-        return createInterpretationProviderResult({ status: 'INVALID', model, diagnostics: [diag('INTERPRETATION_INVALID', `model response is missing required key(s): ${missingKeys.join(', ')}`)] });
+        return createInterpretationProviderResult({ status: 'INVALID', model, usage, diagnostics: [diag('INTERPRETATION_INVALID', `model response is missing required key(s): ${missingKeys.join(', ')}`)] });
       }
 
       return createInterpretationProviderResult({
         status: 'COMPLETED',
         model,
+        usage,
         hypothesis: parsed.hypothesis,
         reasoning: parsed.reasoning,
         supportingObservationIds: parsed.supportingObservationIds,
