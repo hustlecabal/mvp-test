@@ -37,6 +37,7 @@ const keyframeGenerationApprovalStore = require('./keyframe-generation-approval-
 const generationStore = require('./generation-store');
 const gate = require('./approval-gate');
 const recoveryService = require('./generation-recovery-service');
+const controlPlane = require('./control-plane-service');
 const assetArchiveService = require('./asset-archive-service');
 const { FakeImageGenerationExecutor } = require('./image-generation-executor');
 const fakeImageProvider = require('../providers/fake-image/fake-image-provider');
@@ -146,6 +147,20 @@ function runSafetyChecks(projectId, keyframeId) {
 
   const keyframe = keyframeStore.getKeyframe(projectId, keyframeId);
   if (!keyframe) return { ok: false, reason: `No keyframe found with id "${keyframeId}" in project "${projectId}"` };
+
+  // INT-2.5-P0 — the strategic-layer enforcement point: no paid production
+  // without an APPROVED CreativeBlueprint and an ACCEPTED/OVERRIDDEN
+  // pre-production gate result (see control-plane-service.js). This file
+  // never checks the project-level state machine at all (see this file's
+  // own header — approval here comes from KEYFRAME_GENERATION_APPROVAL,
+  // not project.status), so without this explicit check a caller could
+  // reach real EvoLink image generation having skipped the Blueprint/Gate
+  // layer entirely, even if state-machine.js's own transition() enforced
+  // it perfectly.
+  const prerequisites = controlPlane.validateProductionPrerequisites(projectId);
+  if (!prerequisites.ok) {
+    return { ok: false, reason: `Blocked by strategic-layer prerequisite (${prerequisites.code}): ${prerequisites.reason}` };
+  }
 
   // Part 4, step 4 — "confirm the keyframe is eligible": the keyframe
   // exists (checked above) and is a real target for generation — nothing

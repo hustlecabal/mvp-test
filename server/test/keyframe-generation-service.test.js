@@ -20,6 +20,8 @@ const promptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-packa
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-assets-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
@@ -27,6 +29,8 @@ process.env.KEYFRAME_PROMPT_DATA_DIR = promptTempDir;
 process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = approvalTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
 process.env.ASSET_STORAGE_DIR = assetsTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 
 const projectStore = require('../services/project-store');
 const gate = require('../services/approval-gate');
@@ -38,6 +42,10 @@ const approvalStore = require('../services/keyframe-generation-approval-store');
 const generationStore = require('../services/generation-store');
 const kfgen = require('../services/keyframe-generation-service');
 const fakeImageProvider = require('../providers/fake-image/fake-image-provider');
+const creativeBlueprintStore = require('../services/creative-blueprint-store');
+const preProductionGateStore = require('../services/pre-production-gate-store');
+const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
+const { createPreProductionGateResult } = require('../schemas/pre-production-gate-schema');
 
 const FAST_POLL = { intervalMs: 0, sleepImpl: async () => {} };
 
@@ -45,10 +53,50 @@ function newProject(title = 'kfgen service test') {
   return projectStore.createProject({ title, topic: 'x' });
 }
 
+// INT-2.5-P0 — satisfies control-plane-service.js's validateProductionPrerequisites()
+// for a project: a real, persisted APPROVED CreativeBlueprint, a real ACCEPTed
+// PreProductionGateResult referencing it, and a Storyboard.blueprintId link — the
+// exact chain the strategic-layer enforcement now requires before any generation
+// safety check runs. Built directly via the schema factories + stores (the same
+// "real record, direct construction" convention already used by
+// p0-4a-blueprint-storyboard-contract.test.js's setupBlueprintWithRecommendation)
+// — the review/evaluate SERVICE CHAIN itself is exercised by the dedicated
+// control-plane bypass tests, not re-proven in every fixture here.
+function satisfyProductionPrerequisites(projectId) {
+  const blueprint = createCreativeBlueprint({
+    projectId,
+    recommendationSetId: 'rec-set-fixture',
+    status: 'APPROVED',
+    concept: 'fixture concept',
+    corePromise: 'fixture promise',
+    targetDuration: 60,
+  });
+  const savedBlueprint = creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint).blueprint;
+  const gateResult = createPreProductionGateResult({
+    projectId,
+    blueprintId: savedBlueprint.id,
+    blueprintRevision: savedBlueprint.id,
+    blueprintUpdatedAt: savedBlueprint.updatedAt,
+    machineAssessment: 'PROCEED',
+    costStatus: 'UNKNOWN',
+  });
+  const savedGateResult = preProductionGateStore.addGateResult(projectId, gateResult).gateResult;
+  preProductionGateStore.recordHumanDecision(projectId, savedGateResult.id, { humanDecision: 'ACCEPT', humanDecidedBy: 'test-fixture', humanRationale: null });
+  creativeStore.updateStoryboard(projectId, { blueprintId: savedBlueprint.id });
+  return { blueprintId: savedBlueprint.id, gateResultId: savedGateResult.id };
+}
+
 // Builds a fresh project with one storyboard shot + one keyframe + a
 // built, CURRENT prompt package. Returns everything a test needs.
 function buildFixture() {
   const project = newProject();
+  // Link the Blueprint/Gate BEFORE any storyboard version bump this fixture
+  // makes below — updateStoryboard() itself bumps the storyboard's version
+  // (Part 6/10's "every storyboard write is a tracked, versioned update"
+  // rule), so linking first means the scene/shot/keyframe/package built
+  // afterward all capture the CURRENT (post-link) version and never start
+  // out spuriously STALE.
+  satisfyProductionPrerequisites(project.id);
   const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
   const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId });
   const storyboard = creativeStore.getStoryboard(project.id);

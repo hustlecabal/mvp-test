@@ -17,6 +17,8 @@ const promptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-assets-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-mcp-gates-'));
 const envVars = {
   PROJECT_DATA_DIR: projectTempDir,
   CREATIVE_DATA_DIR: creativeTempDir,
@@ -25,11 +27,14 @@ const envVars = {
   KEYFRAME_GENERATION_APPROVAL_DATA_DIR: approvalTempDir,
   GENERATION_JOBS_DATA_DIR: jobsTempDir,
   ASSET_STORAGE_DIR: assetsTempDir,
+  CREATIVE_BLUEPRINT_DATA_DIR: blueprintTempDir,
+  PRE_PRODUCTION_GATE_DATA_DIR: gateTempDir,
 };
 for (const [key, value] of Object.entries(envVars)) process.env[key] = value;
 
 const projectStore = require('../services/project-store');
 const generationStore = require('../services/generation-store');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
@@ -64,6 +69,7 @@ function createProject() {
 }
 
 async function seedShotKeyframeAndPackage(project) {
+  satisfyProductionPrerequisites(project.id);
   const scene = textOf(await call('create_storyboard_scene', { projectId: project.id, title: 'S1' }));
   const shot = textOf(await call('create_storyboard_shot', { projectId: project.id, sceneId: scene.sceneId }));
   const keyframe = textOf(await call('create_keyframe', { projectId: project.id, shotId: shot.shotId, sceneId: scene.sceneId, frameType: 'DETAIL_FRAME' }));

@@ -303,8 +303,13 @@ test('10b. supplying Blueprint-strategy-shaped keys as overrides never expands t
   assert.equal(shot.visualDescription, null);
 });
 
-// 11. existing P0-1 behavior remains unchanged
-test('11. deriveBeatGraph() (P0-1) is unaffected by the new fields being present on a shot — it neither copies nor is confused by recommendationIds/visualTreatment', () => {
+// 11. INT-2.5-P0 superseded this test's original expectation: P0-1
+// initially never carried shot.recommendationIds/visualTreatment through
+// to the derived beat at all, which the INT-2.5 forensic audit identified
+// as a real provenance break (the P0-4A contract fields existed and were
+// validated, but silently dead-ended at this exact boundary). INT-2.5-P0
+// fixed that — this test now proves the fix, not the original gap.
+test('11. deriveBeatGraph() copies the shot\'s own validated recommendationIds/visualTreatment through to the derived beat (INT-2.5-P0 provenance fix)', () => {
   const storyboard = schema.createStoryboard({
     projectId: 'proj-1',
     blueprintId: 'blueprint-xyz',
@@ -315,12 +320,30 @@ test('11. deriveBeatGraph() (P0-1) is unaffected by the new fields being present
   assert.equal(result.status, 'DERIVED');
   assert.equal(result.derivedBeatCount, 1);
   const beat = result.beatGraph.beats[0];
-  // P0-1's own explicit field list (id, projectId, sceneId, shotId, sequence, startTime, duration,
-  // narrativePurpose, visualIntent, visualTreatment, narrationSegment, camera, lighting,
-  // identityRequirements, continuityRequirements, transition, status) never reads shot.recommendationIds
-  // at all — confirmed unchanged this session — and beat.visualTreatment stays null because P0-1 only
-  // ever sets it from context.treatments (never inferred from the shot itself, even though the shot
-  // now HAS its own visualTreatment field).
+  // The shot's own already-validated fields (P0-4A) are copied through
+  // verbatim — never re-derived, never re-validated a second time here.
+  assert.equal(beat.visualTreatment, 'STILL_IMAGE');
+  assert.deepEqual(beat.recommendationIds, ['rec-1', 'rec-2']);
+});
+
+test('11b. an explicit context.treatments override still wins over the shot\'s own visualTreatment (documented precedence)', () => {
+  const storyboard = schema.createStoryboard({
+    projectId: 'proj-1',
+    scenes: [schema.createStoryboardScene({ sceneId: 'scene-1' })],
+    shots: [schema.createStoryboardShot({ shotId: 'shot-prec', sceneId: 'scene-1', order: 1, duration: 5, purpose: 'intro', visualTreatment: 'STILL_IMAGE' })],
+  });
+  const result = deriveBeatGraph(storyboard, { treatments: { 'shot-prec': 'BROLL_CLIP' } });
+  assert.equal(result.beatGraph.beats[0].visualTreatment, 'BROLL_CLIP');
+});
+
+test('11c. a shot with no recommendationIds/visualTreatment of its own still derives a beat with the safe defaults ([] / null)', () => {
+  const storyboard = schema.createStoryboard({
+    projectId: 'proj-1',
+    scenes: [schema.createStoryboardScene({ sceneId: 'scene-1' })],
+    shots: [schema.createStoryboardShot({ sceneId: 'scene-1', order: 1, duration: 5, purpose: 'intro' })],
+  });
+  const result = deriveBeatGraph(storyboard, {});
+  const beat = result.beatGraph.beats[0];
   assert.equal(beat.visualTreatment, null);
-  assert.equal('recommendationIds' in beat, false);
+  assert.deepEqual(beat.recommendationIds, []);
 });

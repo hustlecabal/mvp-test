@@ -230,6 +230,14 @@ function createVisualBeat(overrides = {}) {
     // --- narrative ---
     narrativePurpose: '', // mirrors production-schema.js's existing
                             // shot.narrativePurpose field name exactly
+    // INT-2.5-P0 — additive provenance-only field, copied through verbatim
+    // from the source StoryboardShot.recommendationIds[] (schemas/
+    // creative-schema.js, P0-4A) by beat-graph-derivation-service.js when
+    // one exists. Never invented, never re-derived — a beat with no
+    // source shot, or a shot with no recommendationIds, stays []. This is
+    // the one piece of the Recommendation -> Blueprint -> Storyboard
+    // evidence chain that previously dead-ended at this exact boundary.
+    recommendationIds: [],
     narrationSegment: null, // createNarrationSegment(), or null
     visualIntent: '', // WHAT must be communicated visually — higher-level
                         // than a literal description; every candidate

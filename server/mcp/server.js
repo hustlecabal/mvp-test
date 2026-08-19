@@ -32,6 +32,8 @@ const registerReferenceLibraryTools = require('./tools/reference-library-tools')
 const registerGenerationModelRegistryTools = require('./tools/generation-model-registry-tools');
 const registerVideoPromptTools = require('./tools/video-prompt-tools');
 const registerVideoGenerationTools = require('./tools/video-generation-tools');
+const registerCreativeBlueprintTools = require('./tools/creative-blueprint-tools');
+const registerPreProductionGateTools = require('./tools/pre-production-gate-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -58,6 +60,8 @@ function createServer() {
   registerGenerationModelRegistryTools(server);
   registerVideoPromptTools(server);
   registerVideoGenerationTools(server);
+  registerCreativeBlueprintTools(server);
+  registerPreProductionGateTools(server);
 
   return server;
 }

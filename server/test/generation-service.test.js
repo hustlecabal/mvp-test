@@ -12,8 +12,14 @@ const path = require('path');
 
 const projectTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-gen-service-projects-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-gen-service-jobs-'));
+const creativeTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-gen-service-creative-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-gen-service-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-gen-service-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
+process.env.CREATIVE_DATA_DIR = creativeTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 
 const projectStore = require('../services/project-store');
 const timelineStore = require('../services/timeline-store');
@@ -21,6 +27,44 @@ const generationStore = require('../services/generation-store');
 const gate = require('../services/approval-gate');
 const stateMachine = require('../schemas/state-machine');
 const generationService = require('../services/generation-service');
+const creativeStore = require('../services/creative-store');
+const creativeBlueprintStore = require('../services/creative-blueprint-store');
+const preProductionGateStore = require('../services/pre-production-gate-store');
+const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
+const { createPreProductionGateResult } = require('../schemas/pre-production-gate-schema');
+
+// INT-2.5-P0 — satisfies control-plane-service.js's validateProductionPrerequisites()
+// for a project: a real, persisted APPROVED CreativeBlueprint, a real ACCEPTed
+// PreProductionGateResult referencing it, and a Storyboard.blueprintId link — the
+// exact chain the strategic-layer enforcement now requires before any generation
+// safety check runs. Built directly via the schema factories + stores (the same
+// "real record, direct construction" convention already used by
+// p0-4a-blueprint-storyboard-contract.test.js's setupBlueprintWithRecommendation)
+// — the review/evaluate SERVICE CHAIN itself is exercised by the dedicated
+// control-plane bypass tests, not re-proven in every fixture here.
+function satisfyProductionPrerequisites(projectId) {
+  const blueprint = createCreativeBlueprint({
+    projectId,
+    recommendationSetId: 'rec-set-fixture',
+    status: 'APPROVED',
+    concept: 'fixture concept',
+    corePromise: 'fixture promise',
+    targetDuration: 60,
+  });
+  const savedBlueprint = creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint).blueprint;
+  const gateResult = createPreProductionGateResult({
+    projectId,
+    blueprintId: savedBlueprint.id,
+    blueprintRevision: savedBlueprint.id,
+    blueprintUpdatedAt: savedBlueprint.updatedAt,
+    machineAssessment: 'PROCEED',
+    costStatus: 'UNKNOWN',
+  });
+  const savedGateResult = preProductionGateStore.addGateResult(projectId, gateResult).gateResult;
+  preProductionGateStore.recordHumanDecision(projectId, savedGateResult.id, { humanDecision: 'ACCEPT', humanDecidedBy: 'test-fixture', humanRationale: null });
+  creativeStore.updateStoryboard(projectId, { blueprintId: savedBlueprint.id });
+  return { blueprintId: savedBlueprint.id, gateResultId: savedGateResult.id };
+}
 
 const FORWARD_PATH = [
   'RESEARCH',
@@ -58,6 +102,7 @@ function setupReadyProject({ estimatedCost = 100, budgetLimit = 1000, targetStat
   gate.decideApproval(project, { approve: true });
   walkTo(project, targetState);
   projectStore.touch(project);
+  satisfyProductionPrerequisites(created.id);
 
   return { projectId: created.id, shotId: shot.shotId };
 }
@@ -171,6 +216,7 @@ test('8. generation blocked without approval (gate check independent of the stat
   const project = projectStore.getProject(created.id);
   project.status = 'KEYFRAME_GENERATION'; // no approval at all
   projectStore.touch(project);
+  satisfyProductionPrerequisites(created.id);
 
   const result = await generationService.requestGeneration({
     projectId: created.id,
@@ -191,6 +237,7 @@ test('9. generation blocked by budget (gate check independent of the state machi
   gate.decideApproval(project, { approve: true });
   project.status = 'KEYFRAME_GENERATION';
   projectStore.touch(project);
+  satisfyProductionPrerequisites(created.id);
 
   const result = await generationService.requestGeneration({
     projectId: created.id,
@@ -535,6 +582,7 @@ test('P0H2-3. two concurrent requestGeneration calls for the SAME project (diffe
   gate.decideApproval(project, { approve: true });
   walkTo(project, 'KEYFRAME_GENERATION');
   projectStore.touch(project);
+  satisfyProductionPrerequisites(created.id);
 
   const providers = { evolink: fakeProvider({ createGeneration: async () => ({ generationId: 'concurrent-task', status: 'SUBMITTED', progress: 0, reservedCost: 7, results: [], error: null }) }) };
 

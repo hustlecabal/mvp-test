@@ -16,6 +16,7 @@ const timelineStore = require('./timeline-store');
 const generationStore = require('./generation-store');
 const gate = require('./approval-gate');
 const recoveryService = require('./generation-recovery-service');
+const controlPlane = require('./control-plane-service');
 const stateMachine = require('../schemas/state-machine');
 const productionSchema = require('../schemas/production-schema');
 const evolinkProvider = require('../providers/evolink/evolink-provider');
@@ -59,6 +60,17 @@ function runSafetyChecks({ projectId, shotId }) {
         `Project is in state "${project.status}", which is not a generation state. ` +
         `Move it into one of: ${stateMachine.GENERATION_STATES.join(', ')} first.`,
     };
+  }
+
+  // INT-2.5-P0 — the strategic-layer enforcement point: no paid production
+  // without an APPROVED CreativeBlueprint and an ACCEPTED/OVERRIDDEN
+  // pre-production gate result (see control-plane-service.js). This check
+  // is deliberately here, inside the actual generation code path, not only
+  // at a state-machine transition or an MCP tool boundary — a caller that
+  // reaches requestGeneration() directly still hits it.
+  const prerequisites = controlPlane.validateProductionPrerequisites(projectId);
+  if (!prerequisites.ok) {
+    return { ok: false, reason: `Blocked by strategic-layer prerequisite (${prerequisites.code}): ${prerequisites.reason}` };
   }
 
   // gate.canProceed checks BOTH approval status and budget in one call —

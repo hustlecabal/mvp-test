@@ -18,6 +18,8 @@ const promptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-p
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-assets-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfgen-api-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
@@ -25,12 +27,15 @@ process.env.KEYFRAME_PROMPT_DATA_DIR = promptTempDir;
 process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = approvalTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
 process.env.ASSET_STORAGE_DIR = assetsTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 
 const app = require('../index');
 const generationStore = require('../services/generation-store');
 const creativeStore = require('../services/creative-store');
 const keyframeStore = require('../services/keyframe-store');
 const kfp = require('../services/keyframe-prompt-service');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 let server;
 let baseUrl;
@@ -56,6 +61,7 @@ function postJson(url, body) {
 }
 
 function seedShotKeyframeAndPackage(project) {
+  satisfyProductionPrerequisites(project.id);
   const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
   const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId });
   const storyboard = creativeStore.getStoryboard(project.id);

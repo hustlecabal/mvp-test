@@ -41,6 +41,10 @@ process.env.ASSET_STORAGE_DIR = assetsTempDir;
 process.env.KEYFRAME_HANDOFF_DATA_DIR = handoffTempDir;
 process.env.VIDEO_PROMPT_DATA_DIR = videoPromptTempDir;
 process.env.VIDEO_GENERATION_APPROVAL_DATA_DIR = videoApprovalTempDir;
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-blueprints-'));
+const gateDataTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-oq-gates-'));
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateDataTempDir;
 
 const projectStore = require('../services/project-store');
 const gate = require('../services/approval-gate');
@@ -52,6 +56,7 @@ const handoffService = require('../services/keyframe-handoff-service');
 const keyframeGenerationService = require('../services/keyframe-generation-service');
 const generationStore = require('../services/generation-store');
 const oq = require('../services/operator-queue-service');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]);
 
@@ -243,7 +248,15 @@ test('9. an INGESTED handoff whose asset is unreviewed is NEEDS_ASSET_REVIEW', (
 });
 
 test('an unreviewed asset from the generation path (no handoffId) is IMAGE_RETURNED, not NEEDS_ASSET_REVIEW', async () => {
-  const { project, keyframe } = buildKeyframeFixture();
+  const project = newProject();
+  // INT-2.5-P0 — must be linked BEFORE the scene/shot/keyframe below (each
+  // of which bumps the storyboard version), or the keyframe's own captured
+  // sourceShotVersion would start out spuriously STALE.
+  satisfyProductionPrerequisites(project.id);
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1', order: 1 });
+  const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, purpose: 'A shot', order: 1 });
+  const storyboard = creativeStore.getStoryboard(project.id);
+  const keyframe = keyframeStore.createKeyframe(project.id, { shotId: shot.shotId, sceneId: scene.sceneId, frameType: 'DETAIL_FRAME', sourceShotVersion: storyboard.version, order: 1 });
   const pkg = kfp.buildKeyframePromptPackage(project.id, keyframe.keyframeId);
   approve(project.id, keyframe.keyframeId, pkg);
   await keyframeGenerationService.generateKeyframe(project.id, keyframe.keyframeId);

@@ -47,6 +47,7 @@ const generationStore = require('./generation-store');
 const generationModelRegistry = require('./generation-model-registry');
 const gate = require('./approval-gate');
 const recoveryService = require('./generation-recovery-service');
+const controlPlane = require('./control-plane-service');
 const assetArchiveService = require('./asset-archive-service');
 const evolinkProvider = require('../providers/evolink/evolink-provider');
 const evolinkReferenceResolver = require('./evolink-reference-resolver');
@@ -165,6 +166,18 @@ function runSafetyChecks(projectId, keyframeId, { providers = PROVIDERS } = {}) 
 
   const keyframe = keyframeStore.getKeyframe(projectId, keyframeId);
   if (!keyframe) return { ok: false, code: 'PROJECT_NOT_FOUND', reason: `No keyframe found with id "${keyframeId}" in project "${projectId}".` };
+
+  // INT-2.5-P0 — the strategic-layer enforcement point: no paid production
+  // without an APPROVED CreativeBlueprint and an ACCEPTED/OVERRIDDEN
+  // pre-production gate result (see control-plane-service.js). This file
+  // never checks the project-level state machine at all (approval here
+  // comes from VideoGenerationApproval, not project.status), so without
+  // this explicit check a caller could reach real EvoLink video generation
+  // having skipped the Blueprint/Gate layer entirely.
+  const prerequisites = controlPlane.validateProductionPrerequisites(projectId);
+  if (!prerequisites.ok) {
+    return { ok: false, code: 'STRATEGIC_PREREQUISITE_BLOCKED', reason: `Blocked by strategic-layer prerequisite (${prerequisites.code}): ${prerequisites.reason}` };
+  }
 
   // 2. shot exists
   const storyboard = creativeStore.getStoryboard(projectId);

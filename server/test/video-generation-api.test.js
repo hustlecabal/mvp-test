@@ -27,6 +27,8 @@ const keyframePromptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-
 const videoPromptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-api-video-packages-'));
 const videoApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-api-video-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-api-jobs-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-api-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-api-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
@@ -34,6 +36,8 @@ process.env.KEYFRAME_PROMPT_DATA_DIR = keyframePromptTempDir;
 process.env.VIDEO_PROMPT_DATA_DIR = videoPromptTempDir;
 process.env.VIDEO_GENERATION_APPROVAL_DATA_DIR = videoApprovalTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 delete process.env.EVOLINK_API_KEY;
 
 const app = require('../index');
@@ -44,6 +48,7 @@ const keyframePromptService = require('../services/keyframe-prompt-service');
 const timelineStore = require('../services/timeline-store');
 const videoPromptService = require('../services/video-prompt-service');
 const generationStore = require('../services/generation-store');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const GOOD_PROVIDER = 'evolink';
 const GOOD_MODEL = 'seedance-2.0-mini-image-to-video';
@@ -68,6 +73,7 @@ function postJson(url, body) {
 
 function buildFixture() {
   const project = projectStore.createProject({ title: 'video generation API test', topic: 'x' });
+  satisfyProductionPrerequisites(project.id);
   const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
   const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId });
   const storyboard = creativeStore.getStoryboard(project.id);

@@ -19,6 +19,8 @@ const promptTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-pack
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-assets-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-kfexec-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.KEYFRAME_DATA_DIR = keyframeTempDir;
@@ -26,6 +28,8 @@ process.env.KEYFRAME_PROMPT_DATA_DIR = promptTempDir;
 process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = approvalTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
 process.env.ASSET_STORAGE_DIR = assetsTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 
 const projectStore = require('../services/project-store');
 const gate = require('../services/approval-gate');
@@ -37,6 +41,7 @@ const generationStore = require('../services/generation-store');
 const timelineStore = require('../services/timeline-store');
 const bridge = require('../services/keyframe-execution-bridge-service');
 const fakeImageProvider = require('../providers/fake-image/fake-image-provider');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const FAST_POLL = { intervalMs: 0, sleepImpl: async () => {} };
 
@@ -46,6 +51,7 @@ function newProject(title = 'kfexec bridge test') {
 
 function buildFixture() {
   const project = newProject();
+  satisfyProductionPrerequisites(project.id);
   creativeStore.updateVisualBible(project.id, { characters: [{ characterId: 'char-1', name: 'Mira' }] });
   const scene = creativeStore.addStoryboardScene(project.id, { title: 'S1' });
   const shot = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, characterReferences: ['char-1'] });

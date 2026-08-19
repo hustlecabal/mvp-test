@@ -107,8 +107,17 @@ test('a real MCP client can discover all 76 tools', async () => {
   // the pre-existing REST route POST /projects/:id/budget; previously the
   // primary agent-facing interface (MCP) had no way to establish a budget
   // ceiling at all.
+  // INT-2.5-P0 added 10 tools: 6 CreativeBlueprint tools
+  // (build_creative_blueprint_draft, edit_creative_blueprint_draft,
+  // submit_creative_blueprint_for_review, review_creative_blueprint,
+  // get_creative_blueprint, list_creative_blueprints) and 4
+  // PreProductionGate tools (evaluate_pre_production_gate,
+  // decide_pre_production_gate_result, get_pre_production_gate_result,
+  // list_pre_production_gate_results) — the operator surface closing the
+  // Recommendation -> Blueprint -> Human Approval -> Gate bypass this
+  // stage's control-plane-service.js now enforces server-side.
   // Everything else is unchanged.
-  assert.equal(names.length, 92);
+  assert.equal(names.length, 102);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_video_unknown_cost',
@@ -119,6 +128,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'approve_keyframe_generation',
     'approve_video_generation',
     'archive_asset',
+    'build_creative_blueprint_draft',
     'build_keyframe_prompt_package',
     'build_video_prompt_package',
     'can_generate_video',
@@ -130,7 +140,10 @@ test('a real MCP client can discover all 76 tools', async () => {
     'create_shot',
     'create_storyboard_scene',
     'create_storyboard_shot',
+    'decide_pre_production_gate_result',
+    'edit_creative_blueprint_draft',
     'estimate_generation',
+    'evaluate_pre_production_gate',
     'find_generation_models',
     'generate_keyframe',
     'generate_video',
@@ -139,6 +152,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_asset_download',
     'get_canonical_keyframe_asset',
     'get_canonical_reference_asset',
+    'get_creative_blueprint',
     'get_creative_brief',
     'get_creative_skill',
     'get_generation_status',
@@ -153,6 +167,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_next_operator_action',
     'get_operator_queue',
     'get_operator_queue_summary',
+    'get_pre_production_gate_result',
     'get_project',
     'get_project_budget',
     'get_project_status',
@@ -165,6 +180,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_video_prompt_package',
     'get_visual_bible',
     'list_assets',
+    'list_creative_blueprints',
     'list_creative_skills',
     'list_generation_history',
     'list_generation_models',
@@ -173,6 +189,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_keyframe_handoffs',
     'list_keyframe_prompt_packages',
     'list_keyframes',
+    'list_pre_production_gate_results',
     'list_projects',
     'list_reference_library',
     'list_scenes',
@@ -190,10 +207,12 @@ test('a real MCP client can discover all 76 tools', async () => {
     'request_generation_approval',
     'request_keyframe_generation_approval',
     'request_video_generation_approval',
+    'review_creative_blueprint',
     'run_fixture_keyframe_execution',
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
     'set_project_budget',
+    'submit_creative_blueprint_for_review',
     'transition_project',
     'update_creative_brief',
     'update_keyframe',

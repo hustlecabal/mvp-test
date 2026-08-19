@@ -37,11 +37,19 @@
 // startTime, motionRequirements, costPriority, qualityPriority, and
 // fallbackStrategy are NEVER derived from StoryboardShot's own free-text
 // fields (visualDescription/subject/action/soundNotes/etc.), no matter how
-// suggestive the wording. visualTreatment and narrationSegment are set
-// ONLY from the two explicit, caller-supplied context maps below
-// (context.treatments / context.narrationSegments) — never from anything
+// suggestive the wording. narrationSegment is set ONLY from the explicit,
+// caller-supplied context.narrationSegments map — never from anything
 // else. Everything else in that list simply stays at createVisualBeat's
 // own null/[]/'MEDIUM' defaults, which this file never overrides.
+//
+// INT-2.5-P0 refinement: visualTreatment is set from EITHER of two
+// EXPLICIT, STRUCTURED sources — never free text, never inferred — with a
+// documented precedence: the caller-supplied context.treatments[shotId]
+// override wins when present; otherwise the shot's own already-validated
+// StoryboardShot.visualTreatment (P0-4A) is used; otherwise null. Likewise
+// recommendationIds is copied through verbatim from the shot's own
+// already-validated StoryboardShot.recommendationIds[] — a pure
+// provenance carry-through, never a new inference.
 
 const { VISUAL_TREATMENTS, createVisualBeat, createIdentityRequirements, createNarrationSegment } = require('../schemas/visual-beat-schema');
 const { createBeatGraph } = require('../schemas/beat-graph-schema');
@@ -215,7 +223,22 @@ function deriveBeatGraph(storyboard, context = {}) {
       continue;
     }
 
-    // --- explicit treatment override only (Part 4/5) — never inferred ---
+    // --- explicit treatment override, OR the shot's own validated
+    // visualTreatment (Part 4/5, refined INT-2.5-P0) — never inferred from
+    // free text either way.
+    //
+    // PRECEDENCE (deliberate, documented, tested): context.treatments[shotId]
+    // wins over shot.visualTreatment wins over null. context.treatments is
+    // the CALLER's directly-supplied override for THIS derivation call
+    // (may reflect a decision not yet saved back to the Storyboard, or a
+    // deliberate one-off correction); shot.visualTreatment is the
+    // Storyboard's own already-persisted, already-validated (P0-4A —
+    // creative-store.js rejects an unrecognized value at write time) field.
+    // Both are real, human-authored decisions; neither is ever invented or
+    // synthesized here — a caller supplying context.treatments always
+    // means exactly what it always meant, and a shot with no override and
+    // no visualTreatment of its own stays null exactly as before this
+    // patch. ---
     let visualTreatment = null;
     if (Object.prototype.hasOwnProperty.call(treatments, shot.shotId)) {
       const t = treatments[shot.shotId];
@@ -225,6 +248,8 @@ function deriveBeatGraph(storyboard, context = {}) {
         continue;
       }
       visualTreatment = t;
+    } else if (typeof shot.visualTreatment === 'string' && VISUAL_TREATMENTS.includes(shot.visualTreatment)) {
+      visualTreatment = shot.visualTreatment;
     }
 
     // --- explicit narration override only (Part 4/5) — never inferred ---
@@ -257,6 +282,12 @@ function deriveBeatGraph(storyboard, context = {}) {
       narrativePurpose,
       visualIntent,
       visualTreatment, // null unless explicitly supplied — never inferred
+      // INT-2.5-P0 — copied through verbatim from the source shot's own
+      // already-validated (P0-4A) recommendationIds[]. Never re-resolved,
+      // never re-validated here (that already happened at write time via
+      // creative-store.js) — this is a pure provenance carry-through, not
+      // a new validation layer.
+      recommendationIds: Array.isArray(shot.recommendationIds) ? shot.recommendationIds : [],
       narrationSegment, // null unless explicitly supplied — never inferred
       camera: shot.camera !== undefined ? shot.camera : null,
       lighting: shot.lighting !== undefined ? shot.lighting : null,

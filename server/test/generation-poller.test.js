@@ -11,8 +11,14 @@ const path = require('path');
 
 const projectTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-poller-projects-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-poller-jobs-'));
+const creativeTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-poller-creative-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-poller-blueprints-'));
+const gateDataTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-poller-gates-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
+process.env.CREATIVE_DATA_DIR = creativeTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateDataTempDir;
 
 const projectStore = require('../services/project-store');
 const timelineStore = require('../services/timeline-store');
@@ -21,6 +27,7 @@ const gate = require('../services/approval-gate');
 const stateMachine = require('../schemas/state-machine');
 const generationService = require('../services/generation-service');
 const poller = require('../services/generation-poller');
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const FORWARD_PATH = [
   'RESEARCH', 'CREATIVE_REVIEW', 'SCRIPTING', 'SCRIPT_REVIEW', 'VISUAL_DEVELOPMENT',
@@ -46,6 +53,7 @@ async function submitReadyJob(providerOverrides = {}) {
   gate.decideApproval(project, { approve: true });
   walkTo(project, 'KEYFRAME_GENERATION');
   projectStore.touch(project);
+  satisfyProductionPrerequisites(created.id);
 
   const providers = {
     evolink: {

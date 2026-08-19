@@ -86,7 +86,11 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // P0 Hardening (finding J) added 1 more (set_project_budget) — the
   // primary agent-facing interface previously had no way to establish a
   // spend ceiling at all.
-  assert.equal(names.length, 92);
+  // INT-2.5-P0 added 10 more: 6 CreativeBlueprint tools
+  // (build/edit/submit/review/get/list_creative_blueprint(s)) and 4
+  // PreProductionGate tools (evaluate/decide/get/list_pre_production_gate_result(s))
+  // — the Blueprint/Gate operator surface this stage closes the bypass on.
+  assert.equal(names.length, 102);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

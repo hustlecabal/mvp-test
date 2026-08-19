@@ -23,6 +23,8 @@ const videoApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-m
 const approvalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-mcp-approvals-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-mcp-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-mcp-assets-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-mcp-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vg-mcp-gates-'));
 const envVars = {
   PROJECT_DATA_DIR: projectTempDir,
   CREATIVE_DATA_DIR: creativeTempDir,
@@ -33,12 +35,21 @@ const envVars = {
   KEYFRAME_GENERATION_APPROVAL_DATA_DIR: approvalTempDir,
   GENERATION_JOBS_DATA_DIR: jobsTempDir,
   ASSET_STORAGE_DIR: assetsTempDir,
+  CREATIVE_BLUEPRINT_DATA_DIR: blueprintTempDir,
+  PRE_PRODUCTION_GATE_DATA_DIR: gateTempDir,
 };
 for (const [key, value] of Object.entries(envVars)) process.env[key] = value;
 
 const projectStore = require('../services/project-store');
 const generationStore = require('../services/generation-store');
 const timelineStore = require('../services/timeline-store');
+// INT-2.5-P0 — the spawned MCP server subprocess (env vars shared above,
+// same on-disk data dirs) now enforces validateProductionPrerequisites()
+// before generate_keyframe/generate_video. Satisfied here via the shared
+// direct-store fixture helper, exactly like every other consumer of these
+// two services in this test suite — never through a second, parallel
+// approval mechanism.
+const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
@@ -73,6 +84,7 @@ function createProject() {
 // asset AND a built video prompt package, through existing MCP tools —
 // mirrors video-prompt-mcp.test.js's seedApprovedCanonicalKeyframe.
 async function seedVideoReadyKeyframe(project) {
+  satisfyProductionPrerequisites(project.id);
   const scene = textOf(await call('create_storyboard_scene', { projectId: project.id, title: 'S1' }));
   const shot = textOf(await call('create_storyboard_shot', { projectId: project.id, sceneId: scene.sceneId }));
   const keyframe = textOf(await call('create_keyframe', { projectId: project.id, shotId: shot.shotId, sceneId: scene.sceneId, frameType: 'DETAIL_FRAME' }));

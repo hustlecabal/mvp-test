@@ -26,6 +26,8 @@ const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-jobs-'));
 const assetsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-assets-'));
 const keyframeApprovalTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-kf-approvals-'));
 const handoffTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-handoffs-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-blueprints-'));
+const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-vgs-gates-'));
 
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
@@ -37,6 +39,8 @@ process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
 process.env.ASSET_STORAGE_DIR = assetsTempDir;
 process.env.KEYFRAME_GENERATION_APPROVAL_DATA_DIR = keyframeApprovalTempDir;
 process.env.KEYFRAME_HANDOFF_DATA_DIR = handoffTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
+process.env.PRE_PRODUCTION_GATE_DATA_DIR = gateTempDir;
 
 const projectStore = require('../services/project-store');
 const creativeStore = require('../services/creative-store');
@@ -49,6 +53,10 @@ const generationStore = require('../services/generation-store');
 const vgs = require('../services/video-generation-service');
 const evolinkProvider = require('../providers/evolink/evolink-provider');
 const fakeVideoProvider = require('../providers/fake-video/fake-video-provider');
+const creativeBlueprintStore = require('../services/creative-blueprint-store');
+const preProductionGateStore = require('../services/pre-production-gate-store');
+const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
+const { createPreProductionGateResult } = require('../schemas/pre-production-gate-schema');
 
 const GOOD_PROVIDER = 'evolink';
 const GOOD_MODEL = 'seedance-2.0-mini-image-to-video';
@@ -78,10 +86,49 @@ function newProject(title = 'video generation service test') {
   return projectStore.createProject({ title, topic: 'x' });
 }
 
+// INT-2.5-P0 — satisfies control-plane-service.js's validateProductionPrerequisites()
+// for a project: a real, persisted APPROVED CreativeBlueprint, a real ACCEPTed
+// PreProductionGateResult referencing it, and a Storyboard.blueprintId link — the
+// exact chain the strategic-layer enforcement now requires before any generation
+// safety check runs. Built directly via the schema factories + stores (the same
+// "real record, direct construction" convention already used by
+// p0-4a-blueprint-storyboard-contract.test.js's setupBlueprintWithRecommendation)
+// — the review/evaluate SERVICE CHAIN itself is exercised by the dedicated
+// control-plane bypass tests, not re-proven in every fixture here.
+function satisfyProductionPrerequisites(projectId) {
+  const blueprint = createCreativeBlueprint({
+    projectId,
+    recommendationSetId: 'rec-set-fixture',
+    status: 'APPROVED',
+    concept: 'fixture concept',
+    corePromise: 'fixture promise',
+    targetDuration: 60,
+  });
+  const savedBlueprint = creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint).blueprint;
+  const gateResult = createPreProductionGateResult({
+    projectId,
+    blueprintId: savedBlueprint.id,
+    blueprintRevision: savedBlueprint.id,
+    blueprintUpdatedAt: savedBlueprint.updatedAt,
+    machineAssessment: 'PROCEED',
+    costStatus: 'UNKNOWN',
+  });
+  const savedGateResult = preProductionGateStore.addGateResult(projectId, gateResult).gateResult;
+  preProductionGateStore.recordHumanDecision(projectId, savedGateResult.id, { humanDecision: 'ACCEPT', humanDecidedBy: 'test-fixture', humanRationale: null });
+  creativeStore.updateStoryboard(projectId, { blueprintId: savedBlueprint.id });
+  return { blueprintId: savedBlueprint.id, gateResultId: savedGateResult.id };
+}
+
 // Mirrors video-prompt-service.test.js's buildFixture: 1 shot, 1 keyframe
 // with an image KeyframePromptPackage, 1 APPROVED canonical asset.
 function buildFixture({ approveAsset = true, selectCanonical = true } = {}) {
   const project = newProject();
+  // Link the Blueprint/Gate BEFORE the scenes/shots write below bumps the
+  // storyboard version — same ordering rationale as keyframe-generation-
+  // service.test.js's buildFixture: every downstream sourceShotVersion
+  // snapshot (keyframe, video prompt package) must be taken AFTER this
+  // link, or it starts out spuriously STALE.
+  satisfyProductionPrerequisites(project.id);
   creativeStore.updateStoryboard(project.id, { scenes: [{ sceneId: 'scene-1', title: 'Scene 1' }], shots: [{ shotId: 'shot-1', sceneId: 'scene-1' }] }, {});
   const keyframe = keyframeStore.createKeyframe(project.id, { sceneId: 'scene-1', shotId: 'shot-1', subject: 'A', frameType: 'CHARACTER_REFERENCE' });
   keyframePromptService.buildKeyframePromptPackage(project.id, keyframe.keyframeId, {});
