@@ -103,6 +103,26 @@ const state = {
     referenceLibrary: null, // { projectId, entities: [...] }
     expandedReferenceEntity: null, // `${entityType}:${entityId}` currently expanded, or null
     reviewFormAssetId: null, // which generated asset's score-entry form is open, or null
+
+    // P0-ORCH-FRONTEND — Blueprint & Production. Read/write, but every
+    // write (approve/reject a Blueprint, accept/override a gate result,
+    // link a Blueprint to the Storyboard, START PRODUCTION) is an explicit
+    // human button click. The backend (control-plane-service.js /
+    // production-orchestrator-service.js) remains the sole authority on
+    // whether production may start — this panel only displays what the
+    // backend already decided and forwards explicit human actions to the
+    // existing REST contract (server/index.js's own creative-blueprint /
+    // pre-production-gate / production routes); it never computes
+    // approval/readiness/eligibility itself.
+    blueprintProduction: {
+      loadedForProjectId: null,
+      blueprints: null, // GET /projects/:id/creative-blueprints
+      selectedBlueprintId: null,
+      selectedBlueprint: null, // GET /projects/:id/creative-blueprints/:blueprintId
+      gateResults: null, // GET /projects/:id/pre-production-gate?blueprintId=
+      productionJobs: null, // GET /projects/:id/production
+      activeProductionJob: null, // the job currently displayed/polled, or the most recent one
+    },
   },
 
   // Stage 14 — the Operator Queue. A pure control surface: every item's
@@ -142,6 +162,542 @@ async function fetchJson(url, options = {}) {
   }
   return res.json();
 }
+
+// --- P0-ORCH-FRONTEND: Blueprint & Production -------------------------------
+//
+// Converts CREATIVE BLUEPRINT -> APPROVAL -> START PRODUCTION into one
+// creator-facing flow. This section is a thin display/action layer over
+// the existing REST contract (server/index.js's creative-blueprint /
+// pre-production-gate / production routes, all thin wrappers over
+// unmodified services) — it never decides whether a Blueprint is approved,
+// whether a gate passed, or whether production may start; the backend
+// (control-plane-service.js) remains the sole authority on all of that.
+// The creator never sees a blueprintId/productionJobId/renderer/provider
+// name — those flow through this code, never displayed as the primary UI.
+
+const PRODUCTION_STAGE_LABELS = {
+  REQUESTED: 'Preparing production',
+  DERIVING_BEATS: 'Preparing storyboard',
+  RESOLVING_MATERIALS: 'Preparing visuals',
+  EXECUTING_MATERIALS: 'Preparing visuals',
+  RENDERING: 'Rendering scenes',
+  GENERATING_NARRATION: 'Recording narration',
+  COMPILING_TIMELINE: 'Assembling timeline',
+  ASSEMBLING: 'Rendering final video',
+  QC: 'Quality checking',
+  COMPLETE: 'Complete',
+  FAILED: 'Needs attention',
+  ESCALATED: 'Needs your input',
+};
+
+// Part 10 — backend diagnostic codes mapped to creator-safe language.
+// Never a stack trace, provider name, or filesystem path. The raw code is
+// still shown, collapsed, for debugging — see renderProductionJobStatus's
+// own <details> block below.
+const PRODUCTION_ERROR_MESSAGES = {
+  NO_BLUEPRINT_LINKED: 'A creative direction must be approved and linked to this project before production can start.',
+  BLUEPRINT_NOT_APPROVED: 'Approve the creative direction before starting production.',
+  BLUEPRINT_NOT_FOUND: 'The linked creative direction could not be found.',
+  NO_GATE_RESULT: 'Run the pre-production check before starting production.',
+  GATE_RESULT_STALE: 'The creative direction changed since the last pre-production check — run the check again.',
+  GATE_NOT_ACCEPTED: 'Accept the pre-production check results before starting production.',
+  NO_STORYBOARD: 'This project has no storyboard yet.',
+  PROJECT_NOT_FOUND: 'Project not found.',
+  NO_APPROVED_GENERATION_EXISTS: 'Production needs attention because a required visual has not been generated and approved yet.',
+  GENERATION_OUTCOME_UNKNOWN: 'Production needs attention because a provider result could not be safely confirmed.',
+};
+
+function friendlyProductionMessage(code, fallback) {
+  return PRODUCTION_ERROR_MESSAGES[code] || fallback || 'Something went wrong. See details below.';
+}
+
+function activeProductionJobStorageKey(projectId) {
+  return `evolink:activeProductionJob:${projectId}`;
+}
+
+async function loadBlueprintProduction() {
+  const container = document.getElementById('creative-editor');
+  const projectId = state.selectedProjectId;
+  if (!projectId) return;
+  showLoading(container);
+  try {
+    const [blueprints, productionJobs] = await Promise.all([
+      fetchJson(`/projects/${projectId}/creative-blueprints`),
+      fetchJson(`/projects/${projectId}/production`),
+    ]);
+    state.creative.blueprintProduction.loadedForProjectId = projectId;
+    state.creative.blueprintProduction.blueprints = blueprints;
+    state.creative.blueprintProduction.productionJobs = productionJobs;
+
+    // Part 9 — refresh/re-entry preserves the active ProductionJob: prefer
+    // whatever is already non-terminal server-side, falling back to the
+    // last id this browser remembered (in case the list above raced a
+    // just-created job), never inventing a new one.
+    const nonTerminal = productionJobs.find((j) => !['COMPLETE', 'FAILED', 'ESCALATED'].includes(j.status));
+    const rememberedId = localStorage.getItem(activeProductionJobStorageKey(projectId));
+    const activeId = nonTerminal ? nonTerminal.productionJobId : rememberedId && productionJobs.some((j) => j.productionJobId === rememberedId) ? rememberedId : productionJobs[0] ? productionJobs[0].productionJobId : null;
+
+    if (activeId) {
+      await refreshProductionJobStatus(activeId);
+      if (state.creative.blueprintProduction.activeProductionJob && !['COMPLETE', 'FAILED', 'ESCALATED'].includes(state.creative.blueprintProduction.activeProductionJob.status)) {
+        pollProductionJob(activeId);
+      }
+    } else {
+      state.creative.blueprintProduction.activeProductionJob = null;
+    }
+
+    // Auto-select the most recently updated Blueprint so the common case
+    // ("I already approved one, show me production") needs no extra click.
+    if (blueprints.length > 0 && !state.creative.blueprintProduction.selectedBlueprintId) {
+      state.creative.blueprintProduction.selectedBlueprintId = blueprints[0].id;
+    }
+    if (state.creative.blueprintProduction.selectedBlueprintId) {
+      await loadSelectedBlueprintDetail(projectId, state.creative.blueprintProduction.selectedBlueprintId);
+    }
+
+    renderBlueprintProductionView();
+  } catch {
+    showError(container, () => loadBlueprintProduction());
+  }
+}
+
+async function loadSelectedBlueprintDetail(projectId, blueprintId) {
+  try {
+    const [blueprint, gateResults] = await Promise.all([
+      fetchJson(`/projects/${projectId}/creative-blueprints/${blueprintId}`),
+      fetchJson(`/projects/${projectId}/pre-production-gate?blueprintId=${encodeURIComponent(blueprintId)}`),
+    ]);
+    state.creative.blueprintProduction.selectedBlueprint = blueprint;
+    // Newest gate result first, same convention operator-queue/history
+    // panels already use elsewhere in this file.
+    state.creative.blueprintProduction.gateResults = gateResults.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  } catch {
+    state.creative.blueprintProduction.selectedBlueprint = null;
+    state.creative.blueprintProduction.gateResults = null;
+  }
+}
+
+async function refreshProductionJobStatus(productionJobId) {
+  // Part 9 — a transient network failure (a dropped connection mid-poll,
+  // the same real risk a multi-minute production run creates for any
+  // client) must never be confused with "this job no longer exists."
+  // Only an explicit 404 clears the remembered job; any other failure
+  // leaves the last known state untouched so pollProductionJob's tick
+  // keeps retrying instead of silently going dead.
+  let res;
+  try {
+    res = await fetch(`/production-jobs/${productionJobId}`);
+  } catch {
+    return;
+  }
+  if (res.status === 404) {
+    state.creative.blueprintProduction.activeProductionJob = null;
+    return;
+  }
+  if (!res.ok) return;
+  const job = await res.json();
+  state.creative.blueprintProduction.activeProductionJob = job;
+  localStorage.setItem(activeProductionJobStorageKey(job.projectId), job.productionJobId);
+}
+
+// Part 8 — status polling. Stops itself the moment the job reaches a
+// terminal status; never polls a second job in parallel for the same
+// panel (only one activeProductionJob is ever tracked at a time).
+function pollProductionJob(productionJobId) {
+  const tick = async () => {
+    if (state.creative.activeArtifact !== 'production' || state.selectedProjectId !== state.creative.blueprintProduction.loadedForProjectId) return; // navigated away
+    await refreshProductionJobStatus(productionJobId);
+    const job = state.creative.blueprintProduction.activeProductionJob;
+    renderBlueprintProductionView();
+    if (job && !['COMPLETE', 'FAILED', 'ESCALATED'].includes(job.status)) {
+      setTimeout(tick, 2500);
+    }
+  };
+  setTimeout(tick, 2500);
+}
+
+function renderBlueprintProductionView() {
+  const container = document.getElementById('creative-editor');
+  container.innerHTML = '';
+  const bp = state.creative.blueprintProduction;
+
+  const intro = document.createElement('p');
+  intro.className = 'field-hint';
+  intro.textContent = 'Approve a creative direction, then start production. Production runs the full pipeline automatically — no manual steps required after this.';
+  container.appendChild(intro);
+
+  // --- Blueprint list ------------------------------------------------------
+  const listSection = document.createElement('section');
+  listSection.className = 'subsection';
+  const listTitle = document.createElement('h3');
+  listTitle.textContent = 'Creative Direction';
+  listSection.appendChild(listTitle);
+
+  if (!bp.blueprints || bp.blueprints.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'state-box';
+    empty.textContent = 'No creative direction has been proposed for this project yet.';
+    listSection.appendChild(empty);
+  } else {
+    const list = document.createElement('div');
+    list.className = 'card-list';
+    for (const b of bp.blueprints) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'card-item' + (b.id === bp.selectedBlueprintId ? ' selected' : '');
+      const title = document.createElement('div');
+      title.className = 'card-item-title';
+      title.textContent = b.title || b.concept || 'Untitled creative direction';
+      const status = document.createElement('div');
+      status.className = 'card-item-sub';
+      status.textContent = b.status;
+      card.appendChild(title);
+      card.appendChild(status);
+      card.addEventListener('click', async () => {
+        bp.selectedBlueprintId = b.id;
+        await loadSelectedBlueprintDetail(state.selectedProjectId, b.id);
+        renderBlueprintProductionView();
+      });
+      list.appendChild(card);
+    }
+    listSection.appendChild(list);
+  }
+  container.appendChild(listSection);
+
+  if (bp.selectedBlueprint) {
+    container.appendChild(renderBlueprintDetailSection(bp.selectedBlueprint));
+  }
+
+  // --- Production status -----------------------------------------------
+  const prodSection = document.createElement('section');
+  prodSection.className = 'subsection';
+  const prodTitle = document.createElement('h3');
+  prodTitle.textContent = 'Production';
+  prodSection.appendChild(prodTitle);
+  prodSection.appendChild(renderProductionSection(bp));
+  container.appendChild(prodSection);
+}
+
+function renderBlueprintDetailSection(blueprint) {
+  const section = document.createElement('section');
+  section.className = 'subsection';
+  const title = document.createElement('h3');
+  title.textContent = 'Review';
+  section.appendChild(title);
+
+  const concept = document.createElement('p');
+  concept.textContent = blueprint.corePromise || blueprint.concept || 'No summary provided.';
+  section.appendChild(concept);
+
+  const statusLine = document.createElement('div');
+  statusLine.className = 'field-hint';
+  statusLine.textContent = `Status: ${blueprint.status}`;
+  section.appendChild(statusLine);
+
+  if (Array.isArray(blueprint.diagnostics) && blueprint.diagnostics.length > 0) {
+    const diagBox = document.createElement('div');
+    diagBox.className = 'state-box';
+    for (const d of blueprint.diagnostics) {
+      const line = document.createElement('div');
+      line.textContent = d.message;
+      diagBox.appendChild(line);
+    }
+    section.appendChild(diagBox);
+  }
+
+  if (blueprint.status === 'DRAFT' || blueprint.status === 'PENDING_REVIEW') {
+    const actions = document.createElement('div');
+    actions.className = 'button-row';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.type = 'button';
+    approveBtn.className = 'primary-btn';
+    approveBtn.textContent = 'APPROVE';
+    approveBtn.addEventListener('click', () => decideBlueprintReview(blueprint, 'APPROVE'));
+    actions.appendChild(approveBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.textContent = 'REJECT';
+    rejectBtn.addEventListener('click', () => decideBlueprintReview(blueprint, 'REJECT'));
+    actions.appendChild(rejectBtn);
+
+    section.appendChild(actions);
+  } else if (blueprint.status === 'APPROVED') {
+    const approved = document.createElement('div');
+    approved.className = 'state-box success';
+    approved.textContent = 'Approved.';
+    section.appendChild(approved);
+  }
+
+  return section;
+}
+
+async function decideBlueprintReview(blueprint, decision) {
+  const projectId = state.selectedProjectId;
+  try {
+    await fetchJson(`/projects/${projectId}/creative-blueprints/${blueprint.id}/review`, {
+      method: 'POST',
+      body: { decision, reviewedBy: 'creator' },
+    });
+    await loadSelectedBlueprintDetail(projectId, blueprint.id);
+    renderBlueprintProductionView();
+  } catch (error) {
+    window.alert(error && error.message ? error.message : 'Could not record that decision.');
+  }
+}
+
+function renderProductionSection(bp) {
+  const wrap = document.createElement('div');
+  const projectId = state.selectedProjectId;
+  const storyboard = state.creative.storyboard;
+  const blueprint = bp.selectedBlueprint;
+  const job = bp.activeProductionJob;
+
+  // Part 9 — never render a Start Production control while one is already
+  // running; the backend is idempotent either way, but there is no reason
+  // to invite a redundant request.
+  const jobInFlight = job && !['COMPLETE', 'FAILED', 'ESCALATED'].includes(job.status);
+
+  if (!jobInFlight) {
+    if (!blueprint || blueprint.status !== 'APPROVED') {
+      const hint = document.createElement('div');
+      hint.className = 'state-box';
+      hint.textContent = 'Approve a creative direction above before starting production.';
+      wrap.appendChild(hint);
+    } else if (!storyboard || storyboard.blueprintId !== blueprint.id) {
+      const linkBtn = document.createElement('button');
+      linkBtn.type = 'button';
+      linkBtn.className = 'primary-btn';
+      linkBtn.textContent = 'USE THIS APPROVED CREATIVE DIRECTION';
+      linkBtn.addEventListener('click', () => linkBlueprintToStoryboard(blueprint.id));
+      wrap.appendChild(linkBtn);
+      const hint = document.createElement('p');
+      hint.className = 'field-hint';
+      hint.textContent = 'This links the approved creative direction to the current storyboard so production can use it.';
+      wrap.appendChild(hint);
+    } else {
+      // Part 5/9 — startProduction() requires BOTH an APPROVED Blueprint AND
+      // an ACCEPTED/OVERRIDDEN pre-production gate result (control-plane-
+      // service.validateProductionPrerequisites). The latest gate result for
+      // THIS blueprint is whatever loadSelectedBlueprintDetail already fetched
+      // (server-filtered by blueprintId, newest first) — no new backend
+      // concept, just surfacing the existing prerequisite as a creator step.
+      const latestGate = (bp.gateResults || [])[0] || null;
+      const gateAccepted = latestGate && ['ACCEPT', 'OVERRIDE'].includes(latestGate.humanDecision);
+      if (!gateAccepted) {
+        wrap.appendChild(renderGateSection(blueprint, latestGate));
+      } else {
+        const startBtn = document.createElement('button');
+        startBtn.type = 'button';
+        startBtn.className = 'primary-btn';
+        startBtn.textContent = 'START PRODUCTION';
+        startBtn.addEventListener('click', () => startProduction(startBtn));
+        wrap.appendChild(startBtn);
+      }
+    }
+  }
+
+  if (job) {
+    wrap.appendChild(renderProductionJobStatus(job));
+  } else {
+    const none = document.createElement('div');
+    none.className = 'field-hint';
+    none.textContent = 'No production has been started for this project yet.';
+    wrap.appendChild(none);
+  }
+
+  return wrap;
+}
+
+function renderGateSection(blueprint, latestGate) {
+  const section = document.createElement('div');
+  section.className = 'state-box';
+
+  const heading = document.createElement('div');
+  heading.className = 'card-item-title';
+  heading.textContent = 'Pre-Production Check';
+  section.appendChild(heading);
+
+  if (!latestGate) {
+    const hint = document.createElement('p');
+    hint.className = 'field-hint';
+    hint.textContent = 'Run a pre-production check before starting production.';
+    section.appendChild(hint);
+    const runBtn = document.createElement('button');
+    runBtn.type = 'button';
+    runBtn.className = 'primary-btn';
+    runBtn.textContent = 'RUN PRE-PRODUCTION CHECK';
+    runBtn.addEventListener('click', () => evaluateGate(blueprint.id));
+    section.appendChild(runBtn);
+    return section;
+  }
+
+  const status = document.createElement('p');
+  status.textContent = `Result: ${latestGate.machineAssessment}${latestGate.humanDecision ? ' — ' + latestGate.humanDecision : ' (awaiting decision)'}`;
+  section.appendChild(status);
+
+  if ((latestGate.blockers || []).length > 0) {
+    const list = document.createElement('ul');
+    for (const b of latestGate.blockers) {
+      const li = document.createElement('li');
+      li.textContent = b.message;
+      list.appendChild(li);
+    }
+    section.appendChild(list);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+
+  if (latestGate.machineAssessment === 'PROCEED') {
+    const acceptBtn = document.createElement('button');
+    acceptBtn.type = 'button';
+    acceptBtn.className = 'primary-btn';
+    acceptBtn.textContent = 'ACCEPT';
+    acceptBtn.addEventListener('click', () => decideGate(latestGate.id, 'ACCEPT'));
+    actions.appendChild(acceptBtn);
+  } else {
+    const overrideBtn = document.createElement('button');
+    overrideBtn.type = 'button';
+    overrideBtn.textContent = 'OVERRIDE';
+    overrideBtn.addEventListener('click', () => {
+      const rationale = window.prompt('This creative direction has open issues. Explain why you are overriding the pre-production check:');
+      if (rationale && rationale.trim()) decideGate(latestGate.id, 'OVERRIDE', rationale.trim());
+    });
+    actions.appendChild(overrideBtn);
+  }
+
+  const rerunBtn = document.createElement('button');
+  rerunBtn.type = 'button';
+  rerunBtn.textContent = 'RE-RUN CHECK';
+  rerunBtn.addEventListener('click', () => evaluateGate(blueprint.id));
+  actions.appendChild(rerunBtn);
+
+  section.appendChild(actions);
+  return section;
+}
+
+async function evaluateGate(blueprintId) {
+  const projectId = state.selectedProjectId;
+  try {
+    await fetchJson(`/projects/${projectId}/pre-production-gate/evaluate`, { method: 'POST', body: { blueprintId } });
+    await loadSelectedBlueprintDetail(projectId, blueprintId);
+    renderBlueprintProductionView();
+  } catch (error) {
+    window.alert(error && error.message ? error.message : 'Could not run the pre-production check.');
+  }
+}
+
+async function decideGate(gateResultId, decision, rationale) {
+  const projectId = state.selectedProjectId;
+  const blueprintId = state.creative.blueprintProduction.selectedBlueprintId;
+  try {
+    await fetchJson(`/projects/${projectId}/pre-production-gate/${gateResultId}/decide`, {
+      method: 'POST',
+      body: { decision, decidedBy: 'creator', rationale },
+    });
+    await loadSelectedBlueprintDetail(projectId, blueprintId);
+    renderBlueprintProductionView();
+  } catch (error) {
+    window.alert(error && error.message ? error.message : 'Could not record that decision.');
+  }
+}
+
+async function linkBlueprintToStoryboard(blueprintId) {
+  const projectId = state.selectedProjectId;
+  try {
+    // Part 6/7 — the SMALLEST possible fix: the approved Blueprint already
+    // has a real, persisted id; this reuses the EXISTING PUT storyboard
+    // route (creativeStore.updateStoryboard already accepts blueprintId)
+    // rather than inventing a new linking endpoint or a second Blueprint
+    // record.
+    await putCreative('storyboard', { blueprintId }, 'Linked approved creative direction to this storyboard.');
+    const record = await fetchJson(`/projects/${projectId}/creative`);
+    state.creative.storyboard = record.storyboard;
+    renderBlueprintProductionView();
+  } catch (error) {
+    window.alert(error && error.message ? error.message : 'Could not link the creative direction to this project.');
+  }
+}
+
+async function startProduction(triggerBtn) {
+  const projectId = state.selectedProjectId;
+  if (triggerBtn) triggerBtn.disabled = true;
+  try {
+    const result = await fetchJson(`/projects/${projectId}/production`, { method: 'POST', body: {} });
+    if (!result.ok) {
+      window.alert(friendlyProductionMessage(result.code, result.reason));
+      state.creative.blueprintProduction.activeProductionJob = result.job || null;
+      renderBlueprintProductionView();
+      return;
+    }
+    localStorage.setItem(activeProductionJobStorageKey(projectId), result.job.productionJobId);
+    state.creative.blueprintProduction.activeProductionJob = result.job;
+    renderBlueprintProductionView();
+    pollProductionJob(result.job.productionJobId);
+  } catch (error) {
+    window.alert(error && error.message ? error.message : 'Could not start production.');
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+}
+
+function renderProductionJobStatus(job) {
+  const box = document.createElement('div');
+  box.className = 'state-box';
+
+  const stageLine = document.createElement('div');
+  stageLine.className = 'card-item-title';
+  stageLine.textContent = PRODUCTION_STAGE_LABELS[job.status] || job.status;
+  box.appendChild(stageLine);
+
+  if (job.status === 'COMPLETE') {
+    const video = document.createElement('video');
+    video.controls = true;
+    video.style.maxWidth = '100%';
+    // Part 12 — reuses the existing final artifact via the streaming route
+    // added alongside it; never a second storage/URL system.
+    video.src = `/production-jobs/${job.productionJobId}/video`;
+    box.appendChild(video);
+  } else if (job.status === 'FAILED' || job.status === 'ESCALATED') {
+    const failure = job.diagnostics && job.diagnostics.length > 0 ? job.diagnostics[job.diagnostics.length - 1] : null;
+    const message = document.createElement('div');
+    message.className = job.status === 'ESCALATED' ? 'state-box' : 'state-box error';
+    message.textContent = failure ? friendlyProductionMessage(failure.code, failure.message) : 'Production could not complete.';
+    box.appendChild(message);
+
+    if (job.escalations && job.escalations.length > 0) {
+      const escList = document.createElement('ul');
+      for (const esc of job.escalations) {
+        const item = document.createElement('li');
+        item.textContent = esc.reason;
+        escList.appendChild(item);
+      }
+      box.appendChild(escList);
+    }
+
+    // Preserve the original backend diagnostics for debugging, collapsed
+    // out of the primary creator-facing view (Part 10).
+    if (job.diagnostics && job.diagnostics.length > 0) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = 'Technical details';
+      details.appendChild(summary);
+      const pre = document.createElement('pre');
+      pre.textContent = job.diagnostics.map((d) => `[${d.code}] ${d.message}`).join('\n');
+      details.appendChild(pre);
+      box.appendChild(details);
+    }
+  } else {
+    const spinner = document.createElement('div');
+    spinner.className = 'field-hint';
+    spinner.textContent = 'This can take a few minutes — this page updates automatically.';
+    box.appendChild(spinner);
+  }
+
+  return box;
+}
+
 
 // Stage 13D — sends a raw file's bytes as the request body (the human-
 // image-return upload). Never JSON-wraps the bytes, never trusts or
@@ -797,6 +1353,9 @@ function selectCreativeArtifact(key) {
   } else if (key === 'storyboard') {
     state.creative.selectedShotId = null;
     renderStoryboardView();
+  } else if (key === 'production') {
+    renderSkillPanel(null);
+    loadBlueprintProduction();
   } else if (key === 'keyframes') {
     renderKeyframePlanView();
   } else if (key === 'references') {
@@ -4555,6 +5114,7 @@ function renderGenerationModelsList(container, models) {
     container.appendChild(card);
   }
 }
+
 
 // --- init ------------------------------------------------------------------
 

@@ -26,6 +26,11 @@ const videoGenerationApprovalStore = require('./services/video-generation-approv
 const videoGenerationService = require('./services/video-generation-service');
 const productionOrchestrator = require('./services/production-orchestrator-service');
 const productionJobStore = require('./services/production-job-store');
+const creativeBlueprintService = require('./services/creative-blueprint-service');
+const creativeBlueprintStore = require('./services/creative-blueprint-store');
+const preProductionGateService = require('./services/pre-production-gate-service');
+const preProductionGateStore = require('./services/pre-production-gate-store');
+const beatGraphDerivationService = require('./services/beat-graph-derivation-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1243,10 +1248,87 @@ app.get('/projects/:projectId/production', (req, res) => {
   res.json(productionJobStore.listProductionJobs({ projectId: req.params.projectId }));
 });
 
+// P0-ORCH-FRONTEND — thin REST wrappers over the existing, unmodified
+// services/creative-blueprint-service.js / creative-blueprint-store.js /
+// pre-production-gate-service.js / pre-production-gate-store.js. These
+// mirror mcp/tools/creative-blueprint-tools.js and mcp/tools/
+// pre-production-gate-tools.js exactly (same service calls, same
+// semantics) — the MCP tools already proved this contract; this only
+// gives the browser the same access an MCP client already has. No new
+// Blueprint/Gate logic lives here.
+
+app.get('/projects/:projectId/creative-blueprints', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeBlueprintStore.listCreativeBlueprints(req.params.projectId));
+});
+
+app.get('/projects/:projectId/creative-blueprints/:blueprintId', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const blueprint = creativeBlueprintStore.getCreativeBlueprint(req.params.projectId, req.params.blueprintId);
+  if (!blueprint) return res.status(404).json({ error: 'CreativeBlueprint not found' });
+  res.json(blueprint);
+});
+
+app.post('/projects/:projectId/creative-blueprints/:blueprintId/review', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { decision, reviewedBy, note } = req.body || {};
+  const result = creativeBlueprintService.reviewCreativeBlueprint(req.params.projectId, req.params.blueprintId, { decision, reviewedBy, note });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result);
+});
+
+// Mirrors evaluate_pre_production_gate's own convenience exactly: derives
+// the project's CURRENT Storyboard into a BeatGraph (via the existing,
+// unmodified deriveBeatGraph()) when one exists, so the browser never has
+// to hand-assemble a BeatGraph — the gate still runs honestly (BeatGraph-
+// dependent findings stay UNKNOWN) when no Storyboard exists yet.
+app.post('/projects/:projectId/pre-production-gate/evaluate', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { blueprintId } = req.body || {};
+  let beatGraph;
+  const storyboard = creativeStore.getStoryboard(req.params.projectId);
+  if (storyboard && Array.isArray(storyboard.scenes) && storyboard.scenes.length > 0) {
+    const derivation = beatGraphDerivationService.deriveBeatGraph(storyboard);
+    if ((derivation.status === 'DERIVED' || derivation.status === 'PARTIAL') && derivation.beatGraph) {
+      beatGraph = derivation.beatGraph;
+    }
+  }
+  const result = preProductionGateService.evaluatePreProductionGate(req.params.projectId, blueprintId, { beatGraph });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result);
+});
+
+app.post('/projects/:projectId/pre-production-gate/:gateResultId/decide', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { decision, decidedBy, rationale } = req.body || {};
+  const result = preProductionGateService.decideGateResult(req.params.projectId, req.params.gateResultId, { decision, decidedBy, rationale });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json(result);
+});
+
+app.get('/projects/:projectId/pre-production-gate', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(preProductionGateStore.listGateResults(req.params.projectId, { blueprintId: req.query.blueprintId }));
+});
+
 app.get('/production-jobs/:productionJobId', (req, res) => {
   const result = productionOrchestrator.getProductionStatus(req.params.productionJobId);
   if (!result.ok) return res.status(404).json({ error: result.reason });
   res.json(result.job);
+});
+
+// Serves the final assembled MP4 for a COMPLETE ProductionJob, inline
+// (Part 12 — reuses the existing artifact.path video-assembly-service.js
+// already produced; never a second storage/URL system). fullPath comes
+// only from the persisted job record, never from any request parameter,
+// so there is no path-traversal surface here to guard against.
+app.get('/production-jobs/:productionJobId/video', (req, res) => {
+  const result = productionOrchestrator.getProductionStatus(req.params.productionJobId);
+  if (!result.ok) return res.status(404).json({ error: result.reason });
+  const artifact = result.job.assemblyResult && result.job.assemblyResult.artifact;
+  if (!artifact || !artifact.path) return res.status(409).json({ error: 'This ProductionJob has no final video artifact yet.' });
+  if (!fs.existsSync(artifact.path)) return res.status(410).json({ error: 'The final video artifact is no longer available on disk.' });
+  streamFile(req, res, artifact.path, { contentType: 'video/mp4' });
 });
 
 // If a client sends broken JSON (e.g. a typo'd request body), express.json()
