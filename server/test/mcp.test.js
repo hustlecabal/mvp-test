@@ -122,8 +122,17 @@ test('a real MCP client can discover all 76 tools', async () => {
   // Test (test/production-orchestrator-service.test.js). Never calls a
   // paid provider; enforces the same control-plane-service.js approval
   // boundary the underlying service already enforces.
+  // P0-INTEL added 3 tools: start_intelligence, get_intelligence_status,
+  // list_intelligence_runs — the single operator entry point for
+  // intelligence-orchestrator-service.js (coordinating INT-1A-F: reference
+  // video ingestion -> measurement -> observation -> optional
+  // interpretation -> cross-video pattern extraction -> recommendation
+  // generation), proven by the Golden Intelligence Test
+  // (test/intelligence-orchestrator-service.test.js). Never calls a paid
+  // provider directly; every existing INT-1D approval/financial gate
+  // remains exactly as INT-1D itself already enforces it.
   // Everything else is unchanged.
-  assert.equal(names.length, 105);
+  assert.equal(names.length, 108);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_video_unknown_cost',
@@ -163,6 +172,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_creative_skill',
     'get_generation_status',
     'get_identity_lock',
+    'get_intelligence_status',
     'get_keyframe',
     'get_keyframe_generation_approval',
     'get_keyframe_generation_status',
@@ -192,6 +202,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_generation_history',
     'list_generation_models',
     'list_identity_consistency_reviews',
+    'list_intelligence_runs',
     'list_keyframe_generations',
     'list_keyframe_handoffs',
     'list_keyframe_prompt_packages',
@@ -220,6 +231,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
     'set_project_budget',
+    'start_intelligence',
     'start_production',
     'submit_creative_blueprint_for_review',
     'transition_project',

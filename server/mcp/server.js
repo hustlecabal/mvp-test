@@ -35,6 +35,7 @@ const registerVideoGenerationTools = require('./tools/video-generation-tools');
 const registerCreativeBlueprintTools = require('./tools/creative-blueprint-tools');
 const registerPreProductionGateTools = require('./tools/pre-production-gate-tools');
 const registerProductionTools = require('./tools/production-tools');
+const registerIntelligenceTools = require('./tools/intelligence-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -64,6 +65,7 @@ function createServer() {
   registerCreativeBlueprintTools(server);
   registerPreProductionGateTools(server);
   registerProductionTools(server);
+  registerIntelligenceTools(server);
 
   return server;
 }

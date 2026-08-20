@@ -92,7 +92,9 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // — the Blueprint/Gate operator surface this stage closes the bypass on.
   // P0-ORCH-ENTRY added 3 tools: start_production, get_production_status,
   // list_production_jobs.
-  assert.equal(names.length, 105);
+  // P0-INTEL added 3 more: start_intelligence, get_intelligence_status,
+  // list_intelligence_runs.
+  assert.equal(names.length, 108);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

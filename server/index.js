@@ -26,6 +26,8 @@ const videoGenerationApprovalStore = require('./services/video-generation-approv
 const videoGenerationService = require('./services/video-generation-service');
 const productionOrchestrator = require('./services/production-orchestrator-service');
 const productionJobStore = require('./services/production-job-store');
+const intelligenceOrchestrator = require('./services/intelligence-orchestrator-service');
+const intelligenceRunStore = require('./services/intelligence-run-store');
 const creativeBlueprintService = require('./services/creative-blueprint-service');
 const creativeBlueprintStore = require('./services/creative-blueprint-store');
 const preProductionGateService = require('./services/pre-production-gate-service');
@@ -1246,6 +1248,43 @@ app.post('/projects/:projectId/production', (req, res) => {
 app.get('/projects/:projectId/production', (req, res) => {
   if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
   res.json(productionJobStore.listProductionJobs({ projectId: req.params.projectId }));
+});
+
+// P0-INTEL — thin wrappers over the existing, unmodified
+// services/intelligence-orchestrator-service.js. See that file's own
+// header for the exact stage sequence and approval/financial boundaries;
+// nothing here decides anything beyond what it already decides. Mirrors
+// mcp/tools/intelligence-tools.js exactly (same service calls, same
+// semantics) — both surfaces call the SAME orchestrator, never a separate
+// path.
+
+// Asynchronous — returns as soon as the run is created (or an existing
+// non-terminal run for this project is found and resumed), never blocking
+// on the real network acquisition + ffmpeg (+ potentially a real LLM
+// call) intelligence run itself. Poll GET /intelligence-runs/:intelligenceRunId
+// until status is COMPLETE or FAILED.
+app.post('/projects/:projectId/intelligence', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { referenceVideoUrls, referenceSetId, name, description, interpretationQuestions } = req.body || {};
+  const result = intelligenceOrchestrator.startIntelligenceRunAsync(req.params.projectId, {
+    referenceVideoUrls,
+    referenceSetId,
+    name,
+    description,
+    interpretationQuestions,
+  });
+  res.json(result);
+});
+
+app.get('/projects/:projectId/intelligence', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(intelligenceRunStore.listIntelligenceRuns({ projectId: req.params.projectId }));
+});
+
+app.get('/intelligence-runs/:intelligenceRunId', (req, res) => {
+  const result = intelligenceOrchestrator.getIntelligenceStatus(req.params.intelligenceRunId);
+  if (!result.ok) return res.status(404).json({ error: result.reason });
+  res.json(result.run);
 });
 
 // P0-ORCH-FRONTEND — thin REST wrappers over the existing, unmodified
