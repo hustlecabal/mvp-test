@@ -98,7 +98,8 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // get_creative_brain_approval_status, decide_creative_brain_approval,
   // acknowledge_creative_brain_unknown_cost, generate_human_voice_profile,
   // list_human_voice_profiles, get_human_voice_profile.
-  assert.equal(names.length, 115);
+  // VISUAL WORLD added 4 tools (see test/mcp.test.js for the full list).
+  assert.equal(names.length, 119);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {

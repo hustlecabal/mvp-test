@@ -143,13 +143,24 @@ test('a real MCP client can discover all 76 tools', async () => {
   // brain-service.test.js). Never bypasses the existing anti-slop gate;
   // never a second financial-control mechanism (settles against the
   // existing anthropic/apify USD buckets).
-  assert.equal(names.length, 115);
+  // VISUAL WORLD added 4 tools: resolve_shot_material_specification,
+  // apply_visual_world_to_keyframe, run_visual_technical_qc,
+  // run_visual_creative_qc — thin wrappers over services/visual-world-
+  // service.js's own translation logic (CreativeBlueprint.
+  // visualSpecification + VisualBible -> a provider-neutral
+  // MaterialSpecification per shot), services/visual-technical-qc-
+  // service.js (ffprobe-based, opt-in), and services/visual-creative-qc-
+  // service.js (independent PASS/FAIL/WARN findings, never a combined
+  // score). Never a third generation pipeline; never wired into the
+  // existing generation services' own hot path.
+  assert.equal(names.length, 119);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_creative_brain_unknown_cost',
     'acknowledge_video_unknown_cost',
     'add_entity_reference_asset',
     'analyze_shot_keyframes',
+    'apply_visual_world_to_keyframe',
     'approve_generated_keyframe',
     'approve_generated_video',
     'approve_keyframe_generation',
@@ -244,8 +255,11 @@ test('a real MCP client can discover all 76 tools', async () => {
     'request_generation_approval',
     'request_keyframe_generation_approval',
     'request_video_generation_approval',
+    'resolve_shot_material_specification',
     'review_creative_blueprint',
     'run_fixture_keyframe_execution',
+    'run_visual_creative_qc',
+    'run_visual_technical_qc',
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
     'set_project_budget',
