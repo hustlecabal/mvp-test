@@ -62,6 +62,8 @@
 // for this project, it is returned/resumed rather than a second one being
 // created (never a duplicate paid-adjacent run, never conflicting jobs).
 
+const path = require('path');
+const { fork } = require('child_process');
 const creativeStore = require('./creative-store');
 const controlPlane = require('./control-plane-service');
 const productionJobStore = require('./production-job-store');
@@ -78,6 +80,22 @@ const fs = require('fs');
 const { createProductionDiagnostic, createProductionEscalation, createBeatProgress } = require('../schemas/production-job-schema');
 
 const NON_TERMINAL_STATUSES = ['REQUESTED', 'DERIVING_BEATS', 'RESOLVING_MATERIALS', 'EXECUTING_MATERIALS', 'RENDERING', 'GENERATING_NARRATION', 'COMPILING_TIMELINE', 'ASSEMBLING', 'QC'];
+
+// Overridable for tests/deployments, same pattern as every other *_DATA_DIR
+// in this codebase. This function is a convenience for CALLERS (MCP/REST
+// tools) that don't want to invent their own output-location policy — it
+// is never invoked internally by startProduction()/resumeProduction()
+// themselves, which continue to require an explicit outputDir (see this
+// file's own header re: render-service.js's identical discipline). One
+// subdirectory per project, so concurrent productions across projects
+// never collide.
+const PRODUCTION_OUTPUT_DIR = process.env.PRODUCTION_OUTPUT_DATA_DIR
+  ? path.resolve(process.env.PRODUCTION_OUTPUT_DATA_DIR)
+  : path.join(__dirname, '..', 'data', 'production-output');
+
+function defaultOutputDirFor(projectId) {
+  return path.join(PRODUCTION_OUTPUT_DIR, projectId);
+}
 
 function diag(stage, code, message, beatId = null) {
   return createProductionDiagnostic({ code, stage, beatId, message });
@@ -124,10 +142,17 @@ function upsertBeatProgress(job, beatId, patch) {
 //     only to pick a delivery-style baseline per narrated beat; 'OTHER' when
 //     omitted for a beat.
 // ---------------------------------------------------------------------------
-function startProduction(projectId, options = {}) {
+// Shared by startProduction()/startProductionAsync(): does every fast,
+// synchronous step — idempotency lookup, the approval boundary, and job
+// creation — but never itself runs a production stage. Returns either
+// { ok:false, job, code?, reason? } (a terminal failure already persisted
+// — the caller should return this as-is, no production ever started) or
+// { ok:true, job, alreadyStarted } (a REQUESTED or resumable job, ready
+// for the caller to drive forward — synchronously or in the background).
+function getOrCreateProductionJob(projectId, options = {}) {
   const existing = productionJobStore.listProductionJobs({ projectId, status: NON_TERMINAL_STATUSES });
   if (existing.length > 0) {
-    return resumeProduction(existing[0].productionJobId);
+    return { ok: true, job: existing[0], alreadyStarted: true };
   }
 
   if (!options.outputDir || typeof options.outputDir !== 'string') {
@@ -184,7 +209,57 @@ function startProduction(projectId, options = {}) {
     materialOptions: options.materialOptions || {},
   });
 
-  return resumeProduction(job.productionJobId);
+  return { ok: true, job, alreadyStarted: false };
+}
+
+function startProduction(projectId, options = {}) {
+  const created = getOrCreateProductionJob(projectId, options);
+  if (!created.ok) return created;
+  return resumeProduction(created.job.productionJobId);
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point #1b — the SAME approval boundary and job creation as
+// startProduction(), but never blocks the caller for the full production
+// run. This exists specifically for HTTP/MCP callers: every stage in this
+// pipeline after DERIVING_BEATS uses synchronous, blocking subprocess
+// calls (real Chrome, real FFmpeg, real espeak-ng/faster-whisper —
+// execFileSync throughout, matching every specialist service's own
+// discipline), so a run can legitimately take well over a minute. Calling
+// startProduction() directly from an Express request handler or an MCP
+// tool would hold that single request open — and, because every stage
+// after DERIVING_BEATS uses execFileSync (real Chrome/FFmpeg/espeak-ng/
+// faster-whisper, blocking the V8 isolate for its full duration, not just
+// "slow"), a naive setImmediate()/Promise-deferred version of the SAME
+// work still blocks: once the deferred callback starts running, NOTHING
+// else on the single JS thread can proceed either — including flushing an
+// HTTP response this very function already queued moments earlier. This
+// was verified directly (a setImmediate()-based version measurably held
+// the HTTP response until the whole run finished), not assumed. The only
+// real fix is a genuinely separate OS process: this function does the
+// fast, synchronous approval-boundary check and job creation itself, then
+// forks scripts/run-production-job.js (a thin wrapper that calls
+// resumeProduction(productionJobId) in that separate process and exits)
+// and returns immediately — the parent process's event loop is never
+// blocked. The forked child inherits this process's env (same data-
+// directory overrides), so it reads/writes the exact same ProductionJob
+// file. The caller polls getProductionStatus()/get_production_status/
+// GET /production-jobs/:id — the exact same poll-a-job-by-id pattern
+// services/generation-poller.js already established for keyframe/video
+// generation jobs, never a new async convention. startProduction() itself
+// is UNCHANGED and still used directly by the Golden Production Test,
+// which deliberately wants one synchronous, in-process call to prove the
+// whole chain deterministically in a single assertion.
+// ---------------------------------------------------------------------------
+function startProductionAsync(projectId, options = {}) {
+  const created = getOrCreateProductionJob(projectId, options);
+  if (!created.ok) return created;
+  if (created.alreadyStarted) return created;
+
+  const child = fork(path.join(__dirname, '..', 'scripts', 'run-production-job.js'), [created.job.productionJobId], { stdio: 'ignore' });
+  child.unref();
+
+  return { ok: true, job: created.job, alreadyStarted: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +573,10 @@ function runAutomaticQc(job) {
 
 module.exports = {
   NON_TERMINAL_STATUSES,
+  PRODUCTION_OUTPUT_DIR,
+  defaultOutputDirFor,
   startProduction,
+  startProductionAsync,
   resumeProduction,
   getProductionStatus,
   runAutomaticQc,

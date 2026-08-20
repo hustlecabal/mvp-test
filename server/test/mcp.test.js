@@ -116,8 +116,14 @@ test('a real MCP client can discover all 76 tools', async () => {
   // list_pre_production_gate_results) — the operator surface closing the
   // Recommendation -> Blueprint -> Human Approval -> Gate bypass this
   // stage's control-plane-service.js now enforces server-side.
+  // P0-ORCH-ENTRY added 3 tools: start_production, get_production_status,
+  // list_production_jobs — the operator entry point for
+  // production-orchestrator-service.js, proven by the Golden Production
+  // Test (test/production-orchestrator-service.test.js). Never calls a
+  // paid provider; enforces the same control-plane-service.js approval
+  // boundary the underlying service already enforces.
   // Everything else is unchanged.
-  assert.equal(names.length, 102);
+  assert.equal(names.length, 105);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_video_unknown_cost',
@@ -168,6 +174,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_operator_queue',
     'get_operator_queue_summary',
     'get_pre_production_gate_result',
+    'get_production_status',
     'get_project',
     'get_project_budget',
     'get_project_status',
@@ -190,6 +197,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_keyframe_prompt_packages',
     'list_keyframes',
     'list_pre_production_gate_results',
+    'list_production_jobs',
     'list_projects',
     'list_reference_library',
     'list_scenes',
@@ -212,6 +220,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'select_canonical_keyframe_asset',
     'select_canonical_reference_asset',
     'set_project_budget',
+    'start_production',
     'submit_creative_blueprint_for_review',
     'transition_project',
     'update_creative_brief',

@@ -24,6 +24,8 @@ const generationModelRegistry = require('./services/generation-model-registry');
 const videoPromptService = require('./services/video-prompt-service');
 const videoGenerationApprovalStore = require('./services/video-generation-approval-store');
 const videoGenerationService = require('./services/video-generation-service');
+const productionOrchestrator = require('./services/production-orchestrator-service');
+const productionJobStore = require('./services/production-job-store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1211,6 +1213,40 @@ app.post('/generation-models/validate', (req, res) => {
   const { provider, model, requirements } = req.body || {};
   if (!provider || !model) return res.status(400).json({ error: 'provider and model are required' });
   res.json(generationModelRegistry.validateModelSelection({ provider, model, requirements: requirements || {} }));
+});
+
+// P0-ORCH-ENTRY — thin wrappers over the existing, unmodified
+// services/production-orchestrator-service.js. See that file's own header
+// for the exact stage sequence and approval/financial boundaries; nothing
+// here decides anything beyond what it already decides.
+
+// Asynchronous — this returns as soon as the approval boundary is checked
+// and the job is created, never blocking on the (often multi-minute, real
+// Chrome/FFmpeg/espeak-ng/faster-whisper) production run itself. Poll
+// GET /production-jobs/:productionJobId until status is COMPLETE/FAILED/
+// ESCALATED — see production-orchestrator-service.js's own header for why.
+app.post('/projects/:projectId/production', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { treatments, narrationSegments, narrativeRoles, materialOptions } = req.body || {};
+  const result = productionOrchestrator.startProductionAsync(req.params.projectId, {
+    outputDir: productionOrchestrator.defaultOutputDirFor(req.params.projectId),
+    treatments,
+    narrationSegments,
+    narrativeRoles,
+    materialOptions,
+  });
+  res.json(result);
+});
+
+app.get('/projects/:projectId/production', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(productionJobStore.listProductionJobs({ projectId: req.params.projectId }));
+});
+
+app.get('/production-jobs/:productionJobId', (req, res) => {
+  const result = productionOrchestrator.getProductionStatus(req.params.productionJobId);
+  if (!result.ok) return res.status(404).json({ error: result.reason });
+  res.json(result.job);
 });
 
 // If a client sends broken JSON (e.g. a typo'd request body), express.json()

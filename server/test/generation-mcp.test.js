@@ -90,7 +90,9 @@ test('the 4 generation tools are discoverable alongside the rest (Stage 8.1 + 9A
   // (build/edit/submit/review/get/list_creative_blueprint(s)) and 4
   // PreProductionGate tools (evaluate/decide/get/list_pre_production_gate_result(s))
   // — the Blueprint/Gate operator surface this stage closes the bypass on.
-  assert.equal(names.length, 102);
+  // P0-ORCH-ENTRY added 3 tools: start_production, get_production_status,
+  // list_production_jobs.
+  assert.equal(names.length, 105);
 });
 
 test('estimate_generation reports allowed:false for a nonexistent project, without submitting anything', async () => {
