@@ -141,6 +141,7 @@ function createProductionJob(overrides = {}) {
     escalations: Array.isArray(escalations) ? escalations.map((e) => createProductionEscalation(e)) : [],
     timelineCompilation: null, // TimelineCompilationResult (schemas/timeline-compilation-schema.js)
     assemblyResult: null, // AssemblyResult (schemas/assembly-result-schema.js) — the final artifact
+    captionResult: null, // CaptionTrackResult (schemas/caption-schema.js) — P0-TEMPORAL: a sidecar SRT/caption export derived from this SAME run's real narration AudioEvents; NEVER gates COMPLETE/QC and never re-renders the final MP4 (see production-orchestrator-service.js's own caption step)
     qc: null, // { passed: boolean, checks: [{ code, passed, message }] } — see production-orchestrator-service.js's runAutomaticQc()
     diagnostics: Array.isArray(diagnostics) ? diagnostics.map((d) => createProductionDiagnostic(d)) : [],
     createdAt: new Date().toISOString(),

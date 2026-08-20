@@ -76,6 +76,7 @@ const { generateNarratedAudioEvent } = require('./voice-generation-service');
 const { applyNarrationTiming } = require('./narration-timing-service');
 const { compileTimeline } = require('./timeline-compiler-service');
 const { assembleTimeline } = require('./video-assembly-service');
+const { buildCaptionTrack } = require('./caption-service');
 const fs = require('fs');
 const { createProductionDiagnostic, createProductionEscalation, createBeatProgress } = require('../schemas/production-job-schema');
 
@@ -502,6 +503,19 @@ function resumeProduction(productionJobId) {
     if (assemblyResult.status !== 'COMPLETED') {
       return { ok: false, job: fail(job, 'ASSEMBLY', assemblyResult.diagnostics[0] ? assemblyResult.diagnostics[0].code : 'ASSEMBLY_FAILED', assemblyResult.diagnostics.map((d) => d.message).join('; ')) };
     }
+  }
+
+  // --- CAPTIONS (P0-TEMPORAL) — a sidecar SRT/caption export derived from
+  // this SAME run's real, already-Whisper-measured narration AudioEvents
+  // (the exact `audioEvents` array assembleTimeline() just used, above —
+  // never re-derived, never re-transcribed). Non-fatal by design: a
+  // caption failure never blocks or fails the ProductionJob, since the
+  // final MP4 remains the primary deliverable and captions are additive
+  // infrastructure (see services/caption-service.js's own header). Only
+  // runs once per job — a resume never regenerates it.
+  if (!job.captionResult) {
+    const captionResult = buildCaptionTrack(audioEvents);
+    job = persist(job, { captionResult });
   }
 
   // --- QC (Part 16) — automated, technical/measurable checks only; never
