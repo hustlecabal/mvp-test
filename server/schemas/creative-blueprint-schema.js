@@ -89,6 +89,24 @@ const CREATIVE_BLUEPRINT_DIAGNOSTIC_CODES = [
   'INVALID_ENTITY_REFERENCE', // a continuityRequirement named a character/location/prop id absent from the project's own VisualBible — dropped, never invented
   'CONTRADICTORY_STRUCTURE', // Part 18's own worked example: planned sections * minimum section duration exceeds targetDuration
   'CREATIVE_BRIEF_MISMATCH', // informational only, never blocking — Blueprint's own targetAudience/format/targetDuration differs from a linked CreativeBrief's
+
+  // CREATIVE BRAIN, Part 26 — the anti-slop gate. Every one of these is
+  // ALSO in BLOCKING_DIAGNOSTIC_CODES below: this is not a second, parallel
+  // quality-gate mechanism — a Creative-Brain-generated Blueprint carrying
+  // any of these is blocked from APPROVED by the exact same array/check
+  // that already blocks MISSING_CONCEPT. Produced by services/creative-
+  // brain/creative-evaluation-service.js's per-dimension PASS/FAIL/WARN
+  // checks (never a single fake quality score — see that file's header).
+  'GENERIC_ANGLE', // narrative-clarity check: corePromise/concept too close to a bare restatement of the input topic
+  'GENERIC_HOOK', // specificity check failed specifically on hookStrategy
+  'EXCESSIVE_CLICHE_DENSITY', // banned-language/cliché registry hit above threshold
+  'WEAK_SPECIFICITY', // specificity-budget check failed overall (too few concrete anchors)
+  'NO_MEANINGFUL_TENSION', // emotional-logic check failed — a flat/single-stage emotionalArc
+  'REFERENCE_TEMPLATE_IMITATION', // originality check failed — structural/phrasing overlap with source evidence
+  'VISUAL_DIRECTION_TOO_GENERIC', // visual-taste completeness check failed — visualSpecification missing required dimensions
+  'CONFLICTING_VISUAL_RULES', // an internal contradiction inside visualSpecification (e.g. negativeConstraints contradicts composition)
+  'UNSUPPORTED_CLAIM', // banned-language causal/certainty pattern hit in generated text
+  'TONE_MISMATCH', // tone field contradicts emotionalArc's own dominant register
 ];
 
 // Part 17/13 — the SUBSET of diagnostic codes that structurally block
@@ -101,7 +119,27 @@ const CREATIVE_BLUEPRINT_DIAGNOSTIC_CODES = [
 // from recommendationDecisions before a Blueprint is even built, so it
 // can never itself remain as a live blocking condition on the persisted
 // draft.
-const BLOCKING_DIAGNOSTIC_CODES = ['INVALID_RECOMMENDATION_SET', 'MISSING_CONCEPT', 'MISSING_CORE_PROMISE', 'MISSING_TARGET_DURATION', 'INVALID_TARGET_DURATION', 'CONTRADICTORY_STRUCTURE'];
+const BLOCKING_DIAGNOSTIC_CODES = [
+  'INVALID_RECOMMENDATION_SET',
+  'MISSING_CONCEPT',
+  'MISSING_CORE_PROMISE',
+  'MISSING_TARGET_DURATION',
+  'INVALID_TARGET_DURATION',
+  'CONTRADICTORY_STRUCTURE',
+  // CREATIVE BRAIN, Part 26 — the anti-slop gate's own diagnostic codes
+  // are blocking by construction: this is THE rejection mechanism (no
+  // separate enforcement path is written anywhere else).
+  'GENERIC_ANGLE',
+  'GENERIC_HOOK',
+  'EXCESSIVE_CLICHE_DENSITY',
+  'WEAK_SPECIFICITY',
+  'NO_MEANINGFUL_TENSION',
+  'REFERENCE_TEMPLATE_IMITATION',
+  'VISUAL_DIRECTION_TOO_GENERIC',
+  'CONFLICTING_VISUAL_RULES',
+  'UNSUPPORTED_CLAIM',
+  'TONE_MISMATCH',
+];
 
 function createCreativeBlueprintDiagnostic(overrides = {}) {
   const base = { code: null, message: '' };
@@ -112,6 +150,71 @@ function createCreativeBlueprintDiagnostic(overrides = {}) {
 // createProductionConsideration() exactly (never a cost estimate).
 function createBlueprintProductionConsideration(overrides = {}) {
   const base = { note: '' };
+  return withDefaults(base, overrides);
+}
+
+// CREATIVE BRAIN, Part 3/15/16 — the structured breakdown Part 15 asks
+// for, ALONGSIDE the existing free-text `visualDirection` (never
+// replacing it). Explicitly a SPECIFICATION-COMPLETENESS mechanism, not a
+// taste engine (per this stage's sign-off): filling every dimension here
+// proves the Creative Brain considered each one, not that the result is
+// aesthetically good — that judgment happens later, when Visual World +
+// Material Resolution actually turn these into imagery.
+function createVisualSpecification(overrides = {}) {
+  const base = {
+    composition: '',
+    palette: '',
+    lighting: '',
+    texture: '',
+    depth: '',
+    cameraLanguage: '',
+    subjectTreatment: '',
+    environmentalTreatment: '',
+    visualDensity: '',
+    motionLanguage: '',
+    typography: '',
+    negativeConstraints: '',
+  };
+  return withDefaults(base, overrides);
+}
+
+// CREATIVE BRAIN, Part 24 — one generated Creative Angle candidate, kept
+// on the Blueprint for transparency (Part 27 — no separate approval
+// screen; a human reviewing the Blueprint can see what was tried and
+// rejected). `selected` marks the one candidate whose angle became this
+// Blueprint's concept/corePromise/hookStrategy; when every candidate
+// failed evaluation, the STRONGEST one is still marked selected (Part 24
+// correction — never silently discarded, never a false PASS).
+function createCreativeAngleCandidate(overrides = {}) {
+  const { evaluationResults, ...rest } = overrides;
+  const base = {
+    candidateId: crypto.randomUUID(),
+    concept: '',
+    corePromise: '',
+    hookStrategy: '',
+    rationale: '',
+    selected: false,
+    evaluationResults: Array.isArray(evaluationResults) ? evaluationResults.map((e) => createCreativeEvaluationResult(e)) : [],
+  };
+  return withDefaults(base, rest);
+}
+
+// CREATIVE BRAIN, Part 25 — ONE dimension's independent PASS/FAIL/WARN
+// result. Never collapsed into a combined score (explicit, locked
+// decision) — an EvaluationResult array is always read as a set of
+// independent checks, never averaged/summed.
+const CREATIVE_EVALUATION_RESULTS = ['PASS', 'FAIL', 'WARN'];
+function createCreativeEvaluationResult(overrides = {}) {
+  const base = { dimension: null, code: null, result: null, detail: '' };
+  return withDefaults(base, overrides);
+}
+
+// CREATIVE BRAIN, Part 29 — how ONE HumanVoiceProfile pattern actually
+// influenced this Blueprint's generated content. Reuses createCreative
+// Decision's own free-text `howUsed` convention rather than inventing a
+// second provenance shape.
+function createHumanVoiceInfluence(overrides = {}) {
+  const base = { patternId: null, howUsed: '' };
   return withDefaults(base, overrides);
 }
 
@@ -141,7 +244,22 @@ function createStructuralDirection(overrides = {}) {
 // services/creative-blueprint-service.js is the one place that imports
 // and validates against the real factory.
 function createNarrationDirection(overrides = {}) {
-  const base = { voiceRole: '', deliveryCharacter: '', pacingIntent: '', emotionalProgression: '', narrationVisualRelationship: '', voiceProfile: null };
+  const base = {
+    voiceRole: '',
+    deliveryCharacter: '',
+    pacingIntent: '',
+    emotionalProgression: '',
+    narrationVisualRelationship: '',
+    voiceProfile: null,
+    // CREATIVE BRAIN, Part 18/19 — the actual narration SCRIPT text, when
+    // the Blueprint's own strategy layer produced one (no separate script
+    // engine exists elsewhere — see services/creative-brain/creative-
+    // brain-provider-interface.js's own header). This is intent-adjacent
+    // production input, not yet the real, timed NarrationDirection
+    // services/narration-director-service.js's directNarration() later
+    // produces from it — that remains a separate, unmodified stage.
+    narrationText: '',
+  };
   return withDefaults(base, overrides);
 }
 
@@ -193,6 +311,10 @@ function createCreativeBlueprint(overrides = {}) {
     structuralDirection,
     narrationDirection,
     diagnostics,
+    visualSpecification,
+    candidates,
+    evaluationResults,
+    humanVoiceInfluences,
     ...rest
   } = overrides;
   const base = {
@@ -228,10 +350,20 @@ function createCreativeBlueprint(overrides = {}) {
 
     // PRODUCTION INTENT
     visualDirection: '',
+    visualSpecification: visualSpecification !== undefined ? (visualSpecification === null ? null : createVisualSpecification(visualSpecification)) : createVisualSpecification(),
     narrationDirection: narrationDirection !== undefined ? (narrationDirection === null ? null : createNarrationDirection(narrationDirection)) : createNarrationDirection(),
     structuralDirection: structuralDirection !== undefined ? (structuralDirection === null ? null : createStructuralDirection(structuralDirection)) : createStructuralDirection(),
     continuityRequirements: Array.isArray(continuityRequirements) ? continuityRequirements.map((c) => createContinuityRequirement(c)) : [],
     productionConsiderations: Array.isArray(productionConsiderations) ? productionConsiderations.map((p) => createBlueprintProductionConsideration(p)) : [],
+
+    // CREATIVE BRAIN — candidate generation transparency + evaluation +
+    // human-voice provenance. All additive; empty by default for every
+    // Blueprint NOT built by the Creative Brain (e.g. build_creative_
+    // blueprint_draft's existing human-authored path) — never required.
+    humanVoiceProfileId: null,
+    humanVoiceInfluences: Array.isArray(humanVoiceInfluences) ? humanVoiceInfluences.map((h) => createHumanVoiceInfluence(h)) : [],
+    candidates: Array.isArray(candidates) ? candidates.map((c) => createCreativeAngleCandidate(c)) : [],
+    evaluationResults: Array.isArray(evaluationResults) ? evaluationResults.map((e) => createCreativeEvaluationResult(e)) : [],
 
     // PROVENANCE — machine-DERIVED from recommendationDecisions at build
     // time (services/creative-blueprint-service.js), never independently
@@ -266,5 +398,10 @@ module.exports = {
   createRecommendationDecision,
   createCreativeDecision,
   createCreativeBlueprintReview,
+  createVisualSpecification,
+  createCreativeAngleCandidate,
+  createCreativeEvaluationResult,
+  createHumanVoiceInfluence,
+  CREATIVE_EVALUATION_RESULTS,
   createCreativeBlueprint,
 };

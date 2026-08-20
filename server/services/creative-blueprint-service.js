@@ -262,7 +262,22 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
     sourcePatternIds: validated.sourcePatternIds,
     sourceReferenceSetIds,
     status: 'DRAFT',
-    diagnostics: validated.diagnostics,
+    // CREATIVE BRAIN — purely additive passthrough for the one automated
+    // caller of this SAME builder (services/creative-brain-service.js):
+    // never populated by the existing human-authored MCP path, since
+    // build_creative_blueprint_draft's own input never sets these.
+    // `additionalDiagnostics` are MERGED with this function's own
+    // rule-based diagnostics (validated.diagnostics) rather than
+    // replacing them — both sets of findings remain visible, and the
+    // existing BLOCKING_DIAGNOSTIC_CODES gate (already enforced at
+    // reviewCreativeBlueprint(), untouched) applies to the union exactly
+    // as it already does to validated.diagnostics alone.
+    visualSpecification: input.visualSpecification,
+    humanVoiceProfileId: input.humanVoiceProfileId || null,
+    humanVoiceInfluences: input.humanVoiceInfluences || [],
+    candidates: input.candidates || [],
+    evaluationResults: input.evaluationResults || [],
+    diagnostics: [...validated.diagnostics, ...(Array.isArray(input.additionalDiagnostics) ? input.additionalDiagnostics : [])],
   });
 
   const saved = creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint);

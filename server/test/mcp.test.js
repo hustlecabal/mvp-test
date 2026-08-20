@@ -132,9 +132,21 @@ test('a real MCP client can discover all 76 tools', async () => {
   // provider directly; every existing INT-1D approval/financial gate
   // remains exactly as INT-1D itself already enforces it.
   // Everything else is unchanged.
-  assert.equal(names.length, 108);
+  // CREATIVE BRAIN added 7 tools: generate_creative_blueprint,
+  // get_creative_brain_approval_status, decide_creative_brain_approval,
+  // acknowledge_creative_brain_unknown_cost, generate_human_voice_profile,
+  // list_human_voice_profiles, get_human_voice_profile — the single
+  // operator entry point for services/creative-brain-service.js
+  // (coordinating candidate generation -> independent evaluation ->
+  // direction synthesis -> the EXISTING, unmodified CreativeBlueprint
+  // review gate), proven by the Golden Creative Test (test/creative-
+  // brain-service.test.js). Never bypasses the existing anti-slop gate;
+  // never a second financial-control mechanism (settles against the
+  // existing anthropic/apify USD buckets).
+  assert.equal(names.length, 115);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
+    'acknowledge_creative_brain_unknown_cost',
     'acknowledge_video_unknown_cost',
     'add_entity_reference_asset',
     'analyze_shot_keyframes',
@@ -155,11 +167,14 @@ test('a real MCP client can discover all 76 tools', async () => {
     'create_shot',
     'create_storyboard_scene',
     'create_storyboard_shot',
+    'decide_creative_brain_approval',
     'decide_pre_production_gate_result',
     'edit_creative_blueprint_draft',
     'estimate_generation',
     'evaluate_pre_production_gate',
     'find_generation_models',
+    'generate_creative_blueprint',
+    'generate_human_voice_profile',
     'generate_keyframe',
     'generate_video',
     'get_approval_status',
@@ -168,9 +183,11 @@ test('a real MCP client can discover all 76 tools', async () => {
     'get_canonical_keyframe_asset',
     'get_canonical_reference_asset',
     'get_creative_blueprint',
+    'get_creative_brain_approval_status',
     'get_creative_brief',
     'get_creative_skill',
     'get_generation_status',
+    'get_human_voice_profile',
     'get_identity_lock',
     'get_intelligence_status',
     'get_keyframe',
@@ -201,6 +218,7 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_creative_skills',
     'list_generation_history',
     'list_generation_models',
+    'list_human_voice_profiles',
     'list_identity_consistency_reviews',
     'list_intelligence_runs',
     'list_keyframe_generations',

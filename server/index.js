@@ -30,6 +30,11 @@ const intelligenceOrchestrator = require('./services/intelligence-orchestrator-s
 const intelligenceRunStore = require('./services/intelligence-run-store');
 const creativeBlueprintService = require('./services/creative-blueprint-service');
 const creativeBlueprintStore = require('./services/creative-blueprint-store');
+const creativeBrainService = require('./services/creative-brain-service');
+const creativeBrainApprovalStore = require('./services/creative-brain-approval-store');
+const humanVoiceAcquisitionService = require('./services/human-voice-acquisition-service');
+const humanVoiceProfileService = require('./services/human-voice-profile-service');
+const humanVoiceProfileStore = require('./services/human-voice-profile-store');
 const preProductionGateService = require('./services/pre-production-gate-service');
 const preProductionGateStore = require('./services/pre-production-gate-store');
 const beatGraphDerivationService = require('./services/beat-graph-derivation-service');
@@ -1314,6 +1319,61 @@ app.post('/projects/:projectId/creative-blueprints/:blueprintId/review', (req, r
   const result = creativeBlueprintService.reviewCreativeBlueprint(req.params.projectId, req.params.blueprintId, { decision, reviewedBy, note });
   if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json(result);
+});
+
+// CREATIVE BRAIN — thin REST wrappers over the existing, unmodified
+// services/creative-brain-service.js / creative-brain-approval-store.js /
+// human-voice-acquisition-service.js / human-voice-profile-service.js /
+// human-voice-profile-store.js. Mirror mcp/tools/creative-brain-tools.js
+// exactly (same service calls, same semantics) — MCP and REST call the
+// SAME orchestrator function, never a separate path.
+
+app.post('/projects/:projectId/creative-brain/generate', async (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const result = await creativeBrainService.generateCreativeBlueprint(req.params.projectId, req.body || {});
+  res.json(result);
+});
+
+app.get('/projects/:projectId/creative-brain/approvals/:recommendationSetId', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(creativeBrainApprovalStore.getApproval(req.params.projectId, req.params.recommendationSetId));
+});
+
+app.post('/projects/:projectId/creative-brain/approvals/:recommendationSetId/decide', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { approve, decidedBy, reason } = req.body || {};
+  const approval = creativeBrainApprovalStore.decideApproval(req.params.projectId, req.params.recommendationSetId, { approve, decidedBy, reason });
+  if (!approval) return res.status(409).json({ error: 'No PENDING CreativeBrainApproval found for this recommendationSetId' });
+  res.json(approval);
+});
+
+app.post('/projects/:projectId/creative-brain/approvals/:recommendationSetId/acknowledge-unknown-cost', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { acknowledgedBy } = req.body || {};
+  res.json(creativeBrainApprovalStore.acknowledgeUnknownCost(req.params.projectId, req.params.recommendationSetId, { acknowledgedBy }));
+});
+
+app.post('/projects/:projectId/human-voice-profiles', async (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const { topic, platform } = req.body || {};
+  const acquisition = await humanVoiceAcquisitionService.acquireHumanVoiceCorpus(req.params.projectId, { topic, platform });
+  if (acquisition.status !== 'COMPLETED') return res.status(422).json({ ok: false, code: 'ACQUISITION_FAILED', acquisition });
+  const profile = humanVoiceProfileService.buildHumanVoiceProfile(req.params.projectId, { topic, platform: platform || 'REDDIT', items: acquisition.items });
+  const saved = humanVoiceProfileStore.addHumanVoiceProfile(req.params.projectId, profile);
+  if (!saved.ok) return res.status(409).json({ ok: false, reason: saved.reason });
+  res.json({ ok: true, profile: saved.profile });
+});
+
+app.get('/projects/:projectId/human-voice-profiles', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  res.json(humanVoiceProfileStore.listHumanVoiceProfiles(req.params.projectId));
+});
+
+app.get('/projects/:projectId/human-voice-profiles/:profileId', (req, res) => {
+  if (!projectStore.getProject(req.params.projectId)) return res.status(404).json({ error: 'Project not found' });
+  const profile = humanVoiceProfileStore.getHumanVoiceProfile(req.params.projectId, req.params.profileId);
+  if (!profile) return res.status(404).json({ error: 'HumanVoiceProfile not found' });
+  res.json(profile);
 });
 
 // Mirrors evaluate_pre_production_gate's own convenience exactly: derives
