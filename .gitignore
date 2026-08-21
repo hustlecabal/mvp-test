@@ -42,6 +42,12 @@ server/data/creative-blueprints/*.json
 # could silently commit real dev-server data on a future commit.
 server/data/pre-production-gates/*.json
 
+# P0-INTEL — intelligence-run records. Same convention: folder kept via
+# .gitkeep, generated per-run JSON never committed. Missing from this file
+# since P0-INTEL introduced the store; fixed here (data-only, no code
+# change) rather than left as a latent gap.
+server/data/intelligence-runs/*.json
+
 # Downloaded/archived asset files (Stage 9A) — never committed. The folder
 # itself is kept in git via .gitkeep.
 server/data/assets/*
