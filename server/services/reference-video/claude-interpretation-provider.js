@@ -7,12 +7,14 @@
 // vendor SDK dependency" convention exactly.
 //
 // PRODUCTION-READY BUT REQUIRES A CREDENTIAL THIS ENVIRONMENT DOES NOT
-// HAVE: this file needs ANTHROPIC_API_KEY, which is not set anywhere in
-// this sandbox (confirmed: `env | grep -i anthropic` returns nothing
-// usable as an API credential — only Claude Code's own infrastructure
-// routing variables, which application server code must never read or
-// reuse as a credential). This is a real, honestly-reported capability
-// gap — see this stage's final report — never a workaround.
+// ALWAYS HAVE: this file needs EVOLINK_ANTHROPIC_API_KEY. It is
+// deliberately NOT named ANTHROPIC_API_KEY — that name is reserved by
+// the Claude Code platform for its own session auth and cannot be set as
+// a plain application credential in this environment's config, and
+// application server code must never read or reuse Claude Code's own
+// infrastructure routing variables as a credential regardless. When
+// unset, this is a real, honestly-reported capability gap — never a
+// workaround.
 //
 // PART 5's LLM BOUNDARY: this file makes exactly one kind of network call
 // (POST to api.anthropic.com) and imports nothing from services/reference-
@@ -99,11 +101,11 @@ function safeParseJsonObject(text) {
   }
 }
 
-function createClaudeInterpretationProvider({ apiKey = process.env.ANTHROPIC_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function createClaudeInterpretationProvider({ apiKey = process.env.EVOLINK_ANTHROPIC_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   return {
     async interpret(input) {
       if (!apiKey) {
-        return createInterpretationProviderResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('INTERPRETATION_PROVIDER_UNAVAILABLE', 'ANTHROPIC_API_KEY is not configured in this environment')] });
+        return createInterpretationProviderResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('INTERPRETATION_PROVIDER_UNAVAILABLE', 'EVOLINK_ANTHROPIC_API_KEY is not configured in this environment')] });
       }
 
       const controller = new AbortController();
