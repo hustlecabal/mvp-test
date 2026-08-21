@@ -115,7 +115,7 @@ function safeParseJsonObject(text) {
   }
 }
 
-function createClaudeCreativeBrainProvider({ apiKey = process.env.EVOLINK_ANTHROPIC_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function createClaudeCreativeBrainProvider({ apiKey = process.env.EVOLINK_LLM_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   async function callAnthropic(systemPrompt, userMessage) {
     if (!apiKey) {
       return { unavailable: true };
@@ -152,7 +152,7 @@ function createClaudeCreativeBrainProvider({ apiKey = process.env.EVOLINK_ANTHRO
   return {
     async generateAngleCandidates(input) {
       const outcome = await callAnthropic(buildAngleSystemPrompt(), buildAngleUserMessage(input));
-      if (outcome.unavailable) return createAngleCandidatesResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('CREATIVE_BRAIN_PROVIDER_UNAVAILABLE', 'EVOLINK_ANTHROPIC_API_KEY is not configured in this environment')] });
+      if (outcome.unavailable) return createAngleCandidatesResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('CREATIVE_BRAIN_PROVIDER_UNAVAILABLE', 'EVOLINK_LLM_API_KEY is not configured in this environment')] });
       if (outcome.timeout) return createAngleCandidatesResult({ status: 'TIMEOUT', model, diagnostics: [diag('CREATIVE_BRAIN_TIMEOUT', `no response within ${timeoutMs}ms`)] });
       if (outcome.networkError) return createAngleCandidatesResult({ status: 'FAILED', model, diagnostics: [diag('CREATIVE_BRAIN_FAILED', `network error: ${outcome.networkError}`)] });
       if (outcome.httpError) return createAngleCandidatesResult({ status: 'FAILED', model, diagnostics: [diag('CREATIVE_BRAIN_FAILED', `Anthropic API returned HTTP ${outcome.httpError}`)] });
@@ -165,7 +165,7 @@ function createClaudeCreativeBrainProvider({ apiKey = process.env.EVOLINK_ANTHRO
 
     async synthesizeDirection(input) {
       const outcome = await callAnthropic(buildDirectionSystemPrompt(), buildDirectionUserMessage(input));
-      if (outcome.unavailable) return createDirectionSynthesisResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('CREATIVE_BRAIN_PROVIDER_UNAVAILABLE', 'EVOLINK_ANTHROPIC_API_KEY is not configured in this environment')] });
+      if (outcome.unavailable) return createDirectionSynthesisResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('CREATIVE_BRAIN_PROVIDER_UNAVAILABLE', 'EVOLINK_LLM_API_KEY is not configured in this environment')] });
       if (outcome.timeout) return createDirectionSynthesisResult({ status: 'TIMEOUT', model, diagnostics: [diag('CREATIVE_BRAIN_TIMEOUT', `no response within ${timeoutMs}ms`)] });
       if (outcome.networkError) return createDirectionSynthesisResult({ status: 'FAILED', model, diagnostics: [diag('CREATIVE_BRAIN_FAILED', `network error: ${outcome.networkError}`)] });
       if (outcome.httpError) return createDirectionSynthesisResult({ status: 'FAILED', model, diagnostics: [diag('CREATIVE_BRAIN_FAILED', `Anthropic API returned HTTP ${outcome.httpError}`)] });

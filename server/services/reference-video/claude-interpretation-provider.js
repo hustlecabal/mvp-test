@@ -7,10 +7,11 @@
 // vendor SDK dependency" convention exactly.
 //
 // PRODUCTION-READY BUT REQUIRES A CREDENTIAL THIS ENVIRONMENT DOES NOT
-// ALWAYS HAVE: this file needs EVOLINK_ANTHROPIC_API_KEY. It is
-// deliberately NOT named ANTHROPIC_API_KEY — that name is reserved by
-// the Claude Code platform for its own session auth and cannot be set as
-// a plain application credential in this environment's config, and
+// ALWAYS HAVE: this file needs EVOLINK_LLM_API_KEY (a real Anthropic API
+// key value). It is deliberately NOT named anything containing
+// "ANTHROPIC" or "CLAUDE" — this environment's own config UI silently
+// drops variable names in that family, since they overlap with names
+// the Claude Code platform reserves for its own session auth, and
 // application server code must never read or reuse Claude Code's own
 // infrastructure routing variables as a credential regardless. When
 // unset, this is a real, honestly-reported capability gap — never a
@@ -101,11 +102,11 @@ function safeParseJsonObject(text) {
   }
 }
 
-function createClaudeInterpretationProvider({ apiKey = process.env.EVOLINK_ANTHROPIC_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function createClaudeInterpretationProvider({ apiKey = process.env.EVOLINK_LLM_API_KEY, model = DEFAULT_MODEL, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   return {
     async interpret(input) {
       if (!apiKey) {
-        return createInterpretationProviderResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('INTERPRETATION_PROVIDER_UNAVAILABLE', 'EVOLINK_ANTHROPIC_API_KEY is not configured in this environment')] });
+        return createInterpretationProviderResult({ status: 'UNAVAILABLE', model, diagnostics: [diag('INTERPRETATION_PROVIDER_UNAVAILABLE', 'EVOLINK_LLM_API_KEY is not configured in this environment')] });
       }
 
       const controller = new AbortController();
