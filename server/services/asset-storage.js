@@ -124,7 +124,14 @@ function storedFileExists(relativePath) {
 // - Enforces maxBytes both from the Content-Length header (fails fast,
 //   before downloading anything) and while streaming (in case the header
 //   is missing or lies).
-async function downloadAsset(url, assetId, { fetchImpl = fetch, maxBytes = DEFAULT_MAX_BYTES } = {}) {
+// `headers` (Part 2/A — P0 Golden Run Blocker Repair) is an optional
+// plain object of extra request headers forwarded verbatim to fetchImpl.
+// This file stays entirely provider-agnostic: it has no idea what an
+// Apify or EvoLink header looks like, and never inspects `url` to decide
+// what to send — the CALLER (which already knows which provider issued
+// this URL) decides what auth, if any, a given download needs. Never
+// logged, never included in any thrown error message.
+async function downloadAsset(url, assetId, { fetchImpl = fetch, maxBytes = DEFAULT_MAX_BYTES, headers } = {}) {
   if (!isValidAssetId(assetId)) {
     throw new AssetStorageError('invalid_asset_id', `"${assetId}" is not a valid asset id.`);
   }
@@ -147,7 +154,7 @@ async function downloadAsset(url, assetId, { fetchImpl = fetch, maxBytes = DEFAU
 
   let response;
   try {
-    response = await fetchImpl(url);
+    response = headers && Object.keys(headers).length > 0 ? await fetchImpl(url, { headers }) : await fetchImpl(url);
   } catch (err) {
     throw new AssetStorageError('network_error', `Network error while downloading the asset: ${err.message}`);
   }

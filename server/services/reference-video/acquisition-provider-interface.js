@@ -99,6 +99,14 @@ function createVideoAcquisitionResult(overrides = {}) {
   const base = {
     status: null,
     resultUrl: null,
+    // P0 Golden Run Blocker Repair, Blocker A — optional plain object of
+    // extra request headers the caller must send when downloading
+    // `resultUrl` (e.g. an Apify-hosted result requires the account's own
+    // token). null for a provider whose result URL needs no auth (e.g. a
+    // public CDN URL) — never required, never provider-specific by name
+    // here (this file stays provider-neutral; only the concrete provider
+    // adapter that issues resultUrl knows what it needs).
+    resultAuthHeaders: null,
     diagnostics: Array.isArray(diagnostics) ? diagnostics.map((d) => createAcquisitionDiagnostic(d)) : [],
   };
   return withDefaults(base, rest);

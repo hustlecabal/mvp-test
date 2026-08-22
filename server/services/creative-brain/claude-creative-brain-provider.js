@@ -30,8 +30,25 @@ const {
 } = require('./creative-brain-provider-interface');
 
 const DEFAULT_MODEL = process.env.CREATIVE_BRAIN_MODEL || 'claude-sonnet-5';
-const DEFAULT_MAX_OUTPUT_TOKENS = 2000;
-const DEFAULT_TIMEOUT_MS = Number(process.env.CREATIVE_BRAIN_TIMEOUT_MS) || 30000;
+// P0 Golden Run Blocker Repair, Blocker C — found live, once the routing
+// fix let this file reach a real model for the first time: max_tokens is
+// a SHARED budget across thinking + the actual text output (Anthropic's
+// documented behavior for extended-thinking-enabled models). A real
+// synthesizeDirection() call measured 727 thinking tokens against the old
+// 2000-token cap, leaving too little room for the full structured
+// response (12-field visualSpecification + a real narration script) —
+// every real call truncated mid-JSON with stop_reason "max_tokens",
+// regardless of how valid the credential or model response otherwise
+// was. Raised with real headroom for both; generateAngleCandidates'
+// genuinely smaller output was never affected (it comfortably fit in the
+// old cap) and is unaffected by raising the shared ceiling.
+const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
+// Measured live, same real call as above: a real synthesizeDirection()
+// completion (thinking + the full untruncated response) took ~46s
+// against the old 30s default, which aborted it as a false TIMEOUT
+// before the real answer ever arrived. Raised with headroom over the
+// measured real time, not guessed.
+const DEFAULT_TIMEOUT_MS = Number(process.env.CREATIVE_BRAIN_TIMEOUT_MS) || 90000;
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 
@@ -145,7 +162,17 @@ function createClaudeCreativeBrainProvider({ apiKey = process.env.EVOLINK_LLM_AP
     }
     const usage =
       body && body.usage && typeof body.usage.input_tokens === 'number' && typeof body.usage.output_tokens === 'number' ? { inputTokens: body.usage.input_tokens, outputTokens: body.usage.output_tokens } : null;
-    const text = body && Array.isArray(body.content) && body.content[0] && body.content[0].text;
+    // P0 Golden Run Blocker Repair, Blocker C — found live, once the
+    // routing fix let this file actually reach a real model for the
+    // first time: a model response with extended thinking enabled
+    // returns content[0] as a {type: "thinking"} block (no `.text` field
+    // at all) and the real answer as a LATER block with type "text".
+    // Blindly reading content[0].text silently produced undefined ->
+    // "not a single parseable JSON object" on every real call, even with
+    // a perfectly valid credential and a perfectly valid model response.
+    // Never assume position; always find the actual text block.
+    const textBlock = body && Array.isArray(body.content) && body.content.find((block) => block && block.type === 'text');
+    const text = textBlock && textBlock.text;
     return { parsed: safeParseJsonObject(text), usage };
   }
 

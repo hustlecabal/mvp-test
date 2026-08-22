@@ -354,7 +354,11 @@ async function ingestReferenceVideo(projectId, options = {}) {
     const videoAssetId = crypto.randomUUID();
     let downloaded;
     try {
-      downloaded = await assetStorage.downloadAsset(videoResult.resultUrl, videoAssetId, { fetchImpl: fetchImpl || fetch, maxBytes: maxVideoBytes });
+      downloaded = await assetStorage.downloadAsset(videoResult.resultUrl, videoAssetId, {
+        fetchImpl: fetchImpl || fetch,
+        maxBytes: maxVideoBytes,
+        headers: videoResult.resultAuthHeaders || undefined,
+      });
     } catch (error) {
       stages.push(stage('ACQUIRE_VIDEO', 'FAILED', error.message));
       // The Apify actor call itself already succeeded (videoResult.status

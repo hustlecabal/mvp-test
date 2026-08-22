@@ -112,6 +112,28 @@ test('1. a full COMPLETE ingestion produces real video+audio Assets, real ffprob
   assert.equal(audioAsset.storage.status, 'STORED');
 });
 
+// --- P0 Golden Run Blocker Repair, Blocker A — authenticated Apify downloads ---
+
+test('1b. when the provider returns resultAuthHeaders (a real Apify result requires the account token), ingestReferenceVideo forwards them into the actual asset download', async () => {
+  const project = newProject();
+  const src = makeVideoFile({ durationSeconds: 1 });
+  let receivedHeaders;
+  const capturingFetch = async (url, options) => {
+    receivedHeaders = options && options.headers;
+    const buf = fs.readFileSync(src);
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (h) => (h.toLowerCase() === 'content-length' ? String(buf.length) : h.toLowerCase() === 'content-type' ? 'video/mp4' : null) },
+      body: Readable.toWeb(Readable.from(buf)),
+    };
+  };
+  const provider = fakeProvider({ acquireVideo: async () => ({ status: 'COMPLETED', resultUrl: 'https://fake.apify.com/result.mp4', resultAuthHeaders: { Authorization: 'Bearer real-apify-token' }, diagnostics: [] }) });
+  const rv = await ingestReferenceVideo(project.id, { url: 'https://www.youtube.com/watch?v=abc12345678', provider, fetchImpl: capturingFetch });
+  assert.equal(rv.status, 'COMPLETE');
+  assert.deepEqual(receivedHeaders, { Authorization: 'Bearer real-apify-token' });
+});
+
 test('2. the ReferenceVideo is actually persisted — listReferenceVideos reflects it', async () => {
   const project = newProject();
   const src = makeVideoFile({ durationSeconds: 1 });

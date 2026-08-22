@@ -165,6 +165,25 @@ test('generate_keyframe succeeds end-to-end through MCP once approved, producing
   assert.equal(status.generationType, 'IMAGE_KEYFRAME');
 });
 
+// --- P0 Golden Run Blocker Repair, Blocker D — real provider routing (MCP) ---
+
+test('P0-D. generate_keyframe accepts providerName/imageParameters and actually reaches the real EvoLink adapter when providerName is "evolink-image" — never silently falls back to fake-image', async () => {
+  const project = createProject();
+  const { keyframe } = await seedShotKeyframeAndPackage(project);
+  await call('request_keyframe_generation_approval', { projectId: project.id, keyframeId: keyframe.keyframeId, estimatedCost: 2 });
+  await call('approve_keyframe_generation', { projectId: project.id, keyframeId: keyframe.keyframeId, approvedBy: 'claude' });
+
+  const result = textOf(await call('generate_keyframe', { projectId: project.id, keyframeId: keyframe.keyframeId, providerName: 'evolink-image', imageParameters: { model: 'gpt-image-2' } }));
+  assert.equal(result.ok, false);
+  // Real EvoLink-mapper-specific validation error (never present in the
+  // fake provider) — this spawned MCP server process's env (envVars,
+  // above) never includes EVOLINK_API_KEY at all, so this also proves the
+  // real credential-missing path is reachable, not just requested.
+  assert.match(result.reason, /toEvolinkImageRequest requires a non-empty prompt|EVOLINK_API_KEY is not set/);
+  assert.equal(result.job.provider, 'evolink-image', 'must reach the REAL adapter, never silently substitute fake-image');
+  assert.equal(result.job.status, 'FAILED', 'a real submission problem must fail honestly, never fabricate a COMPLETED asset');
+});
+
 test('get_keyframe_generation_status reports a clear error for a non-keyframe (or unknown) generation id', async () => {
   const result = await call('get_keyframe_generation_status', { generationId: '00000000-0000-0000-0000-000000000000' });
   assert.equal(result.isError, true);

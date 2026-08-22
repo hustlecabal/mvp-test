@@ -28,8 +28,17 @@ const creativeBrainApprovalStore = require('./../creative-brain-approval-store')
 const { createAngleCandidatesInput, createDirectionSynthesisInput, assertImplementsCreativeBrainProviderInterface } = require('./creative-brain-provider-interface');
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const ESTIMATED_ANGLE_OUTPUT_TOKENS = 900; // 3 candidates x ~300 tokens each
-const ESTIMATED_DIRECTION_OUTPUT_TOKENS = 900;
+// P0 Golden Run Blocker Repair, Blocker C — recalibrated against a real
+// measured call (971 input / 2000 output tokens, 727 of which were
+// thinking, for ONE direction-synthesis call) once the routing fix made
+// a real call possible for the first time. These feed the human-facing
+// PRE-APPROVAL cost estimate (estimateGenerationCostUsd, below) — the
+// old 900/900 estimates were never wrong in a way any real call could
+// have shown before now, but they meaningfully understated the real cost
+// a human approves against, which matters given this is the one number a
+// human sees before authorizing spend.
+const ESTIMATED_ANGLE_OUTPUT_TOKENS = 1500; // comfortably fits the observed real usage; candidates alone rarely need extensive thinking
+const ESTIMATED_DIRECTION_OUTPUT_TOKENS = 4500; // observed real call: ~2000 (thinking + truncated text) before the max_tokens fix; a complete, untruncated response needs more
 const DEFAULT_MODEL = { provider: 'claude', model: 'claude-sonnet-5' };
 
 function estimateTokens(text) {

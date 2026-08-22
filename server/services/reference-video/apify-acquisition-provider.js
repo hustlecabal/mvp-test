@@ -235,7 +235,13 @@ function createApifyAcquisitionProvider({ fetchImpl = fetch } = {}) {
       // the case this refuses to silently follow.
       return createVideoAcquisitionResult({ status: 'FAILED', diagnostics: [createAcquisitionDiagnostic({ code: 'VIDEO_FILE_INVALID', message: `result URL host "${parsedResultUrl.hostname}" is not a recognized Apify hosting domain` })] });
     }
-    return createVideoAcquisitionResult({ status: 'COMPLETED', resultUrl });
+    // P0 Golden Run Blocker Repair, Blocker A — this resultUrl is a
+    // private Apify key-value-store record (confirmed live: HTTP 403
+    // downloading it with no auth, HTTP 200 with the account's own
+    // token). Attaching it here, not in asset-storage.js, keeps the
+    // generic downloader provider-agnostic — only this file already knows
+    // the result came from Apify and already holds the token.
+    return createVideoAcquisitionResult({ status: 'COMPLETED', resultUrl, resultAuthHeaders: { Authorization: `Bearer ${apifyToken()}` } });
   }
 
   return { resolveSource, acquireMetadata, acquireVideo, acquireTranscript };

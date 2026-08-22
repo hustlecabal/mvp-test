@@ -237,6 +237,68 @@ test('a second download for the same assetId never overwrites the existing file'
   assert.equal(fs.readFileSync(first.path, 'utf8'), 'original content');
 });
 
+// --- P0 Golden Run Blocker Repair, Blocker A — authenticated downloads -----
+//
+// asset-storage.js stays provider-agnostic: it never inspects `url` to
+// decide what to send, it only forwards whatever `headers` the caller
+// (who already knows which provider issued this URL) supplies.
+
+test('P0-A.1 a public URL with no headers option calls fetchImpl with just the URL, unchanged from before', async () => {
+  const id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  let receivedArgs;
+  await assetStorage.downloadAsset('https://example.com/public.mp4', id, {
+    fetchImpl: async (...args) => {
+      receivedArgs = args;
+      return fakeResponse({ bodyBytes: Buffer.from('public bytes') });
+    },
+  });
+  assert.equal(receivedArgs.length, 1, 'no second argument should be passed to fetchImpl when no headers are given');
+});
+
+test('P0-A.2 an authenticated (e.g. Apify) URL forwards the supplied headers to fetchImpl', async () => {
+  const id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  let receivedHeaders;
+  await assetStorage.downloadAsset('https://api.apify.com/v2/key-value-stores/x/records/y.mp4', id, {
+    fetchImpl: async (url, options) => {
+      receivedHeaders = options && options.headers;
+      return fakeResponse({ bodyBytes: Buffer.from('authenticated bytes') });
+    },
+    headers: { Authorization: 'Bearer real-apify-token' },
+  });
+  assert.deepEqual(receivedHeaders, { Authorization: 'Bearer real-apify-token' });
+});
+
+test('P0-A.3 a failed authenticated download (e.g. wrong/expired token) still fails structurally with the HTTP status, headers are never swallowed into a false success', async () => {
+  const id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  await assert.rejects(
+    () =>
+      assetStorage.downloadAsset('https://api.apify.com/v2/key-value-stores/x/records/y.mp4', id, {
+        fetchImpl: async () => fakeResponse({ ok: false, status: 403 }),
+        headers: { Authorization: 'Bearer wrong-token' },
+      }),
+    (err) => {
+      assert.equal(err.code, 'http_error');
+      assert.equal(err.httpStatus, 403);
+      return true;
+    }
+  );
+  assert.ok(!fs.existsSync(path.join(assetsTempDir, `${id}.mp4`)), 'no file should be left behind after a failed authenticated download');
+});
+
+test('P0-A.4 a missing/undefined headers option (e.g. no token available) behaves exactly like no headers were ever passed, never throws', async () => {
+  const id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+  let receivedArgs;
+  const result = await assetStorage.downloadAsset('https://example.com/no-auth-needed.mp4', id, {
+    fetchImpl: async (...args) => {
+      receivedArgs = args;
+      return fakeResponse({ bodyBytes: Buffer.from('bytes') });
+    },
+    headers: undefined,
+  });
+  assert.equal(receivedArgs.length, 1);
+  assert.equal(result.alreadyExisted, false);
+});
+
 // --- Stage 13D, Part 6 — storeUploadedImage / sniffImageFormat (human-upload ingestion) -----
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]);

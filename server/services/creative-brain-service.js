@@ -28,6 +28,7 @@ const creativeBrainApprovalStore = require('./creative-brain-approval-store');
 const creativeBlueprintService = require('./creative-blueprint-service');
 const synthesisService = require('./creative-brain/creative-synthesis-service');
 const evaluationService = require('./creative-brain/creative-evaluation-service');
+const { createClaudeCreativeBrainProvider } = require('./creative-brain/claude-creative-brain-provider');
 const { createCreativeAngleCandidate, createCreativeEvaluationResult, createHumanVoiceInfluence } = require('../schemas/creative-blueprint-schema');
 
 const MAX_VOICE_PATTERNS_PER_DIMENSION = 3; // token-budget cap (Part 28 — cost stays bounded regardless of corpus size)
@@ -82,6 +83,24 @@ async function generateCreativeBlueprint(projectId, options = {}) {
 
   const { referenceSetId, recommendationSetId, humanVoiceProfileId, topic, format, targetDuration, candidateCount = 3, provider, requestedBy } = options;
 
+  // P0 Golden Run Blocker Repair, Blocker C — this is the ONE operator
+  // entry point (see file header), and both the REST route
+  // (POST /projects/:projectId/creative-brain/generate) and the MCP tool
+  // (generate_creative_blueprint) call it with a plain JSON body — which
+  // can never carry a JS provider object. Neither surface ever supplied
+  // `provider` in production, so without this default the real Anthropic
+  // adapter (createClaudeCreativeBrainProvider, providers/evolink's exact
+  // sibling for Creative Brain) was UNREACHABLE outside the test suite.
+  // Only defaults when the caller hasn't already supplied one, so every
+  // existing test that explicitly passes its own fake/test provider is
+  // unaffected (rule: never remove fake providers as a valid, explicit
+  // test choice). The real provider itself already returns a structured
+  // UNAVAILABLE result (never throws, never fabricates) when
+  // EVOLINK_LLM_API_KEY isn't configured — see claude-creative-brain-
+  // provider.js — so "requested but no real credential" is already
+  // handled honestly with zero further code here.
+  const activeProvider = provider || createClaudeCreativeBrainProvider();
+
   const recommendationSet = recommendationSetId
     ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
     : referenceSetId
@@ -123,7 +142,7 @@ async function generateCreativeBlueprint(projectId, options = {}) {
   }
 
   // --- STAGE 1: candidate generation (Part 24 — ONE call, N candidates)
-  const candidatesResult = await synthesisService.generateAngleCandidates(projectId, { topic, format, targetDuration, candidateCount, recommendations: recommendationEvidence, voicePatterns: voicePatternEvidence, provider });
+  const candidatesResult = await synthesisService.generateAngleCandidates(projectId, { topic, format, targetDuration, candidateCount, recommendations: recommendationEvidence, voicePatterns: voicePatternEvidence, provider: activeProvider });
   if (candidatesResult.status !== 'COMPLETED' || candidatesResult.candidates.length === 0) {
     return { ok: false, code: 'CANDIDATE_GENERATION_FAILED', reason: `angle candidate generation did not complete (status: ${candidatesResult.status})`, diagnostics: candidatesResult.diagnostics };
   }
@@ -133,7 +152,7 @@ async function generateCreativeBlueprint(projectId, options = {}) {
   const { best, allPassed } = selectStrongestCandidate(candidatesWithResults);
 
   // --- STAGE 3: direction synthesis for the selected angle only --------
-  const directionResult = await synthesisService.synthesizeDirection(projectId, { topic, format, targetDuration, selectedAngle: best.candidate, recommendations: recommendationEvidence, voicePatterns: voicePatternEvidence, provider });
+  const directionResult = await synthesisService.synthesizeDirection(projectId, { topic, format, targetDuration, selectedAngle: best.candidate, recommendations: recommendationEvidence, voicePatterns: voicePatternEvidence, provider: activeProvider });
   if (directionResult.status !== 'COMPLETED') {
     return { ok: false, code: 'DIRECTION_SYNTHESIS_FAILED', reason: `direction synthesis did not complete (status: ${directionResult.status})`, diagnostics: directionResult.diagnostics };
   }

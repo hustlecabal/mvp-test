@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createHumanVoiceProfile, VOICE_PATTERN_DIMENSIONS, createVoicePatternEntry } = require('../schemas/human-voice-profile-schema');
-const { buildHumanVoiceProfile, MIN_ABSOLUTE_SUPPORT_COUNT, MIN_DISCUSSION_ITEM_COUNT } = require('../services/human-voice-profile-service');
+const { buildHumanVoiceProfile, MIN_ABSOLUTE_SUPPORT_COUNT, MIN_DISCUSSION_ITEM_COUNT, isBoilerplateItem } = require('../services/human-voice-profile-service');
 
 function makeItems(n, textFn) {
   return Array.from({ length: n }, (_, i) => ({ externalId: `t${i}`, platform: 'REDDIT', kind: 'POST', text: textFn(i), score: 5, retrievedAt: new Date().toISOString() }));
@@ -109,6 +109,58 @@ test('12. emotionalPatterns and vulnerability are genuinely DISTINCT marker sets
   const items = makeItems(6, () => 'I felt so frustrated about this whole thing honestly.');
   const p = buildHumanVoiceProfile('proj', { topic: 't', items });
   assert.ok(p.emotionalPatterns.find((e) => e.pattern === 'frustrated'));
+});
+
+// --- P0 Golden Run Blocker Repair, Part 4 — bot/moderator boilerplate filtering ---
+//
+// Golden Run #001's real, live Reddit corpus for "Got any hobbies?" had
+// languagePatterns/idioms/recurringFraming dominated by Reddit's own
+// standard AutoModerator footer text, not genuine human voice. These
+// tests use the ACTUAL boilerplate text observed live (near-verbatim).
+
+const AUTOMOD_TEXT =
+  "I am a bot, and this action was performed automatically. Please contact the moderators of this subreddit if you have any questions or concerns. This subreddit is powered entirely by volunteers, please be patient.";
+
+test('14. isBoilerplateItem recognizes the real, observed AutoModerator footer text', () => {
+  assert.equal(isBoilerplateItem({ text: AUTOMOD_TEXT }), true);
+  assert.equal(isBoilerplateItem({ text: 'I struggled with this for years, honestly.' }), false);
+});
+
+test('15. a corpus containing bot/moderator boilerplate never lets it dominate vocabulary/idioms/recurringFraming — a real human pattern still surfaces cleanly', () => {
+  const items = [
+    ...makeItems(7, () => AUTOMOD_TEXT),
+    ...makeItems(6, (i) => `I struggled with this for years, item ${i}.`),
+  ].map((it, idx) => ({ ...it, externalId: `b${idx}` }));
+  const p = buildHumanVoiceProfile('proj', { topic: 't', items });
+  assert.equal(p.status, 'COMPLETE');
+  assert.ok(
+    !p.idioms.some((e) => e.pattern.includes('performed automatically') || e.pattern.includes('contact the moderators')),
+    'bot boilerplate n-grams must never appear in idioms'
+  );
+  assert.ok(
+    !p.recurringFraming.some((e) => e.pattern.includes('performed automatically') || e.pattern.includes('contact the moderators')),
+    'bot boilerplate n-grams must never appear in recurringFraming'
+  );
+  assert.ok(p.vulnerability.find((e) => e.pattern === 'i struggled'), 'the genuine human pattern must still surface');
+  assert.ok(!p.sourceThreadIds.some((id) => id.startsWith('b') && Number(id.slice(1)) < 7), 'boilerplate items must be excluded from sourceThreadIds too');
+});
+
+test('16. a corpus that is ENTIRELY bot/moderator boilerplate fails honestly (ACQUISITION_FAILED), never builds a hollow profile', () => {
+  const items = makeItems(6, () => AUTOMOD_TEXT);
+  const p = buildHumanVoiceProfile('proj', { topic: 't', items });
+  assert.equal(p.status, 'FAILED');
+  assert.equal(p.diagnostics[0].code, 'ACQUISITION_FAILED');
+});
+
+test('17. INSUFFICIENT_DISCUSSION_VOLUME is computed from GENUINE items only, not the raw acquired count (padding with boilerplate must not hide a real shortage)', () => {
+  const items = [
+    ...makeItems(20, () => AUTOMOD_TEXT), // plenty of raw items...
+    ...makeItems(2, (i) => `real human comment number ${i} about hobbies.`).map((it, idx) => ({ ...it, externalId: `real${idx}` })), // ...but only 2 genuine
+  ];
+  const p = buildHumanVoiceProfile('proj', { topic: 't', items });
+  assert.equal(p.status, 'PARTIAL');
+  assert.equal(p.diagnostics[0].code, 'INSUFFICIENT_DISCUSSION_VOLUME');
+  assert.match(p.diagnostics[0].message, /only 2 real discussion items/);
 });
 
 test('13. security — human-voice-profile-service.js has no network call, no eval, no shell exec', () => {

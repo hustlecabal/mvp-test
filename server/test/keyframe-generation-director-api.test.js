@@ -130,6 +130,35 @@ test('POST /keyframes/:keyframeId/generate succeeds once approved, and GET gener
   assert.equal(list[0].asset.approvalStatus, 'NONE');
 });
 
+// --- P0 Golden Run Blocker Repair, Blocker D — real provider routing ---
+
+test('P0-D.1 with no providerName in the request body, /generate still defaults to fake-image — unchanged, deterministic behavior for every existing caller', async () => {
+  const project = await createProject();
+  const { keyframe } = seedShotKeyframeAndPackage(project);
+  await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generation-approval/request`, { estimatedCost: 2 });
+  await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generation-approval/decision`, { approve: true, decidedBy: 'tester' });
+  const result = await (await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generate`, {})).json();
+  assert.equal(result.ok, true);
+  assert.equal(result.job.provider, 'fake-image');
+});
+
+test('P0-D.2 providerName: "evolink-image" in the request body actually reaches the real EvoLink adapter (previously unreachable through this route) — proven by real EvoLink-specific request validation running (never present in the fake provider) — and fails honestly rather than fabricating a success, never silently falling back to fake-image', async () => {
+  const project = await createProject();
+  const { keyframe } = seedShotKeyframeAndPackage(project);
+  await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generation-approval/request`, { estimatedCost: 2 });
+  await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generation-approval/decision`, { approve: true, decidedBy: 'tester' });
+
+  const result = await (await postJson(`${baseUrl}/keyframes/${keyframe.keyframeId}/generate`, { providerName: 'evolink-image', imageParameters: { model: 'gpt-image-2' } })).json();
+  assert.equal(result.ok, false);
+  // "toEvolinkImageRequest requires a non-empty prompt" only exists in the
+  // REAL evolink-image-mapper.js — proof this request reached the real
+  // adapter's own request-building code, not the fake-image provider
+  // (whose test fixtures never exercise that validation at all).
+  assert.match(result.reason, /toEvolinkImageRequest requires a non-empty prompt/);
+  assert.equal(result.job.provider, 'evolink-image', 'must reach the REAL adapter, never silently substitute fake-image');
+  assert.equal(result.job.status, 'FAILED', 'a real submission problem must fail honestly, never fabricate a COMPLETED asset');
+});
+
 test('GET /keyframe-generations/:generationId 404s for an unknown or non-keyframe generation', async () => {
   const res = await fetch(`${baseUrl}/keyframe-generations/00000000-0000-0000-0000-000000000000`);
   assert.equal(res.status, 404);

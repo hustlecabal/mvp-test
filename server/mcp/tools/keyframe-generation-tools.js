@@ -138,12 +138,15 @@ function register(server) {
         'allows it, and no identical generation is already in flight (in which case the existing job is returned ' +
         'instead of submitting a duplicate). Polls to completion, archives the result, creates a fully-traceable ' +
         'asset, and marks the keyframe GENERATED. The resulting asset\'s approval status starts at NONE — a human ' +
-        'must separately call approve_generated_keyframe or reject_generated_keyframe.',
-      inputSchema: { projectId: z.string(), keyframeId: z.string() },
+        'must separately call approve_generated_keyframe or reject_generated_keyframe. providerName defaults to ' +
+        '"fake-image" (the deterministic test provider) when omitted, exactly like before this parameter existed — ' +
+        'pass providerName: "evolink-image" to reach the real EvoLink image API, with imageParameters carrying ' +
+        'provider-relevant fields (model, size, quality, referenceImageUrls).',
+      inputSchema: { projectId: z.string(), keyframeId: z.string(), providerName: z.string().optional(), imageParameters: z.record(z.string(), z.any()).optional() },
     },
-    async ({ projectId, keyframeId }) => {
+    async ({ projectId, keyframeId, providerName, imageParameters }) => {
       requireKeyframe(projectId, keyframeId);
-      return jsonResult(await keyframeGenerationService.generateKeyframe(projectId, keyframeId));
+      return jsonResult(await keyframeGenerationService.generateKeyframe(projectId, keyframeId, { providerName, imageParameters }));
     }
   );
 

@@ -155,6 +155,16 @@ test('14. acquireVideo maps a successful downloader response into resultUrl', as
   delete process.env.APIFY_API_TOKEN;
 });
 
+test('14b. P0 Blocker A — acquireVideo attaches resultAuthHeaders carrying the real Apify token as a Bearer header, since the result URL is a private Apify key-value-store record', async () => {
+  process.env.APIFY_API_TOKEN = 'real-token-for-download-auth';
+  const fetchImpl = async () => jsonResponse([{ status: 'success', output: { url: 'https://api.apify.com/v2/key-value-stores/abc/records/video' } }]);
+  const provider = createApifyAcquisitionProvider({ fetchImpl });
+  const result = await provider.acquireVideo({ source: SOURCE });
+  assert.equal(result.status, 'COMPLETED');
+  assert.deepEqual(result.resultAuthHeaders, { Authorization: 'Bearer real-token-for-download-auth' });
+  delete process.env.APIFY_API_TOKEN;
+});
+
 test('15. SECURITY — acquireVideo refuses a result URL that does not point at an Apify hosting domain, even though it came from a parsed JSON response', async () => {
   process.env.APIFY_API_TOKEN = 'fake-token-for-test';
   const fetchImpl = async () => jsonResponse([{ status: 'success', output: { url: 'https://attacker.example.com/payload.mp4' } }]);
@@ -193,6 +203,27 @@ test('18. an empty dataset (zero items) fails structurally, never crashes on ite
     const result = await provider.acquireMetadata({ source: SOURCE });
     assert.equal(result.status, 'FAILED');
   });
+  delete process.env.APIFY_API_TOKEN;
+});
+
+test('18b. P0 Blocker B — VERIFIED, NOT AN EVOLINK DEFECT: an actor response of ten {"demo": true} placeholder items (real, observed live-Apify behavior for some inputs) is rejected structurally, never accepted as evidence', async () => {
+  process.env.APIFY_API_TOKEN = 'fake-token-for-test';
+  const fetchImpl = async () => jsonResponse(Array.from({ length: 10 }, () => ({ demo: true })));
+  const provider = createApifyAcquisitionProvider({ fetchImpl });
+  const result = await provider.acquireVideo({ source: SOURCE });
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.diagnostics[0].code, 'VIDEO_ACQUISITION_FAILED');
+  assert.match(result.diagnostics[0].message, /no result URL/);
+  delete process.env.APIFY_API_TOKEN;
+});
+
+test('18c. P0 Blocker B — a malformed dataset item (not an array at all) is rejected structurally, never crashes', async () => {
+  process.env.APIFY_API_TOKEN = 'fake-token-for-test';
+  const fetchImpl = async () => jsonResponse({ notAnArray: true });
+  const provider = createApifyAcquisitionProvider({ fetchImpl });
+  const result = await provider.acquireVideo({ source: SOURCE });
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.diagnostics[0].code, 'VIDEO_ACQUISITION_FAILED');
   delete process.env.APIFY_API_TOKEN;
 });
 

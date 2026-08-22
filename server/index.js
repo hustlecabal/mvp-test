@@ -817,11 +817,24 @@ app.post('/keyframes/:keyframeId/generation-approval/decision', (req, res) => {
   res.json(approval);
 });
 
+// P0 Golden Run Blocker Repair, Blocker D — providerName/imageParameters
+// are now forwarded from the request body. Before this, generateKeyframe
+// was ALWAYS called with no options at all, so it always fell through to
+// keyframe-generation-service.js's own DEFAULT_PROVIDER_NAME ('fake-image')
+// — the real 'evolink-image' provider (already registered, already
+// working) was structurally unreachable through this route. The default
+// itself is UNCHANGED (still 'fake-image' when providerName is omitted,
+// exactly like before) — every existing caller/test that doesn't ask for
+// a specific provider keeps its old, deterministic behavior; a caller now
+// simply CAN ask for the real one, mirroring how the video-generation
+// route already requires provider/model explicitly (index.js's own
+// comment at that route).
 app.post('/keyframes/:keyframeId/generate', async (req, res) => {
   const found = keyframeStore.findKeyframeById(req.params.keyframeId);
   if (!found) return res.status(404).json({ error: 'Keyframe not found' });
 
-  const result = await keyframeGenerationService.generateKeyframe(found.project.id, req.params.keyframeId);
+  const { providerName, imageParameters } = req.body || {};
+  const result = await keyframeGenerationService.generateKeyframe(found.project.id, req.params.keyframeId, { providerName, imageParameters });
   res.json(result);
 });
 

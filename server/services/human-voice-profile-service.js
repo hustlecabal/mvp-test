@@ -27,6 +27,31 @@ const { createHumanVoiceProfile, createVoicePatternEntry } = require('../schemas
 const MIN_ABSOLUTE_SUPPORT_COUNT = 3;
 const MIN_DISCUSSION_ITEM_COUNT = 5; // fewer real items than this -> PARTIAL, never fabricated up to a minimum
 
+// P0 Golden Run Blocker Repair, Part 4 — Golden Run #001's real, live
+// Reddit corpus for "Got any hobbies?" showed languagePatterns/idioms/
+// recurringFraming dominated by Reddit's own standard AutoModerator
+// footer text (near-verbatim across most subreddits that use r/
+// AutoModerator's default wiki page), not genuine human voice. Same
+// "deterministic, marker-based, never an NLP classifier" discipline as
+// MARKER_DIMENSIONS above — a short, fixed, documented signature list,
+// not fuzzy scoring. A matching item is EXCLUDED from the corpus
+// entirely, before any extraction runs, so it never has a chance to
+// dominate a pattern's supportCount. Deliberately does NOT filter on
+// generic "low information" length or exact-duplicate text — both would
+// risk excluding genuinely short-but-real human posts, and neither was
+// needed to fix the actual pollution observed live.
+const BOT_BOILERPLATE_MARKERS = [
+  'i am a bot, and this action was performed automatically',
+  'this action was performed automatically',
+  'contact the moderators of this subreddit',
+  'this subreddit is powered entirely by volunteers',
+];
+
+function isBoilerplateItem(item) {
+  const text = (item.text || '').toLowerCase();
+  return BOT_BOILERPLATE_MARKERS.some((marker) => text.includes(marker));
+}
+
 const STOPWORDS = new Set('a an the and or but if then so of to in on for with is are was were be been being it its this that these those i you he she we they my your his her our their as at by from not no do does did have has had can will would should could just so very really'.split(' '));
 
 function splitSentences(text) {
@@ -138,23 +163,37 @@ function buildHumanVoiceProfile(projectId, { topic, platform = 'REDDIT', items =
   if (!Array.isArray(items) || items.length === 0) {
     return createHumanVoiceProfile({ projectId, topic, platform, status: 'FAILED', diagnostics: [{ code: 'ACQUISITION_FAILED', message: 'no discussion items to build a profile from' }] });
   }
-  if (items.length < MIN_DISCUSSION_ITEM_COUNT) {
-    diagnostics.push({ code: 'INSUFFICIENT_DISCUSSION_VOLUME', message: `only ${items.length} real discussion items acquired (minimum ${MIN_DISCUSSION_ITEM_COUNT}) — profile built, but with reduced confidence` });
+
+  // P0 Golden Run Blocker Repair, Part 4 — excluded BEFORE any extraction
+  // or volume check, so bot/moderator boilerplate never dominates a
+  // pattern's supportCount and never counts toward "enough real items".
+  const genuineItems = items.filter((item) => !isBoilerplateItem(item));
+  if (genuineItems.length === 0) {
+    return createHumanVoiceProfile({
+      projectId,
+      topic,
+      platform,
+      status: 'FAILED',
+      diagnostics: [{ code: 'ACQUISITION_FAILED', message: 'every acquired discussion item matched a known bot/moderator boilerplate signature — no genuine conversational material to build a profile from' }],
+    });
+  }
+  if (genuineItems.length < MIN_DISCUSSION_ITEM_COUNT) {
+    diagnostics.push({ code: 'INSUFFICIENT_DISCUSSION_VOLUME', message: `only ${genuineItems.length} real discussion items acquired (minimum ${MIN_DISCUSSION_ITEM_COUNT}) — profile built, but with reduced confidence` });
   }
 
   const markerEntries = {};
   for (const [dimension, markers] of Object.entries(MARKER_DIMENSIONS)) {
     if (dimension === 'audienceQuestions') continue;
-    markerEntries[dimension] = markerCountsToEntries(countMarkers(items, markers));
+    markerEntries[dimension] = markerCountsToEntries(countMarkers(genuineItems, markers));
   }
 
-  const clicheEntries = markerCountsToEntries(countMarkers(items, CLICHE_MARKERS));
-  const vocabulary = extractFrequentTerms(items, { ngram: 1 });
-  const idioms = extractFrequentTerms(items, { ngram: 3 });
-  const recurringFraming = extractFrequentTerms(items, { ngram: 4 });
-  const audienceQuestions = extractAudienceQuestions(items);
+  const clicheEntries = markerCountsToEntries(countMarkers(genuineItems, CLICHE_MARKERS));
+  const vocabulary = extractFrequentTerms(genuineItems, { ngram: 1 });
+  const idioms = extractFrequentTerms(genuineItems, { ngram: 3 });
+  const recurringFraming = extractFrequentTerms(genuineItems, { ngram: 4 });
+  const audienceQuestions = extractAudienceQuestions(genuineItems);
 
-  const sourceThreadIds = [...new Set(items.map((i) => i.externalId).filter(Boolean))];
+  const sourceThreadIds = [...new Set(genuineItems.map((i) => i.externalId).filter(Boolean))];
 
   return createHumanVoiceProfile({
     projectId,
@@ -182,4 +221,4 @@ function buildHumanVoiceProfile(projectId, { topic, platform = 'REDDIT', items =
   });
 }
 
-module.exports = { buildHumanVoiceProfile, MIN_ABSOLUTE_SUPPORT_COUNT, MIN_DISCUSSION_ITEM_COUNT };
+module.exports = { buildHumanVoiceProfile, MIN_ABSOLUTE_SUPPORT_COUNT, MIN_DISCUSSION_ITEM_COUNT, isBoilerplateItem, BOT_BOILERPLATE_MARKERS };

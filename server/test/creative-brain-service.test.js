@@ -1,11 +1,19 @@
 // Tests for services/creative-brain-service.js — the ONE Creative Brain
 // operator entry point — plus its financial-control (services/creative-
 // brain/creative-synthesis-service.js), candidate-selection, and Golden
-// Creative Test proof. Uses services/creative-brain/fake-creative-brain-
-// provider.js (the established fake-provider testing convention, since
-// no ANTHROPIC_API_KEY exists in this environment — see this stage's own
-// final report for the honest NOT CURRENTLY POSSIBLE disclosure on real
-// Anthropic-backed generation).
+// Creative Test proof. Every test below explicitly passes its own
+// services/creative-brain/fake-creative-brain-provider.js (the
+// established fake-provider testing convention — deterministic, no real
+// network call, no dependency on a real credential being configured in
+// whatever environment runs this suite).
+//
+// P0 Golden Run Blocker Repair, Blocker C — generateCreativeBlueprint()
+// now DEFAULTS `provider` to the real createClaudeCreativeBrainProvider()
+// when the caller doesn't supply one (exactly what the documented REST/
+// MCP entry points do — a JSON body can never carry a JS provider
+// object). See "P0-C." below for the one test proving that real routing
+// actually reaches the real adapter, without ever making a real network
+// call in this fast/deterministic suite.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -88,6 +96,42 @@ test('4. generateCreativeBlueprint fails with NO_USABLE_RECOMMENDATIONS when eve
   const result = await creativeBrainService.generateCreativeBlueprint(project.id, { recommendationSetId: recSet.id, topic: 't', provider: createFakeCreativeBrainProvider() });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'NO_USABLE_RECOMMENDATIONS');
+});
+
+// --- P0 Golden Run Blocker Repair, Blocker C — real provider routing ---
+//
+// This is the one test in this file that does NOT pass an explicit
+// `provider` — proving generateCreativeBlueprint() actually reaches the
+// real createClaudeCreativeBrainProvider() by default, exactly like the
+// documented REST/MCP entry points do. It never fakes the Anthropic call
+// and never makes a real network call either: temporarily clearing
+// EVOLINK_LLM_API_KEY makes the REAL adapter's own callAnthropic() return
+// {unavailable: true} before ever touching fetch (claude-creative-brain-
+// provider.js's own documented behavior) — so this proves the routing
+// path reaches the real adapter and the real adapter fails honestly with
+// UNAVAILABLE, never a generic "provider is missing required method"
+// crash and never a silent fake substitution.
+
+test('P0-C. with no provider explicitly supplied, generateCreativeBlueprint reaches the REAL Anthropic adapter by default and fails honestly with UNAVAILABLE when no credential is configured', async () => {
+  const project = newProject();
+  const recSet = addRecommendationSet(project.id);
+  // Bootstraps the PENDING CreativeBrainApproval (a fake provider here is
+  // fine — this call's only purpose is to create the approval request;
+  // the real-routing behavior under test happens in the SECOND call
+  // below, after approval, with no provider supplied).
+  await creativeBrainService.generateCreativeBlueprint(project.id, { recommendationSetId: recSet.id, topic: 'career change', provider: createFakeCreativeBrainProvider() });
+  approveCreativeBrain(project.id, recSet.id);
+  const originalKey = process.env.EVOLINK_LLM_API_KEY;
+  delete process.env.EVOLINK_LLM_API_KEY;
+  try {
+    const result = await creativeBrainService.generateCreativeBlueprint(project.id, { recommendationSetId: recSet.id, topic: 'career change' });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'CANDIDATE_GENERATION_FAILED');
+    assert.equal(result.diagnostics[0].code, 'CREATIVE_BRAIN_PROVIDER_UNAVAILABLE');
+    assert.match(result.diagnostics[0].message, /EVOLINK_LLM_API_KEY is not configured/);
+  } finally {
+    if (originalKey !== undefined) process.env.EVOLINK_LLM_API_KEY = originalKey;
+  }
 });
 
 // --- financial gate (Part 21/28) ----------------------------------------
