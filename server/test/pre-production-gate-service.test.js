@@ -725,3 +725,98 @@ test('24. fix I — costStatus is persisted as UNKNOWN when no BeatGraph is supp
   const withBeatGraph = gateService.evaluatePreProductionGate(project.id, blueprint.id, { beatGraph });
   assert.equal(withBeatGraph.gateResult.costStatus, 'ESTIMATED');
 });
+
+// ============================================================
+// PRODUCTION UNBLOCK — CREATOR-LED MODE (no RecommendationSet)
+// ============================================================
+
+function buildAndApproveCreatorLedBlueprint(project, draftInput = {}) {
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, {
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    hookStrategy: 'open with a question',
+    ...draftInput,
+  });
+  const { BLOCKING_DIAGNOSTIC_CODES } = require('../schemas/creative-blueprint-schema');
+  if (draft.diagnostics.filter((d) => BLOCKING_DIAGNOSTIC_CODES.includes(d.code)).length === 0) {
+    creativeBlueprintService.reviewCreativeBlueprint(project.id, draft.id, { decision: 'APPROVE', reviewedBy: 'human1' });
+    return creativeBlueprintStore.getCreativeBlueprint(project.id, draft.id);
+  }
+  return draft;
+}
+
+test('PB-1. evaluatePreProductionGate succeeds for a creator-led (no RecommendationSet) APPROVED Blueprint — reference acquisition failure/absence does not prevent Blueprint or gate evaluation', () => {
+  const project = newProject();
+  const blueprint = buildAndApproveCreatorLedBlueprint(project);
+  assert.equal(blueprint.status, 'APPROVED');
+  assert.equal(blueprint.recommendationSetId, null);
+  const result = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(result.gateResult.blueprintId, blueprint.id);
+});
+
+test('PB-2. a creator-led gate evaluation records an honest NO_RECOMMENDATION_SET information entry — never a fabricated pass, never silently skipped without a trace', () => {
+  const project = newProject();
+  const blueprint = buildAndApproveCreatorLedBlueprint(project);
+  const result = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  assert.ok(result.gateResult.information.some((i) => i.code === 'NO_RECOMMENDATION_SET'));
+});
+
+test('PB-3. evidence-led gate evaluation is completely unaffected — no NO_RECOMMENDATION_SET entry when a real RecommendationSet is linked', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{}]);
+  const blueprint = buildAndApproveBlueprint(project, recSet, { recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }] });
+  const result = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  assert.ok(!result.gateResult.information.some((i) => i.code === 'NO_RECOMMENDATION_SET'));
+});
+
+test('PB-4. evidence-provenance/alignment/conflict blockers and warnings never fire for a creator-led Blueprint — genuinely not applicable, not a fabricated clean pass', () => {
+  const project = newProject();
+  const blueprint = buildAndApproveCreatorLedBlueprint(project);
+  const result = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  const codes = [...result.gateResult.blockers, ...result.gateResult.warnings].map((f) => f.code);
+  assert.ok(!codes.includes('INVALID_RECOMMENDATION_PROVENANCE'));
+  assert.ok(!codes.includes('RECOMMENDATION_ALIGNMENT_UNVERIFIED'));
+  assert.ok(!codes.includes('RECOMMENDATION_CONFLICT'));
+});
+
+test('PB-5. FAILURE INJECTION — a creator-led Blueprint still fails BLUEPRINT_NOT_APPROVED when not approved, exactly as an evidence-led one would', () => {
+  const project = newProject();
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, { concept: 'c', corePromise: 'p', targetDuration: 60 });
+  const result = gateService.evaluatePreProductionGate(project.id, draft.id);
+  assert.equal(result.ok, true);
+  assert.ok(result.gateResult.blockers.some((b) => b.code === 'BLUEPRINT_NOT_APPROVED'));
+});
+
+test('PB-6. FAILURE INJECTION — a Blueprint whose recommendationSetId points to a since-deleted/malformed RecommendationSet fails cleanly with a clear reason, never silently treated as creator-led', () => {
+  const project = newProject();
+  // Bypass the service layer to construct a Blueprint that references a
+  // RecommendationSet id that was never actually persisted — simulating
+  // data corruption or a since-deleted RecommendationSet. The gate must
+  // still fail explicitly here: a non-null recommendationSetId is a real
+  // evidence-led claim, and the creator-led tolerance must never paper
+  // over an unresolvable one.
+  const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
+  const corrupted = createCreativeBlueprint({
+    projectId: project.id,
+    recommendationSetId: 'deleted-or-never-existed',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    status: 'APPROVED',
+  });
+  const saved = creativeBlueprintStore.addCreativeBlueprint(project.id, corrupted);
+  const result = gateService.evaluatePreProductionGate(project.id, saved.blueprint.id);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /no RecommendationSet found/);
+});
+
+test('PB-7. decideGateResult (OVERRIDE/ACCEPT) works identically on a creator-led gate result — approval gate machinery is completely untouched by the RecommendationSet relaxation', () => {
+  const project = newProject();
+  const blueprint = buildAndApproveCreatorLedBlueprint(project);
+  const evalResult = gateService.evaluatePreProductionGate(project.id, blueprint.id);
+  const decision = gateService.decideGateResult(project.id, evalResult.gateResult.id, { decision: 'ACCEPT', decidedBy: 'human1' });
+  assert.equal(decision.ok, true);
+  assert.equal(decision.gateResult.humanDecision, 'ACCEPT');
+});

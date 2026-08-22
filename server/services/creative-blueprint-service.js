@@ -101,8 +101,17 @@ function deriveBlueprintProductionConsiderations({ continuityRequirements, targe
 // Part 6 — resolves ONE recommendationDecision against the REAL,
 // already-persisted RecommendationSet. Never invents a replacement id.
 // Returns { ok:true, recommendation } or { ok:false, diagnostic }.
+//
+// PRODUCTION UNBLOCK, Part 2 — recommendationSet may now legitimately be
+// null (a creator-led Blueprint with no RecommendationSet at all). A
+// recommendationDecision can never be resolved against nothing, so this
+// is reported the same way an unresolvable recommendationId always was
+// — never silently dropped, never invented a replacement.
 function resolveRecommendationDecision(recommendationSet, decisionInput) {
   const { recommendationId, decision } = decisionInput;
+  if (!recommendationSet) {
+    return { ok: false, diagnostic: diag('INVALID_RECOMMENDATION_PROVENANCE', `recommendationId "${recommendationId}" cannot be resolved — this Blueprint has no RecommendationSet`) };
+  }
   if (!RECOMMENDATION_DECISION_TYPES.includes(decision)) {
     return { ok: false, diagnostic: diag('INVALID_RECOMMENDATION_PROVENANCE', `"${decision}" is not a recognized recommendation decision type`) };
   }
@@ -205,23 +214,40 @@ function validateBlueprintContent(projectId, recommendationSet, content) {
 // CreativeBlueprint from real, already-supplied human input plus real,
 // already-persisted Recommendation records — never inventing evidence,
 // strategy, or approval.
+//
+// PRODUCTION UNBLOCK, Part 2 — EVOLINK supports two legitimate creative-
+// entry modes: EVIDENCE-LED (a RecommendationSet is supplied and used to
+// ground the Blueprint's provenance) and CREATOR-LED (no RecommendationSet
+// exists at all — the caller's own direct creative intent, e.g. a fixed
+// screenplay, IS the source). A RecommendationSet is only a REQUIRED,
+// resolvable reference when the caller actually names one
+// (referenceSetId/recommendationSetId supplied but unresolvable is still
+// a real error, unchanged from before). When neither is supplied,
+// recommendationSet stays null and the Blueprint is built with no
+// evidence-derived fields — never fabricated, just genuinely absent — and
+// is still subject to every existing structural/approval gate
+// (validateBlueprintContent's MISSING_CONCEPT/MISSING_CORE_PROMISE/
+// MISSING_TARGET_DURATION diagnostics, reviewCreativeBlueprint's
+// BLOCKING_DIAGNOSTIC_CODES check) exactly as an evidence-led Blueprint
+// is.
 function buildCreativeBlueprintDraft(projectId, input = {}) {
   if (!projectStore.getProject(projectId)) {
     return createCreativeBlueprint({ projectId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no project found with id "${projectId}"`)] });
   }
 
   const { referenceSetId, recommendationSetId, creativeBriefId } = input;
-  const recommendationSet = recommendationSetId
-    ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
-    : referenceSetId
-    ? recommendationStore.getLatestRecommendationSetForReferenceSet(projectId, referenceSetId)
-    : null;
-  if (!recommendationSet || recommendationSet.projectId !== projectId) {
-    return createCreativeBlueprint({ projectId, referenceSetId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no RecommendationSet found for referenceSetId "${referenceSetId}" / recommendationSetId "${recommendationSetId}"`)] });
+  let recommendationSet = null;
+  if (recommendationSetId || referenceSetId) {
+    recommendationSet = recommendationSetId
+      ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
+      : recommendationStore.getLatestRecommendationSetForReferenceSet(projectId, referenceSetId);
+    if (!recommendationSet || recommendationSet.projectId !== projectId) {
+      return createCreativeBlueprint({ projectId, referenceSetId, status: 'FAILED', diagnostics: [diag('INVALID_RECOMMENDATION_SET', `no RecommendationSet found for referenceSetId "${referenceSetId}" / recommendationSetId "${recommendationSetId}"`)] });
+    }
   }
 
   const validated = validateBlueprintContent(projectId, recommendationSet, input);
-  const sourceReferenceSetIds = [...new Set([recommendationSet.referenceSetId])];
+  const sourceReferenceSetIds = recommendationSet ? [...new Set([recommendationSet.referenceSetId])] : [];
 
   // Part 10 — VoiceProfile reuse: validated via the real factory, never
   // redefined; if the caller supplied nothing, this stays null (never
@@ -233,8 +259,12 @@ function buildCreativeBlueprintDraft(projectId, input = {}) {
   const blueprint = createCreativeBlueprint({
     projectId,
     creativeBriefId: creativeBriefId || null,
-    referenceSetId: recommendationSet.referenceSetId,
-    recommendationSetId: recommendationSet.id,
+    // CREATOR-LED — no RecommendationSet: referenceSetId, if the caller
+    // supplied one directly (e.g. real reference footage was acquired but
+    // never processed into Recommendations), is carried through verbatim;
+    // never invented otherwise.
+    referenceSetId: recommendationSet ? recommendationSet.referenceSetId : referenceSetId || null,
+    recommendationSetId: recommendationSet ? recommendationSet.id : null,
     title: input.title || '',
     concept: input.concept || '',
     corePromise: input.corePromise || '',
@@ -302,8 +332,14 @@ function editCreativeBlueprintDraft(projectId, blueprintId, edits = {}) {
   if (!['DRAFT', 'PENDING_REVIEW'].includes(blueprint.status)) {
     return { ok: false, reason: `cannot edit content from status "${blueprint.status}" — only a DRAFT or PENDING_REVIEW Blueprint may be edited` };
   }
-  const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
-  if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+  // PRODUCTION UNBLOCK, Part 2 — a creator-led Blueprint legitimately has
+  // no recommendationSetId; only look one up (and require it to resolve)
+  // when the Blueprint actually references one.
+  let recommendationSet = null;
+  if (blueprint.recommendationSetId) {
+    recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+    if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+  }
 
   const mergedContent = { ...blueprint };
   for (const field of EDITABLE_BLUEPRINT_FIELDS) {
@@ -401,8 +437,14 @@ function reviewCreativeBlueprint(projectId, blueprintId, { decision, reviewedBy,
     // way forward, exactly as it already was for a bad-provenance case
     // that was never approved in the first place.
     if (blueprint.status === 'REJECTED') return { ok: false, reason: 'a REJECTED Blueprint is terminal and cannot be revised — build a new Blueprint draft instead' };
-    const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
-    if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+    // PRODUCTION UNBLOCK, Part 2 — same creator-led tolerance as
+    // editCreativeBlueprintDraft(): only require a resolvable
+    // RecommendationSet when the Blueprint actually references one.
+    let recommendationSet = null;
+    if (blueprint.recommendationSetId) {
+      recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+      if (!recommendationSet) return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}"` };
+    }
     // P0 Hardening (Rule 2/findings B, F) — recomputed fresh via the same
     // validation core buildCreativeBlueprintDraft uses, NEVER a blind copy
     // of the prior revision's diagnostics[]. Against unchanged content this

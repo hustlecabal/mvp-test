@@ -265,6 +265,9 @@ function checkCopiedThroughBlueprintDiagnostics(blueprint) {
 // matches what the Blueprint claims it was built from.
 function checkRecommendationProvenance(blueprint, recommendationSet) {
   const blockers = [];
+  // PRODUCTION UNBLOCK, Part 2 — creator-led Blueprint, no RecommendationSet
+  // to check provenance against. Not applicable, never a fabricated pass.
+  if (!recommendationSet) return { blockers, warnings: [] };
   if (recommendationSet.id !== blueprint.recommendationSetId || recommendationSet.projectId !== blueprint.projectId) {
     blockers.push(blocker('INVALID_RECOMMENDATION_PROVENANCE', `the supplied RecommendationSet ("${recommendationSet.id}") does not match this Blueprint's own recommendationSetId ("${blueprint.recommendationSetId}")`, 'EVIDENCE_ALIGNMENT'));
     return { blockers, warnings: [] };
@@ -294,7 +297,13 @@ function checkRecommendationProvenance(blueprint, recommendationSet) {
 // phrasing).
 function checkRecommendationAlignmentAndReworkRisk(blueprint, recommendationSet) {
   const warnings = [];
-  const byId = new Map((recommendationSet.recommendations || []).map((r) => [r.id, r]));
+  // PRODUCTION UNBLOCK, Part 2 — creator-led Blueprint: no accepted
+  // recommendations exist to check alignment/rework-risk against, so
+  // blueprint.recommendationDecisions is necessarily empty and this loop
+  // has nothing to do — but openQuestions is still a real, independent
+  // Blueprint field worth checking regardless of RecommendationSet
+  // presence, so this function does not early-return entirely.
+  const byId = recommendationSet ? new Map((recommendationSet.recommendations || []).map((r) => [r.id, r])) : new Map();
 
   for (const decision of blueprint.recommendationDecisions || []) {
     if (decision.decision === 'DEFER') {
@@ -322,7 +331,11 @@ function checkRecommendationAlignmentAndReworkRisk(blueprint, recommendationSet)
 // Dimension B (Coherence, partial) — Part 11 conflict detection.
 function checkRecommendationConflicts(blueprint, recommendationSet) {
   const warnings = [];
-  const byId = new Map((recommendationSet.recommendations || []).map((r) => [r.id, r]));
+  // PRODUCTION UNBLOCK, Part 2 — creator-led Blueprint: no
+  // RecommendationSet, so blueprint.recommendationDecisions is necessarily
+  // empty and acceptedOrEdited below will simply be []. Not a fabricated
+  // pass — there is genuinely nothing to check conflicts between.
+  const byId = recommendationSet ? new Map((recommendationSet.recommendations || []).map((r) => [r.id, r])) : new Map();
   const acceptedOrEdited = (blueprint.recommendationDecisions || [])
     .filter((d) => d.decision === 'ACCEPT' || d.decision === 'EDIT')
     .map((d) => byId.get(d.recommendationId))
@@ -492,9 +505,18 @@ function evaluatePreProductionGate(projectId, blueprintId, { beatGraph } = {}) {
   if (!blueprint) {
     return { ok: false, reason: `no CreativeBlueprint found with id "${blueprintId}"` };
   }
-  const recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
-  if (!recommendationSet) {
-    return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}" (referenced by Blueprint "${blueprintId}")` };
+  // PRODUCTION UNBLOCK, Part 2 — a creator-led Blueprint legitimately has
+  // no recommendationSetId (never evidence-led at all); only require a
+  // RecommendationSet to actually resolve when the Blueprint references
+  // one. recommendationSet stays null otherwise, and the evidence-specific
+  // checks below (checkRecommendationProvenance/AlignmentAndReworkRisk/
+  // Conflicts) treat that as "not applicable", never as a fabricated pass.
+  let recommendationSet = null;
+  if (blueprint.recommendationSetId) {
+    recommendationSet = recommendationStore.getRecommendationSet(projectId, blueprint.recommendationSetId);
+    if (!recommendationSet) {
+      return { ok: false, reason: `no RecommendationSet found with id "${blueprint.recommendationSetId}" (referenced by Blueprint "${blueprintId}")` };
+    }
   }
   const visualBible = creativeStore.getVisualBible(projectId); // may be null — continuity checks below tolerate that (blueprint.continuityRequirements is already validated/filtered by INT-2)
 
@@ -504,6 +526,10 @@ function evaluatePreProductionGate(projectId, blueprintId, { beatGraph } = {}) {
 
   if (blueprint.status !== 'APPROVED') {
     blockers.push(blocker('BLUEPRINT_NOT_APPROVED', `Blueprint status is "${blueprint.status}", not APPROVED — human strategy approval (INT-2) is a precondition for this gate.`, 'HUMAN_AUTHORITY'));
+  }
+
+  if (!recommendationSet) {
+    information.push(info('NO_RECOMMENDATION_SET', 'This Blueprint has no linked RecommendationSet (creator-led — no reference-video evidence was used). Evidence provenance, alignment, and conflict checks are not applicable and were skipped.'));
   }
 
   for (const result of [

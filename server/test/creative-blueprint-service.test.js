@@ -18,6 +18,7 @@ const blueprintStore = require('../services/creative-blueprint-store');
 const { createRecommendation, createRecommendationSet } = require('../schemas/recommendation-schema');
 const {
   buildCreativeBlueprintDraft,
+  editCreativeBlueprintDraft,
   submitCreativeBlueprintForReview,
   reviewCreativeBlueprint,
   resolveRecommendationDecision,
@@ -25,6 +26,7 @@ const {
   detectStructuralContradiction,
   deriveBlueprintProductionConsiderations,
 } = require('../services/creative-blueprint-service');
+const { BLOCKING_DIAGNOSTIC_CODES } = require('../schemas/creative-blueprint-schema');
 
 function newProject() {
   return projectStore.createProject({ title: 'x', topic: 'y' });
@@ -482,4 +484,136 @@ test('34. no LLM/interpretation-provider dependency — creative-blueprint-servi
   const requireCalls = source.match(/require\(['"][^'"]+['"]\)/g) || [];
   assert.ok(!requireCalls.some((r) => /provider/i.test(r)));
   assert.ok(!/openai|anthropic|claude/i.test(source));
+});
+
+// ============================================================
+// PRODUCTION UNBLOCK — CREATOR-LED MODE (no RecommendationSet)
+// ============================================================
+
+test('PB-1. CreativeBlueprint creation succeeds with no RecommendationSet at all when sufficient direct creative intent exists', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    title: 'Special Delivery',
+    concept: 'a cleaner survives a hit and runs',
+    corePromise: 'survive the next thirty seconds',
+    targetDuration: 360,
+  });
+  assert.equal(draft.status, 'DRAFT');
+  assert.deepEqual(draft.diagnostics, []);
+  assert.equal(draft.recommendationSetId, null);
+  assert.equal(draft.referenceSetId, null);
+  assert.equal(blueprintStore.listCreativeBlueprints(project.id).length, 1);
+});
+
+test('PB-2. CreativeBlueprint creation still succeeds, unchanged, when a real RecommendationSet is supplied (evidence-led mode unaffected)', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{}]);
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    referenceSetId: 'rs1',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }],
+  });
+  assert.equal(draft.status, 'DRAFT');
+  assert.equal(draft.recommendationSetId, recSet.id);
+  assert.equal(draft.referenceSetId, 'rs1');
+  assert.equal(draft.recommendationDecisions.length, 1);
+});
+
+test('PB-3. recommendation-derived provenance (sourceRecommendationIds/sourcePatternIds) is preserved exactly as before when a RecommendationSet is available', () => {
+  const project = newProject();
+  const recSet = setupRecommendationSet(project.id, 'rs1', [{ sourcePatternIds: ['pattern-xyz'] }]);
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    referenceSetId: 'rs1',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    recommendationDecisions: [{ recommendationId: recSet.recommendations[0].id, decision: 'ACCEPT' }],
+  });
+  assert.deepEqual(draft.sourceRecommendationIds, [recSet.recommendations[0].id]);
+  assert.deepEqual(draft.sourcePatternIds, ['pattern-xyz']);
+  assert.deepEqual(draft.sourceReferenceSetIds, ['rs1']);
+});
+
+test('PB-4. no fake evidence is fabricated when RecommendationSet is absent — sourceRecommendationIds/sourcePatternIds/sourceReferenceSetIds all stay empty, never invented', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+  });
+  assert.deepEqual(draft.sourceRecommendationIds, []);
+  assert.deepEqual(draft.sourcePatternIds, []);
+  assert.deepEqual(draft.sourceReferenceSetIds, []);
+  assert.deepEqual(draft.recommendationDecisions, []);
+});
+
+test('PB-5. FAILURE INJECTION — a recommendationDecision supplied with no RecommendationSet at all is reported as INVALID_RECOMMENDATION_PROVENANCE, never silently accepted or fabricated', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+    recommendationDecisions: [{ recommendationId: 'rec-that-cannot-exist', decision: 'ACCEPT' }],
+  });
+  assert.ok(draft.diagnostics.some((d) => d.code === 'INVALID_RECOMMENDATION_PROVENANCE'));
+  assert.deepEqual(draft.recommendationDecisions, []);
+});
+
+test('PB-6. FAILURE INJECTION — malformed RecommendationSet reference (an unresolvable recommendationSetId explicitly supplied) still fails exactly as before — creator-led tolerance never masks a real data error', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, {
+    recommendationSetId: 'does-not-exist',
+    concept: 'c',
+    corePromise: 'p',
+    targetDuration: 60,
+  });
+  assert.equal(draft.status, 'FAILED');
+  assert.ok(draft.diagnostics.some((d) => d.code === 'INVALID_RECOMMENDATION_SET'));
+  assert.equal(blueprintStore.listCreativeBlueprints(project.id).length, 0);
+});
+
+test('PB-7. FAILURE INJECTION — insufficient direct creative intent (no RecommendationSet AND missing concept) still produces MISSING_CONCEPT exactly as the evidence-led path always did', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, { corePromise: 'p', targetDuration: 60 });
+  assert.ok(draft.diagnostics.some((d) => d.code === 'MISSING_CONCEPT'));
+});
+
+test('PB-8. existing approval gate still blocks a creator-led Blueprint with unresolved blocking diagnostics', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, { corePromise: 'p', targetDuration: 60 }); // no concept -> MISSING_CONCEPT
+  const result = reviewCreativeBlueprint(project.id, draft.id, { decision: 'APPROVE', reviewedBy: 'human1' });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /MISSING_CONCEPT/);
+});
+
+test('PB-9. a complete creator-led Blueprint (no RecommendationSet) can be submitted for review and APPROVED through the existing, unmodified approval machinery', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, { concept: 'c', corePromise: 'p', targetDuration: 60 });
+  assert.equal(draft.diagnostics.filter((d) => BLOCKING_DIAGNOSTIC_CODES.includes(d.code)).length, 0);
+  submitCreativeBlueprintForReview(project.id, draft.id, { submittedBy: 'human1' });
+  const result = reviewCreativeBlueprint(project.id, draft.id, { decision: 'APPROVE', reviewedBy: 'human1' });
+  assert.equal(result.ok, true);
+  assert.equal(result.blueprint.status, 'APPROVED');
+});
+
+test('PB-10. editCreativeBlueprintDraft works on a creator-led Blueprint with no RecommendationSet', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, { concept: 'c', corePromise: 'p', targetDuration: 60 });
+  const result = editCreativeBlueprintDraft(project.id, draft.id, { concept: 'revised concept' });
+  assert.equal(result.ok, true);
+  assert.equal(result.blueprint.concept, 'revised concept');
+  assert.deepEqual(result.blueprint.sourceRecommendationIds, []);
+});
+
+test('PB-11. REQUEST_REVISION works on a creator-led Blueprint with no RecommendationSet — creates a new DRAFT revision, supersedes the original, no fabricated provenance', () => {
+  const project = newProject();
+  const draft = buildCreativeBlueprintDraft(project.id, { corePromise: 'p', targetDuration: 60 }); // MISSING_CONCEPT -> blocked from APPROVE
+  const result = reviewCreativeBlueprint(project.id, draft.id, { decision: 'REQUEST_REVISION', reviewedBy: 'human1' });
+  assert.equal(result.ok, true);
+  assert.equal(result.blueprint.status, 'DRAFT');
+  assert.equal(result.blueprint.supersedesBlueprintId, draft.id);
+  assert.deepEqual(result.blueprint.sourceRecommendationIds, []);
+  assert.equal(result.original.status, 'SUPERSEDED');
 });

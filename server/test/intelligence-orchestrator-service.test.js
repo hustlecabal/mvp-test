@@ -681,3 +681,54 @@ test('30. intelligence-orchestrator-service.js makes no direct network call, no 
   assert.ok(!/\bfetch\(/.test(src), 'the orchestrator itself must never call fetch directly — only ingestReferenceVideo()/interpretReferenceVideo() do, through their own existing boundaries');
   assert.ok(!/API_KEY|API_TOKEN/.test(src), 'no new credential env var should be referenced directly by the orchestrator');
 });
+
+// === PRODUCTION UNBLOCK — Part 3: reference failure degrades gracefully ===
+
+test('PB-1. total reference acquisition failure is recorded honestly (real VIDEO_ACQUISITION_FAILED + INSUFFICIENT_REFERENCE_SET diagnostics, run status FAILED) AND does not prevent a creator-led CreativeBlueprint from being built for the same project afterward', async () => {
+  const creativeBlueprintService = require('../services/creative-blueprint-service');
+  const project = newProject();
+  const result = await runGolden(project, {
+    n: 3,
+    acquisitionOverrides: { acquireVideo: async () => ({ status: 'FAILED', diagnostics: [{ code: 'VIDEO_ACQUISITION_FAILED', message: 'provider returned no result URL' }] }) },
+  });
+
+  // --- the failure is real and explicitly represented, exactly as before
+  // this stage — nothing here was changed in the orchestrator itself. ---
+  assert.equal(result.run.status, 'FAILED');
+  assert.equal(result.run.failureStage, 'PATTERNING');
+  assert.ok(result.run.diagnostics.some((d) => d.code === 'VIDEO_ACQUISITION_FAILED'));
+  assert.ok(result.run.diagnostics.some((d) => d.code === 'INSUFFICIENT_REFERENCE_SET'));
+  assert.equal(result.run.recommendationSetId, null);
+
+  // --- the failure does NOT poison the project: no RecommendationSet
+  // exists for it, and a creator-led Blueprint can still be built. ---
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, {
+    concept: 'a cleaner survives a hit and runs',
+    corePromise: 'survive the next thirty seconds',
+    targetDuration: 360,
+  });
+  assert.equal(draft.status, 'DRAFT');
+  assert.deepEqual(draft.diagnostics, []);
+  assert.equal(draft.recommendationSetId, null);
+});
+
+test('PB-2. FAILURE INJECTION — partial reference failure (some videos acquire, not enough to pattern) is still recorded honestly and still does not block creator-led Blueprint creation', async () => {
+  const creativeBlueprintService = require('../services/creative-blueprint-service');
+  const project = newProject();
+  let call = 0;
+  const result = await runGolden(project, {
+    n: 3,
+    acquisitionOverrides: {
+      acquireVideo: async () => {
+        call += 1;
+        if (call === 1) return { status: 'COMPLETED', resultUrl: 'https://fake.apify.com/f.mp4', diagnostics: [] };
+        return { status: 'FAILED', diagnostics: [{ code: 'VIDEO_ACQUISITION_FAILED', message: 'provider returned no result URL' }] };
+      },
+    },
+  });
+  assert.equal(result.run.status, 'FAILED'); // 1 successful ingestion is still short of the 3-video patterning minimum
+  assert.ok(result.run.diagnostics.some((d) => d.code === 'INSUFFICIENT_REFERENCE_SET'));
+
+  const draft = creativeBlueprintService.buildCreativeBlueprintDraft(project.id, { concept: 'c', corePromise: 'p', targetDuration: 60 });
+  assert.equal(draft.status, 'DRAFT');
+});
