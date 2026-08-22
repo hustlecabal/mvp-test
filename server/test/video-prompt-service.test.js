@@ -35,6 +35,8 @@ const generationStore = require('../services/generation-store');
 const keyframeGenerationApprovalStore = require('../services/keyframe-generation-approval-store');
 const gate = require('../services/approval-gate');
 const vps = require('../services/video-prompt-service');
+const { createVisualBeat } = require('../schemas/visual-beat-schema');
+const { createBeatGraph } = require('../schemas/beat-graph-schema');
 
 const GOOD_PROVIDER = 'evolink';
 const GOOD_MODEL = 'seedance-2.0-mini-image-to-video'; // REQUEST_SCHEMA_VERIFIED, imageToVideo: true
@@ -363,6 +365,161 @@ test('creative-specification invalidation: rebuilding with a different creative 
   const second = vps.buildVideoPromptPackage(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, creativeSpecification: { subjectMotion: 'runs quickly' } });
   assert.notEqual(first.package.prompt, second.package.prompt);
   assert.equal(second.package.version, 2);
+});
+
+// --- P1 Cinema Director bridge — VisualBeat motion fields reach the video prompt ---
+//
+// beat-graph-derivation-service.js's real, unmodified deriveBeatGraph()
+// never populates subjectMotion/environmentMotion/pacing from a Storyboard
+// today — Shot itself has no such fields (confirmed by direct trace, a
+// finding this stage's own report records honestly). These tests use a
+// real, directly-constructed VisualBeat (createVisualBeat — the actual
+// canonical schema factory, matching VisualBeat.id === shot.shotId, the
+// same identity convention beat-graph-derivation-service.js itself uses)
+// supplied via the options.beatGraph override — the same "explicit input,
+// else the real default" idiom this function already uses for
+// creativeSpecification/executionParameters — to prove the CONSUMPTION
+// side of the bridge, independent of that separate, out-of-scope
+// creation gap.
+
+function beatGraphWithMotion(shotId, motionFields) {
+  return createBeatGraph({ beats: [createVisualBeat({ id: shotId, shotId, ...motionFields })] });
+}
+
+test('P1-B.1 VisualBeat.subjectMotion reaches the actual video-generation prompt', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: 'turns sharply toward the headlights' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.subjectMotion, 'turns sharply toward the headlights');
+  assert.match(result.fields.prompt, /SUBJECT MOTION:\nturns sharply toward the headlights/);
+});
+
+test('P1-B.2 VisualBeat.environmentMotion reaches the actual video-generation prompt', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { environmentMotion: 'headlights sweep across the wet asphalt' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.environmentMotion, 'headlights sweep across the wet asphalt');
+  assert.match(result.fields.prompt, /ENVIRONMENT MOTION:\nheadlights sweep across the wet asphalt/);
+});
+
+test('P1-B.3 VisualBeat.pacing reaches the actual video-generation prompt', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { pacing: 'a sudden burst of speed, then held stillness' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.pacing, 'a sudden burst of speed, then held stillness');
+  assert.match(result.fields.prompt, /PACING:\na sudden burst of speed, then held stillness/);
+});
+
+test('P1-B.4 all three motion fields together reach the prompt from ONE real VisualBeat, alongside pre-existing fields (nothing unrelated dropped)', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, {
+    subjectMotion: 'turns sharply toward the headlights',
+    environmentMotion: 'headlights sweep across the wet asphalt',
+    pacing: 'a sudden burst of speed, then held stillness',
+  });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.match(result.fields.prompt, /SUBJECT MOTION:\nturns sharply toward the headlights/);
+  assert.match(result.fields.prompt, /ENVIRONMENT MOTION:\nheadlights sweep across the wet asphalt/);
+  assert.match(result.fields.prompt, /PACING:\na sudden burst of speed, then held stillness/);
+  // pre-existing, already-working fields must still be present too
+  assert.match(result.fields.prompt, /CAMERA MOTION:\neye level/);
+  assert.match(result.fields.prompt, /COMPOSITION:\ncentered/);
+});
+
+test('P1-B.5 an explicit creativeSpecInput override always wins over the VisualBeat default — never silently overridden', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: 'from the beat' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, {
+    provider: GOOD_PROVIDER,
+    model: GOOD_MODEL,
+    beatGraph,
+    creativeSpecification: { subjectMotion: 'explicitly supplied by the caller' },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.subjectMotion, 'explicitly supplied by the caller');
+  assert.doesNotMatch(result.fields.prompt, /from the beat/);
+});
+
+test('P1-B.6 FAILURE INJECTION — no matching beat at all (today\'s real, unmodified deriveBeatGraph() never populates motion fields) degrades safely: prompt stays valid, fields are null, never throws', () => {
+  const { project, keyframe } = buildFixture();
+  assert.doesNotThrow(() => vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL }));
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.subjectMotion, null);
+  assert.equal(result.fields.creativeSpecification.environmentMotion, null);
+  assert.equal(result.fields.creativeSpecification.pacing, null);
+  assert.doesNotMatch(result.fields.prompt, /SUBJECT MOTION/);
+});
+
+test('P1-B.7 FAILURE INJECTION — null motion fields on a real VisualBeat degrade safely, same as no beat at all', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: null, environmentMotion: null, pacing: null });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.subjectMotion, null);
+  assert.doesNotMatch(result.fields.prompt, /SUBJECT MOTION/);
+});
+
+test('P1-B.8 FAILURE INJECTION — malformed (non-string) motion fields never get stringified into the prompt; degrade to absent, never crash', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: { unexpected: 'object' }, environmentMotion: 42, pacing: [] });
+  assert.doesNotThrow(() => vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph }));
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.equal(result.fields.creativeSpecification.subjectMotion, null);
+  assert.equal(result.fields.creativeSpecification.environmentMotion, null);
+  assert.equal(result.fields.creativeSpecification.pacing, null);
+  assert.doesNotMatch(result.fields.prompt, /object Object/);
+});
+
+test('P1-B.9 FAILURE INJECTION — missing pacing specifically (subjectMotion/environmentMotion present) still produces a valid prompt with only PACING absent', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: 'walks forward', environmentMotion: 'leaves rustle' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.match(result.fields.prompt, /SUBJECT MOTION:\nwalks forward/);
+  assert.match(result.fields.prompt, /ENVIRONMENT MOTION:\nleaves rustle/);
+  assert.doesNotMatch(result.fields.prompt, /PACING/);
+});
+
+test('P1-B.10 FAILURE INJECTION — conflicting motion instructions (subjectMotion and environmentMotion textually contradictory) do not crash and neither side is silently dropped', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: 'stands completely still', environmentMotion: 'the whole frame shakes violently' });
+  assert.doesNotThrow(() => vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph }));
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.match(result.fields.prompt, /SUBJECT MOTION:\nstands completely still/);
+  assert.match(result.fields.prompt, /ENVIRONMENT MOTION:\nthe whole frame shakes violently/);
+});
+
+test('P1-B.11 resolveMatchingBeat finds the beat by shot identity (VisualBeat.id === shotId), never a wrong shot\'s beat', () => {
+  const beatGraph = createBeatGraph({
+    beats: [createVisualBeat({ id: 'shot-1', shotId: 'shot-1', subjectMotion: 'shot 1 motion' }), createVisualBeat({ id: 'shot-2', shotId: 'shot-2', subjectMotion: 'shot 2 motion' })],
+  });
+  const found = beatGraph.beats.find((b) => b.id === 'shot-1');
+  assert.equal(vps.beatCreativeText(found, 'subjectMotion'), 'shot 1 motion');
+});
+
+test('P1-B.12 beatCreativeText degrades safely for a null beat, missing field, and non-string field alike', () => {
+  assert.equal(vps.beatCreativeText(null, 'subjectMotion'), null);
+  assert.equal(vps.beatCreativeText(createVisualBeat({}), 'subjectMotion'), null);
+  assert.equal(vps.beatCreativeText(createVisualBeat({ subjectMotion: 123 }), 'subjectMotion'), null);
+  assert.equal(vps.beatCreativeText(createVisualBeat({ subjectMotion: '  ' }), 'subjectMotion'), null, 'whitespace-only must not count as real content');
+});
+
+test('P1-B.13 every other field on the resolved package (canonical asset, camera, composition, lighting, continuity) is unaffected by this fix', () => {
+  const { project, keyframe } = buildFixture();
+  const beatGraph = beatGraphWithMotion(keyframe.shotId, { subjectMotion: 'walks forward' });
+  const result = vps.resolveVideoPackageFields(project.id, keyframe.keyframeId, { provider: GOOD_PROVIDER, model: GOOD_MODEL, beatGraph });
+  assert.equal(result.ok, true);
+  assert.ok(result.fields.canonicalKeyframeAssetId);
+  assert.equal(result.fields.creativeSpecification.camera, 'eye level');
+  assert.equal(result.fields.creativeSpecification.composition, 'centered');
+  assert.equal(result.fields.creativeSpecification.lighting, 'soft');
+  assert.match(result.fields.prompt, /^SUBJECT:/, 'section ordering must still start with SUBJECT');
 });
 
 test('unrelated project activity does not stale the package', () => {

@@ -33,6 +33,7 @@ const creativeStore = require('./creative-store');
 const keyframeStore = require('./keyframe-store');
 const keyframePromptService = require('./keyframe-prompt-service');
 const generationModelRegistry = require('./generation-model-registry');
+const beatGraphDerivationService = require('./beat-graph-derivation-service');
 const {
   VIDEO_PROMPT_SECTION_KEYS,
   createVideoPromptPackage,
@@ -282,6 +283,40 @@ function applyVersionedUpdate(pkg, updates, { updatedBy, changeNote } = {}) {
   return pkg;
 }
 
+// P1 CINEMA DIRECTOR BRIDGE — VisualBeat already carries per-shot
+// subjectMotion/environmentMotion/pacing (schemas/visual-beat-schema.js —
+// same field names as this file's own createVideoCreativeSpecification,
+// by deliberate design), but nothing here ever read them: a caller had to
+// retype the same creative decision by hand via `creativeSpecInput` every
+// time, or it silently stayed null. Fixed by deriving the shot's own beat
+// (VisualBeat.id === shot.shotId — beat-graph-derivation-service.js's own
+// identity convention) via the EXISTING, unmodified deriveBeatGraph() —
+// the same on-demand derivation visual-world-tools.js and pre-production-
+// gate-service.js already use, never a new persisted beat store. Pure,
+// synchronous, no store writes; safe to call inline. Returns null (never
+// throws) for any storyboard/derivation problem — this is a best-effort
+// creative-intent source, not a new hard requirement.
+function resolveMatchingBeat(storyboard, shotId) {
+  if (!storyboard || !shotId) return null;
+  let derivation;
+  try {
+    derivation = beatGraphDerivationService.deriveBeatGraph(storyboard);
+  } catch {
+    return null;
+  }
+  if (!derivation || !derivation.beatGraph || !Array.isArray(derivation.beatGraph.beats)) return null;
+  return derivation.beatGraph.beats.find((b) => b.id === shotId) || null;
+}
+
+// A malformed VisualBeat field (wrong type — e.g. a number/object instead
+// of free text) must degrade to "not supplied", never get stringified
+// into the prompt as-is (`[object Object]`) and never crash.
+function beatCreativeText(beat, field) {
+  if (!beat) return null;
+  const value = beat[field];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 // ===========================================================================
 // Part 3/4/5/6/7 — resolves every source and produces the full set of
 // fields a VideoPromptPackage needs, WITHOUT persisting anything. Kept
@@ -294,6 +329,15 @@ function applyVersionedUpdate(pkg, updates, { updatedBy, changeNote } = {}) {
 // different asset or model. Returns { ok: true, fields } on success.
 // ===========================================================================
 
+// `options.beatGraph` (optional) — when supplied, used directly instead of
+// re-deriving one from the live Storyboard via deriveBeatGraph(). Same
+// "explicit input, else the real default" idiom already used by
+// `creativeSpecification`/`executionParameters` on this same function —
+// not a new pattern. Exists so a caller that already holds a freshly-
+// derived (or, in a future stage, richer) BeatGraph never pays for a
+// second derivation, and so this exact resolution logic stays testable
+// with a real, directly-constructed VisualBeat without needing
+// beat-graph-derivation-service.js itself to change.
 function resolveVideoPackageFields(projectId, keyframeId, options = {}) {
   const keyframe = keyframeStore.getKeyframe(projectId, keyframeId);
   if (!keyframe) {
@@ -303,12 +347,15 @@ function resolveVideoPackageFields(projectId, keyframeId, options = {}) {
   const canonicalResolution = resolveCanonicalKeyframeInput(projectId, keyframeId);
   if (!canonicalResolution.ok) return canonicalResolution;
 
-  const { provider, model, requiresReferenceImages = false, creativeSpecification: creativeSpecInput = {}, executionParameters: executionParamsInput = {} } = options;
+  const { provider, model, requiresReferenceImages = false, creativeSpecification: creativeSpecInput = {}, executionParameters: executionParamsInput = {}, beatGraph: beatGraphOverride } = options;
   const modelValidation = validateVideoModelSelection(provider, model, { requiresReferenceImages });
   if (!modelValidation.ok) return modelValidation;
 
   const storyboard = creativeStore.getStoryboard(projectId);
   const shot = storyboard ? storyboard.shots.find((s) => s.shotId === keyframe.shotId) : null;
+  const beat = beatGraphOverride
+    ? (Array.isArray(beatGraphOverride.beats) ? beatGraphOverride.beats.find((b) => b.id === keyframe.shotId) : null) || null
+    : resolveMatchingBeat(storyboard, keyframe.shotId);
   const keyframePlan = keyframeStore.getKeyframePlan(projectId);
   const sourceKeyframePromptPackage = keyframePromptService.getKeyframePromptPackage(projectId, keyframeId);
 
@@ -323,13 +370,17 @@ function resolveVideoPackageFields(projectId, keyframeId, options = {}) {
   const negativeConstraints = (sourceKeyframePromptPackage && sourceKeyframePromptPackage.negativeConstraints) || [];
   const referenceLineage = buildReferenceLineage(sourceKeyframePromptPackage);
 
+  // P1 Cinema Director bridge — explicit creativeSpecInput always wins
+  // (never silently overridden); the shot's own VisualBeat is the next
+  // fallback (a real per-shot creative decision, when one exists); null
+  // only when neither source has anything, exactly like before this fix.
   const creativeSpecification = createVideoCreativeSpecification({
     camera: creativeSpecInput.camera ?? keyframe.camera ?? null,
-    subjectMotion: creativeSpecInput.subjectMotion ?? null,
-    environmentMotion: creativeSpecInput.environmentMotion ?? null,
+    subjectMotion: creativeSpecInput.subjectMotion ?? beatCreativeText(beat, 'subjectMotion'),
+    environmentMotion: creativeSpecInput.environmentMotion ?? beatCreativeText(beat, 'environmentMotion'),
     composition: creativeSpecInput.composition ?? keyframe.composition ?? null,
     lighting: creativeSpecInput.lighting ?? keyframe.lighting ?? null,
-    pacing: creativeSpecInput.pacing ?? null,
+    pacing: creativeSpecInput.pacing ?? beatCreativeText(beat, 'pacing'),
     continuity,
     negativeConstraints,
   });
@@ -446,4 +497,6 @@ module.exports = {
   validateVideoModelSelection,
   composeVideoPromptSections,
   composeVideoPrompt,
+  resolveMatchingBeat,
+  beatCreativeText,
 };

@@ -29,6 +29,26 @@ const creativeStore = require('../services/creative-store');
 const timelineStore = require('../services/timeline-store');
 const keyframeStore = require('../services/keyframe-store');
 const kfp = require('../services/keyframe-prompt-service');
+const creativeBlueprintStore = require('../services/creative-blueprint-store');
+const { createCreativeBlueprint, createVisualSpecification } = require('../schemas/creative-blueprint-schema');
+const { PROMPT_SECTION_KEYS } = require('../schemas/keyframe-prompt-schema');
+
+// P1 Cinema Director bridge — links a real, persisted CreativeBlueprint to
+// the project's Storyboard via the canonical blueprintId mechanism
+// (the same one control-plane-service.js/visual-world-tools.js already
+// use), so resolvePackageFields can resolve it the same way production
+// code does — never a shortcut that bypasses the real resolution path.
+function linkBlueprint(projectId, { negativeConstraints = '' } = {}) {
+  const blueprint = createCreativeBlueprint({
+    projectId,
+    title: 'P1 test blueprint',
+    concept: 'test concept',
+    visualSpecification: createVisualSpecification({ negativeConstraints }),
+  });
+  creativeBlueprintStore.addCreativeBlueprint(projectId, blueprint);
+  creativeStore.updateStoryboard(projectId, { blueprintId: blueprint.id });
+  return blueprint;
+}
 
 function newProject(title = 'kfp service test') {
   return projectStore.createProject({ title, topic: 'x' });
@@ -521,6 +541,98 @@ test('14. negative constraints are deduplicated, but nothing explicit is silentl
   const blurCount = fields.negativeConstraints.filter((c) => c === 'no blur').length;
   assert.equal(blurCount, 1, 'duplicates must be collapsed to one entry');
   assert.ok(fields.negativeConstraints.includes('no watermark'));
+});
+
+// --- P1 Cinema Director bridge — negativeConstraints from the real CreativeBlueprint ---
+
+test('P1-A.1 a CreativeBlueprint with non-empty visualSpecification.negativeConstraints, linked via Storyboard.blueprintId, reaches the actual prompt', () => {
+  const { project, keyframe } = buildFixture();
+  linkBlueprint(project.id, { negativeConstraints: 'no on-screen text, no crowd scenes' });
+
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.ok(fields.negativeConstraints.includes('no on-screen text, no crowd scenes'), 'the blueprint constraint must appear in the resolved list');
+  assert.match(fields.prompt, /NEGATIVE CONSTRAINTS:/);
+  assert.match(fields.prompt, /no on-screen text, no crowd scenes/);
+});
+
+test('P1-A.2 changing negativeConstraints changes the actual provider-facing prompt', () => {
+  const { project, keyframe } = buildFixture();
+  linkBlueprint(project.id, { negativeConstraints: 'no watermarks' });
+  const first = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.match(first.prompt, /no watermarks/);
+
+  const project2Fixture = buildFixture();
+  linkBlueprint(project2Fixture.project.id, { negativeConstraints: 'no motion blur' });
+  const second = kfp.resolvePackageFields(project2Fixture.project.id, project2Fixture.keyframe.keyframeId);
+  assert.match(second.prompt, /no motion blur/);
+  assert.doesNotMatch(second.prompt, /no watermarks/);
+  assert.notEqual(first.prompt, second.prompt, 'a different negativeConstraints value must produce a different prompt');
+});
+
+test('P1-A.3 an empty blueprint negativeConstraints leaves the prompt byte-for-byte unchanged from before this fix (no fabricated constraint)', () => {
+  const withBlueprint = buildFixture();
+  linkBlueprint(withBlueprint.project.id, { negativeConstraints: '' });
+  const fieldsWithEmptyBlueprint = kfp.resolvePackageFields(withBlueprint.project.id, withBlueprint.keyframe.keyframeId);
+
+  const withoutBlueprint = buildFixture();
+  const fieldsWithoutBlueprint = kfp.resolvePackageFields(withoutBlueprint.project.id, withoutBlueprint.keyframe.keyframeId);
+
+  assert.deepEqual(fieldsWithEmptyBlueprint.negativeConstraints, fieldsWithoutBlueprint.negativeConstraints);
+});
+
+test('P1-A.4 no Storyboard.blueprintId at all (no blueprint linked) degrades safely to the pre-fix sources only, never throws', () => {
+  const { project, keyframe } = buildFixture(); // buildFixture never links a blueprint
+  assert.doesNotThrow(() => kfp.resolvePackageFields(project.id, keyframe.keyframeId));
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.ok(fields.negativeConstraints.includes('no blur'), 'the pre-existing MasterCreativeSpec source must still work unchanged');
+});
+
+test('P1-A.5 a blueprintId that does not resolve to a real stored blueprint degrades safely rather than throwing out of resolvePackageFields', () => {
+  const { project, keyframe } = buildFixture();
+  // Directly corrupt the persisted storyboard record to simulate a stale
+  // reference (bypassing updateStoryboard's own validation, which would
+  // otherwise correctly refuse this) — resolvePackageFields itself must
+  // still degrade safely, not propagate a crash to its own caller.
+  const storyboard = creativeStore.getStoryboard(project.id);
+  storyboard.blueprintId = 'does-not-exist';
+  assert.doesNotThrow(() => kfp.resolvePackageFields(project.id, keyframe.keyframeId));
+});
+
+test('P1-A.6 CreativeBlueprint negativeConstraints and the Visual Bible/MasterCreativeSpec sources combine — no unrelated source is silently dropped by this fix', () => {
+  const { project, keyframe } = buildFixture();
+  linkBlueprint(project.id, { negativeConstraints: 'no lens flare' });
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.ok(fields.negativeConstraints.includes('no blur'), 'MasterCreativeSpec source must survive');
+  assert.ok(fields.negativeConstraints.includes('no extra limbs'), 'MasterCreativeSpec source must survive');
+  assert.ok(fields.negativeConstraints.some((c) => c.includes('cold blue palette')), 'VisualBible source must survive');
+  assert.ok(fields.negativeConstraints.includes('no lens flare'), 'the new CreativeBlueprint source must be present');
+});
+
+test('P1-A.7 every other prompt section (identity/wardrobe/environment/composition/camera/continuity) is unaffected by this fix — existing ordering and sections stay intact', () => {
+  const { project, keyframe } = buildFixture({ keyframe: { composition: 'rule of thirds', camera: 'medium shot' } });
+  linkBlueprint(project.id, { negativeConstraints: 'no on-screen text' });
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+
+  assert.ok(fields.identityLock.length > 0, 'identity lock must still be built');
+  assert.ok(fields.wardrobeLock.length > 0, 'wardrobe lock must still be built');
+  assert.ok(fields.environmentLock.length > 0, 'environment lock must still be built');
+  assert.equal(fields.composition, 'rule of thirds');
+  assert.equal(fields.camera, 'medium shot');
+  assert.ok(fields.continuityRequirements.length > 0, 'continuity requirements must still be resolved');
+
+  // section ordering — exactly PROMPT_SECTION_KEYS' own declared order,
+  // unchanged by this fix (NEGATIVE_CONSTRAINTS stays in its existing
+  // position, nothing was reordered or inserted).
+  assert.deepEqual(Object.keys(fields.promptSections), PROMPT_SECTION_KEYS);
+});
+
+test('P1-A.8 FAILURE INJECTION — a conflicting negative constraint (textually contradicting the positive composition) does not crash and does not silently drop either side; never invents a resolution', () => {
+  const { project, keyframe } = buildFixture({ keyframe: { composition: 'extreme close-up on her face' } });
+  linkBlueprint(project.id, { negativeConstraints: 'no close-up shots' });
+  assert.doesNotThrow(() => kfp.resolvePackageFields(project.id, keyframe.keyframeId));
+  const fields = kfp.resolvePackageFields(project.id, keyframe.keyframeId);
+  assert.equal(fields.composition, 'extreme close-up on her face', 'the positive instruction is preserved as-is');
+  assert.ok(fields.negativeConstraints.includes('no close-up shots'), 'the negative instruction is preserved as-is — this layer never adjudicates the contradiction, never silently drops either side');
 });
 
 // --- 15. Skill recommendation ------------------------------------------------------------

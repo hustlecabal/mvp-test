@@ -26,6 +26,7 @@ const creativeStore = require('./creative-store');
 const timelineStore = require('./timeline-store');
 const keyframeStore = require('./keyframe-store');
 const skillOrchestrator = require('./skill-orchestrator');
+const creativeBlueprintStore = require('./creative-blueprint-store');
 const {
   PROMPT_SECTION_KEYS,
   createKeyframePromptPackage,
@@ -336,14 +337,32 @@ function resolveContinuity(visualBible, storyboard, shot, keyframe, identityLock
 
 // Part 9 — negative constraints, combined from the Master Creative
 // Specification's own negativeConstraints array (verbatim — Part 9: never
-// silently remove an explicit one) and the Visual Bible's global
+// silently remove an explicit one), the project's linked CreativeBlueprint
+// (P1 Cinema Director bridge — see below), and the Visual Bible's global
 // continuityRules. Shot-specific negative constraints have no dedicated
 // structured field yet in schemas/creative-schema.js or
 // schemas/keyframe-schema.js (see the Known Limitations section) — nothing
 // is guessed in their place.
-function resolveNegativeConstraints(masterSpec, visualBible) {
+//
+// P1 CINEMA DIRECTOR BRIDGE — before this fix, the real Creative Brain's
+// own `CreativeBlueprint.visualSpecification.negativeConstraints` (an
+// LLM-authored, evidence-grounded "don't do X" decision) was computed
+// into MaterialSpecification.negativeConstraints by visual-world-
+// service.js's buildMaterialSpecification(), then silently discarded —
+// nothing ever wrote it onto a Keyframe field, and this function never
+// read it. It only ever reached the prompt if a human separately, and
+// redundantly, retyped the same constraint into the older, unrelated
+// MasterCreativeSpec. Fixed by reading it directly from the Storyboard's
+// own already-canonical link to its approved blueprint
+// (Storyboard.blueprintId — the exact mechanism control-plane-service.js
+// and visual-world-tools.js already use to resolve "the blueprint for
+// this project"), never through the optional/not-always-run Visual World
+// step. If negativeConstraints is empty or the link doesn't resolve,
+// behavior is byte-for-byte unchanged from before this fix.
+function resolveNegativeConstraints(masterSpec, visualBible, blueprint) {
   const items = [];
   if (masterSpec && Array.isArray(masterSpec.negativeConstraints)) items.push(...masterSpec.negativeConstraints);
+  if (blueprint && blueprint.visualSpecification && blueprint.visualSpecification.negativeConstraints) items.push(blueprint.visualSpecification.negativeConstraints);
   if (visualBible && visualBible.continuityRules) items.push(visualBible.continuityRules);
   return dedupeStrings(items);
 }
@@ -511,6 +530,11 @@ function resolvePackageFields(projectId, keyframeId) {
   const visualBible = creativeStore.getVisualBible(projectId) || { characters: [], locations: [], props: [] };
   const masterSpec = creativeStore.getMasterCreativeSpec(projectId);
   const keyframePlan = keyframeStore.getKeyframePlan(projectId);
+  // P1 Cinema Director bridge — same resolution pattern visual-world-
+  // tools.js already uses (storyboard.blueprintId -> getCreativeBlueprint),
+  // so negativeConstraints reaches the prompt regardless of whether the
+  // optional Visual World step was ever run for this keyframe.
+  const blueprint = storyboard && storyboard.blueprintId ? creativeBlueprintStore.getCreativeBlueprint(projectId, storyboard.blueprintId) : null;
 
   const warnings = [];
 
@@ -527,7 +551,7 @@ function resolvePackageFields(projectId, keyframeId) {
     warnings
   );
   const continuityRequirements = resolveContinuity(visualBible, storyboard, shot, keyframe, identityLock, environmentLock);
-  const negativeConstraints = resolveNegativeConstraints(masterSpec, visualBible);
+  const negativeConstraints = resolveNegativeConstraints(masterSpec, visualBible, blueprint);
 
   const atmosphere = environmentLock.map((l) => l.atmosphere).find(Boolean) || (visualBible && visualBible.atmosphere) || null;
   const actionText = keyframe.visualDescription || (shot && (shot.action || shot.movement || shot.visualDescription)) || null;
