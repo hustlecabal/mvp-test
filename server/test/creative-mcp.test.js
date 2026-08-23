@@ -13,9 +13,11 @@ const path = require('path');
 const projectTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-creative-mcp-projects-'));
 const creativeTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-creative-mcp-artifacts-'));
 const jobsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-creative-mcp-jobs-'));
+const blueprintTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evolink-creative-mcp-blueprints-'));
 process.env.PROJECT_DATA_DIR = projectTempDir;
 process.env.CREATIVE_DATA_DIR = creativeTempDir;
 process.env.GENERATION_JOBS_DATA_DIR = jobsTempDir;
+process.env.CREATIVE_BLUEPRINT_DATA_DIR = blueprintTempDir;
 
 const projectStore = require('../services/project-store');
 const generationStore = require('../services/generation-store');
@@ -29,7 +31,7 @@ test.before(async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(__dirname, '..', 'mcp', 'server.js')],
-    env: { PROJECT_DATA_DIR: projectTempDir, CREATIVE_DATA_DIR: creativeTempDir, GENERATION_JOBS_DATA_DIR: jobsTempDir },
+    env: { PROJECT_DATA_DIR: projectTempDir, CREATIVE_DATA_DIR: creativeTempDir, GENERATION_JOBS_DATA_DIR: jobsTempDir, CREATIVE_BLUEPRINT_DATA_DIR: blueprintTempDir },
   });
   client = new Client({ name: 'evolink-creative-mcp-test-client', version: '0.1.0' });
   await client.connect(transport);
@@ -40,6 +42,7 @@ test.after(async () => {
   fs.rmSync(projectTempDir, { recursive: true, force: true });
   fs.rmSync(creativeTempDir, { recursive: true, force: true });
   fs.rmSync(jobsTempDir, { recursive: true, force: true });
+  fs.rmSync(blueprintTempDir, { recursive: true, force: true });
 });
 
 function textOf(result) {
@@ -131,6 +134,45 @@ test('update_storyboard, create_storyboard_scene, and create_storyboard_shot all
   assert.equal(storyboard.scenes.length, 1);
   assert.equal(storyboard.shots.length, 1);
   assert.ok(storyboard.version >= 3, 'each of update_storyboard/create_storyboard_scene/create_storyboard_shot must bump the version');
+});
+
+// PRODUCTION COMPLETION BLOCKER, Part 4 — update_storyboard's MCP schema
+// previously omitted blueprintId even though creative-store.js's own
+// updateStoryboard() (and its own error text elsewhere in the codebase)
+// expects exactly this call shape to link a Storyboard to a real
+// CreativeBlueprint. Proves the real, end-to-end MCP surface: a real
+// CreativeBlueprint built through the real MCP tool, linked through the
+// real MCP update_storyboard call, and read back through the real MCP
+// get_storyboard call.
+test('update_storyboard can set and persist blueprintId through the real MCP surface', async () => {
+  const project = createProject();
+  const blueprint = textOf(
+    await call('build_creative_blueprint_draft', { projectId: project.id, concept: 'c', corePromise: 'p', targetDuration: 60 })
+  );
+  assert.equal(blueprint.status, 'DRAFT');
+  assert.equal(blueprint.recommendationSetId, null);
+
+  const updated = textOf(await call('update_storyboard', { projectId: project.id, blueprintId: blueprint.id, changeNote: 'link blueprint' }));
+  assert.equal(updated.blueprintId, blueprint.id);
+
+  const fetched = textOf(await call('get_storyboard', { projectId: project.id }));
+  assert.equal(fetched.blueprintId, blueprint.id);
+});
+
+test('update_storyboard rejects an unresolvable blueprintId rather than silently accepting it', async () => {
+  const project = createProject();
+  const result = await call('update_storyboard', { projectId: project.id, blueprintId: 'does-not-exist' });
+  assert.equal(result.isError, true);
+});
+
+test('update_storyboard can clear blueprintId back to null', async () => {
+  const project = createProject();
+  const blueprint = textOf(
+    await call('build_creative_blueprint_draft', { projectId: project.id, concept: 'c', corePromise: 'p', targetDuration: 60 })
+  );
+  await call('update_storyboard', { projectId: project.id, blueprintId: blueprint.id });
+  const cleared = textOf(await call('update_storyboard', { projectId: project.id, blueprintId: null }));
+  assert.equal(cleared.blueprintId, null);
 });
 
 test('create_storyboard_shot rejects an invalid planning status', async () => {

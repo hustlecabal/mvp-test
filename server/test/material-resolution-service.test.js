@@ -670,6 +670,88 @@ test('26.3-17. GENERATED_NEW+AI_VIDEO wins when it is the sole PRIMARY survivor 
   assert.equal(resolution.decidingPhase, 'SOLE_SURVIVOR');
 });
 
+// PRODUCTION COMPLETION BLOCKER, Part 1-3 — forensic finding: EVOLINK
+// production-orchestrator-service.js syncs beat.duration to the REAL,
+// measured narration audioEvent.duration (narration-timing-service.js's
+// applyNarrationTiming(), line ~216) BEFORE calling material resolution.
+// For 4/20 real Special Delivery beats, the real espeak-ng-synthesized
+// narration ran longer than every registered video model's maximum
+// supported clip duration (15s, confirmed against generation-model-
+// registry.js's own real entries) — a genuine capability ceiling, not a
+// bug. These tests prove material-resolution-service.js behaves with
+// integrity here: it must never fabricate a capability that doesn't
+// exist, and it must never silently substitute a different treatment.
+test('26.3-17b. an AI_VIDEO beat whose duration exceeds every registered model\'s maximum returns UNRESOLVED honestly (NO_CAPABLE_MODEL), never a fabricated pass', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  const beat = makeBeat({
+    visualTreatment: 'AI_VIDEO',
+    duration: 20, // exceeds every registered model's durations.maxSeconds (15s ceiling)
+    motionRequirements: { motionLevel: 'COMPLEX', requiresCameraMotion: null, requiresSubjectMotion: true },
+    identityRequirements: { characterReferences: ['nova'], locationReferences: [], propReferences: [] },
+  });
+
+  const resolution = materialResolutionService.resolveMaterial(project.id, beat, {});
+
+  assert.equal(resolution.status, 'UNRESOLVED');
+  assert.equal(resolution.candidates.length, 0, 'no fabricated candidate — nothing satisfies this real duration requirement');
+  assert.ok(resolution.unresolvedRequirements.some((r) => r.rejectedBy === 'NO_CAPABLE_MODEL'));
+});
+
+test('26.3-17c. reproduces the exact real Special Delivery failure: real narration-synced durations (15.18s/19.15s/16.53s/16.10s) all return UNRESOLVED', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  for (const realDuration of [15.180998, 19.152154, 16.534603, 16.104354]) {
+    const beat = makeBeat({
+      visualTreatment: 'AI_VIDEO',
+      duration: realDuration,
+      identityRequirements: { characterReferences: ['nova'], locationReferences: ['loc-1'], propReferences: [] },
+    });
+    const resolution = materialResolutionService.resolveMaterial(project.id, beat, {});
+    assert.equal(resolution.status, 'UNRESOLVED', `duration ${realDuration}s must remain honestly unresolved`);
+  }
+});
+
+test('26.3-17d. the same beat shape at 15s exactly (the real registry ceiling) resolves; one hundredth of a second over does not — proves the boundary is the real registry value, not an approximation', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  const atCeiling = materialResolutionService.resolveMaterial(
+    project.id,
+    makeBeat({ visualTreatment: 'AI_VIDEO', duration: 15, identityRequirements: { characterReferences: ['nova'], locationReferences: [], propReferences: [] } }),
+    {}
+  );
+  const overCeiling = materialResolutionService.resolveMaterial(
+    project.id,
+    makeBeat({ visualTreatment: 'AI_VIDEO', duration: 15.01, identityRequirements: { characterReferences: ['nova'], locationReferences: [], propReferences: [] } }),
+    {}
+  );
+  assert.equal(atCeiling.status, 'RESOLVED');
+  assert.equal(overCeiling.status, 'UNRESOLVED');
+});
+
+test('26.3-17e. a shorter beat of the identical shape (matching the content-level fix — a split, ~10s shot) resolves successfully — proves the repaired beat type genuinely works, not just in theory', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  const beat = makeBeat({
+    visualTreatment: 'AI_VIDEO',
+    duration: 10,
+    motionRequirements: { motionLevel: 'COMPLEX', requiresCameraMotion: null, requiresSubjectMotion: true },
+    identityRequirements: { characterReferences: ['nova'], locationReferences: ['loc-1'], propReferences: [] },
+  });
+  const resolution = materialResolutionService.resolveMaterial(project.id, beat, {});
+  assert.equal(resolution.status, 'RESOLVED');
+  assert.equal(resolution.selectedMaterial.visualTreatment, 'AI_VIDEO');
+});
+
+test('26.3-17f. no inappropriate fallback: an over-duration AI_VIDEO beat is never silently offered as STILL_IMAGE or any other treatment — visualTreatment is beat-author-declared, never substituted by material resolution', () => {
+  const project = projectStore.createProject({ title: 'x', topic: 'y' });
+  const beat = makeBeat({
+    visualTreatment: 'AI_VIDEO',
+    duration: 20,
+    identityRequirements: { characterReferences: ['nova'], locationReferences: [], propReferences: [] },
+  });
+  const resolution = materialResolutionService.resolveMaterial(project.id, beat, {});
+  assert.equal(resolution.status, 'UNRESOLVED');
+  assert.equal(resolution.selectedMaterial, null, 'no material — including a different treatment — is ever silently selected in place of the beat\'s own declared visualTreatment');
+  assert.ok(!resolution.candidates.some((c) => c.visualTreatment && c.visualTreatment !== 'AI_VIDEO'), 'no other treatment is ever offered as a silent substitute');
+});
+
 test('26.3-18. a cheap-but-gate-failing candidate never appears in candidates[] at all — structural, not a ranking outcome', () => {
   const project = projectStore.createProject({ title: 'x', topic: 'y' });
   const beat = makeBeat({

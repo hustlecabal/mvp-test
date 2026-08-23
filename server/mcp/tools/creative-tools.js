@@ -256,13 +256,18 @@ function register(server) {
       title: "Bulk-update a project's Storyboard",
       description:
         'Creates the Storyboard on first use, or updates it (bumping its version) on every call after that. ' +
-        'scenes/shots are full-array replacements when given. For adding a single scene or shot, prefer ' +
-        'create_storyboard_scene/create_storyboard_shot instead. Never generates anything, never calls a ' +
-        'provider, never touches approval/budget, and never moves a shot into actual video generation.',
+        'scenes/shots are full-array replacements when given. blueprintId links this Storyboard to a real, ' +
+        'already-persisted CreativeBlueprint (or null to clear the link) — the same field ' +
+        'control-plane-service.js reads when validating production prerequisites; pass a blueprintId that ' +
+        "does not resolve to a real Blueprint in this project and the call fails rather than silently " +
+        'accepting it. For adding a single scene or shot, prefer create_storyboard_scene/create_storyboard_shot ' +
+        'instead. Never generates anything, never calls a provider, never touches approval/budget, and never ' +
+        'moves a shot into actual video generation.',
       inputSchema: {
         projectId: z.string(),
         scenes: z.array(z.record(z.string(), z.any())).optional(),
         shots: z.array(z.record(z.string(), z.any())).optional(),
+        blueprintId: z.string().nullable().optional(),
         ...versionMetaFields,
       },
     },
