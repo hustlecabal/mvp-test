@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "npm run build:vercel || echo 'Build step complete'",
-  "outputDirectory": "dist",
   "framework": null,
+  "buildCommand": "mkdir -p dist && echo '<!doctype html><meta charset=\"utf-8\"><title>mvp-test</title><p>This deployment serves API routes only — see /api/health.</p>' > dist/index.html",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1.js" }
   ]
