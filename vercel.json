@@ -1,6 +1,7 @@
 {
   "version": 2,
   "framework": null,
+  "buildCommand": "echo 'No build step: api/ serverless functions are deployed as-is'",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1.js" }
   ]
