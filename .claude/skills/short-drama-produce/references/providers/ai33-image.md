@@ -27,4 +27,11 @@ is met without the creator needing to write them by hand.
 
 Protocol reference: `https://ai33.pro/app/api-document` (client-rendered; the adapter's request/response
 shapes were reverse-engineered from the app's bundled JS, not from a published OpenAPI spec — verify against
-the live docs if ai33 changes its contract).
+the live docs if ai33 changes its contract). Confirmed working end-to-end against a live account: create,
+poll, download, and media-type validation all passed for `recraft-v4.1`.
+
+ai33's Imagen API does not expose an output-format parameter — a model returns whatever format it natively
+produces (`recraft-v4.1` returns `image/webp`, confirmed live), not necessarily the extension a job requests.
+Pick the job's output extension to match what the chosen `model_id` actually returns; a mismatch fails the
+adapter's media-type signature check (correctly, since writing mismatched bytes under the wrong extension
+would be worse) rather than silently mislabeling the file.

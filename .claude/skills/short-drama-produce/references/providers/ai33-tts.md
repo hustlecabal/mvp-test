@@ -23,4 +23,5 @@ The adapter creates a task with `POST /v3/text-to-speech` (multipart form), then
 
 Protocol reference: `https://ai33.pro/app/api-document` (client-rendered; the adapter's request/response
 shapes were reverse-engineered from the app's bundled JS, not from a published OpenAPI spec — verify against
-the live docs if ai33 changes its contract).
+the live docs if ai33 changes its contract). Confirmed working end-to-end against a live account: create,
+poll, download, and media-type validation all passed for `edge_*` voices.

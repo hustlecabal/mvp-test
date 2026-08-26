@@ -28,4 +28,5 @@ The adapter creates a task with `POST /v1s/task/music-generation` (JSON body), t
 
 Protocol reference: `https://ai33.pro/app/api-document` (client-rendered; the adapter's request/response
 shapes were reverse-engineered from the app's bundled JS, not from a published OpenAPI spec — verify against
-the live docs if ai33 changes its contract).
+the live docs if ai33 changes its contract). Confirmed working end-to-end against a live account: create,
+poll, download, and media-type validation all passed for an instrumental custom-mode job (~2 minutes).

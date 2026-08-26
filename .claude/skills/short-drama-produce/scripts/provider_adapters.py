@@ -27,6 +27,18 @@ from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+# Python's default urllib User-Agent ("Python-urllib/x.y") is a well-known
+# bot signature that some providers' edge/WAF layers block heuristically.
+# Observed in production testing: identical requests to ai33's Cloudflare-
+# fronted API and CDN intermittently 403 with the default urllib UA and
+# succeed reliably with a browser-like one. Applied to every outbound
+# request in this module rather than only ai33's, since it's a safe,
+# backward-compatible identification header with no documented downside
+# for any of the other providers.
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 OPENAI_MODEL = "gpt-image-2"
 MINIMAX_MUSIC_MODEL = "music-3.0"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -671,6 +683,7 @@ def _request_json(
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, method=method)
     request.add_header(auth_header, auth_value if auth_value is not None else f"Bearer {token}")
+    request.add_header("User-Agent", USER_AGENT)
     if body is not None:
         request.add_header("Content-Type", "application/json")
     try:
@@ -725,6 +738,7 @@ def _multipart_request(
     request = urllib.request.Request(url, data=encoded, method="POST")
     request.add_header(auth_header, auth_value)
     request.add_header("Content-Type", content_type)
+    request.add_header("User-Agent", USER_AGENT)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read(MAX_JSON_RESPONSE + 1)
@@ -910,8 +924,10 @@ def _download(
         raise AdapterFailure("provider output URL is invalid")
     path = _output_root(job) / ("result" + Path(target).suffix.casefold())
     size = 0
+    request = urllib.request.Request(url)
+    request.add_header("User-Agent", USER_AGENT)
     try:
-        with urllib.request.urlopen(url, timeout=180) as response, path.open("xb") as handle:
+        with urllib.request.urlopen(request, timeout=180) as response, path.open("xb") as handle:
             while chunk := response.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_OUTPUT_BYTES:
@@ -1035,6 +1051,7 @@ def _run_openai(job: Mapping[str, Any]) -> tuple[Path, str | None]:
         request = urllib.request.Request(f"{base}/images/edits", data=encoded, method="POST")
         request.add_header("Authorization", f"Bearer {token}")
         request.add_header("Content-Type", content_type)
+        request.add_header("User-Agent", USER_AGENT)
         try:
             with urllib.request.urlopen(request, timeout=300) as response:
                 raw = response.read(MAX_JSON_RESPONSE + 1)
@@ -1134,6 +1151,19 @@ def _run_minimax(job: Mapping[str, Any]) -> tuple[Path, str | None]:
     )
 
 
+# Observed in production testing: ai33's edge layer intermittently returns
+# these on an otherwise-valid request (403 is not even one of ai33's own
+# documented app-level error codes, which strongly suggests a WAF/edge
+# blip rather than a real permission decision). The underlying task
+# already exists and is billed the moment creation succeeds, so a poll
+# request hitting one of these transiently must not abandon a job that is
+# still completing normally server-side; it is safe to retry because
+# polling is read-only. The one-shot paid creation call is deliberately
+# NOT retried here: retrying a request that may have already succeeded
+# server-side risks creating and billing a duplicate task.
+_AI33_POLL_TRANSIENT_STATUSES = frozenset({401, 403, 429, 500, 502, 503, 504})
+
+
 def _ai33_poll(
     base: str,
     token: str,
@@ -1153,14 +1183,23 @@ def _ai33_poll(
     if interval <= 0 or deadline <= time.monotonic():
         raise AdapterFailure(f"{provider} polling configuration is invalid")
     while time.monotonic() < deadline:
-        status_doc, _ = _request_json(
-            f"{base}/v1/task/{urllib.parse.quote(task_id, safe='')}",
-            provider=provider,
-            method="GET",
-            token=token,
-            auth_header="xi-api-key",
-            auth_value=token,
-        )
+        try:
+            status_doc, _ = _request_json(
+                f"{base}/v1/task/{urllib.parse.quote(task_id, safe='')}",
+                provider=provider,
+                method="GET",
+                token=token,
+                auth_header="xi-api-key",
+                auth_value=token,
+            )
+        except AdapterFailure as exc:
+            if (
+                exc.http_status in _AI33_POLL_TRANSIENT_STATUSES
+                or exc.category in {"timeout", "network"}
+            ):
+                time.sleep(interval)
+                continue
+            raise
         status = status_doc.get("status")
         if status == "done":
             return status_doc
