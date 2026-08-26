@@ -27,11 +27,44 @@ from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+# Python's default urllib User-Agent ("Python-urllib/x.y") is a well-known
+# bot signature that some providers' edge/WAF layers block heuristically.
+# Observed in production testing: identical requests to ai33's Cloudflare-
+# fronted API and CDN intermittently 403 with the default urllib UA and
+# succeed reliably with a browser-like one. Applied to every outbound
+# request in this module rather than only ai33's, since it's a safe,
+# backward-compatible identification header with no documented downside
+# for any of the other providers.
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 OPENAI_MODEL = "gpt-image-2"
 MINIMAX_MUSIC_MODEL = "music-3.0"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 SEEDANCE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 MINIMAX_BASE_URL = "https://api.minimax.io/v1"
+AI33_BASE_URL = "https://api.ai33.pro"
+AI33_VOICE_PREFIXES = (
+    "elevenlabs_",
+    "minimax_",
+    "clone_",
+    "edge_",
+    "kokoro_",
+    "vbee_",
+    "fishaudio_",
+)
+AI33_IMAGE_PARAMETER_KEYS = frozenset(
+    {
+        "model_id",
+        "aspect_ratio",
+        "resolution",
+        "quality",
+        "creativity",
+        "negative_prompt",
+        "enhance_prompt",
+    }
+)
 MAX_JSON_RESPONSE = 128 * 1024 * 1024
 MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 MAX_REFERENCE_BYTES = 50 * 1024 * 1024
@@ -468,6 +501,152 @@ def compile_minimax_music_payload(job: Mapping[str, Any]) -> dict[str, Any]:
     return body
 
 
+def compile_ai33_image_payload(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Compile an image job into ai33 (OpenSpeaker) Imagen v1i form fields.
+
+    ai33 spans many underlying image models behind one endpoint, so unlike
+    Seedance's single deployment-wide model this adapter takes an explicit
+    per-job ``model_id`` rather than assuming a default.
+    """
+    prompt, parameters = _require_job(job, "image")
+    parameters = _take(parameters, AI33_IMAGE_PARAMETER_KEYS)
+    model_id = parameters.pop("model_id", None)
+    if not isinstance(model_id, str) or not model_id.strip():
+        raise ValueError("ai33 image job must specify an explicit model_id")
+    negative_prompt = parameters.pop("negative_prompt", None)
+    if negative_prompt is not None and (
+        not isinstance(negative_prompt, str) or not negative_prompt.strip()
+    ):
+        raise ValueError("ai33 negative_prompt must be a non-empty string")
+    enhance_prompt = parameters.pop("enhance_prompt", None)
+    if enhance_prompt is not None and not isinstance(enhance_prompt, bool):
+        raise ValueError("ai33 enhance_prompt must be a boolean")
+    model_parameters: dict[str, Any] = {}
+    for key in ("aspect_ratio", "resolution", "quality", "creativity"):
+        value = parameters.pop(key, None)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"ai33 {key} must be a non-empty string")
+        model_parameters[key] = value
+    if negative_prompt is not None:
+        model_parameters["negative_prompt"] = negative_prompt
+    if enhance_prompt is not None:
+        model_parameters["enhance_prompt"] = enhance_prompt
+    suffix = Path(job["outputs"][0]).suffix.casefold()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise ValueError("unsupported ai33 image output extension")
+    references = job.get("references", [])
+    if not isinstance(references, list) or len(references) > 16:
+        raise ValueError("ai33 image accepts at most sixteen references")
+    if any(
+        not isinstance(reference, str)
+        or Path(reference).suffix.casefold() not in {".png", ".jpg", ".jpeg", ".webp"}
+        for reference in references
+    ):
+        raise ValueError("ai33 image references must be supported image files")
+    prompt = _prompt_with_reference_contract(prompt, job)
+    if references:
+        # ai33 requires an inline @imgN token per uploaded asset, matched by
+        # count and order, or it rejects the request as a validation error.
+        tokens = " ".join(f"@img{index}" for index in range(1, len(references) + 1))
+        prompt = f"{prompt}\n\nImage references: {tokens}"
+    if len(prompt) > 4000:
+        raise ValueError("ai33 image prompt exceeds the provider limit")
+    return {
+        "prompt": prompt,
+        "model_id": model_id.strip(),
+        "generations_count": "1",
+        "model_parameters": json.dumps(model_parameters, ensure_ascii=False),
+    }
+
+
+def compile_ai33_tts_payload(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Compile a tts job into ai33's unified v3 text-to-speech form fields."""
+    prompt, parameters = _require_job(job, "tts")
+    parameters = _take(
+        parameters,
+        {"voice_id", "speed", "with_transcript", "pronunciation_dictionary_id"},
+    )
+    voice_id = parameters.pop("voice_id", None)
+    if not isinstance(voice_id, str) or not voice_id.startswith(AI33_VOICE_PREFIXES):
+        raise ValueError(
+            "ai33 tts voice_id must use a supported provider prefix "
+            "(elevenlabs_, minimax_, clone_, edge_, kokoro_, vbee_, fishaudio_)"
+        )
+    speed = parameters.pop("speed", 1)
+    if (
+        not isinstance(speed, (int, float))
+        or isinstance(speed, bool)
+        or not 0.5 <= speed <= 1.5
+    ):
+        raise ValueError("ai33 tts speed must be between 0.5 and 1.5")
+    with_transcript = parameters.pop("with_transcript", False)
+    if not isinstance(with_transcript, bool):
+        raise ValueError("ai33 tts with_transcript must be a boolean")
+    dictionary_id = parameters.pop("pronunciation_dictionary_id", None)
+    if dictionary_id is not None and (
+        not isinstance(dictionary_id, str) or not dictionary_id.strip()
+    ):
+        raise ValueError("ai33 pronunciation_dictionary_id must be a non-empty string")
+    if not prompt.strip() or len(prompt) > 1_000_000:
+        raise ValueError("ai33 tts text must be non-empty and within the provider limit")
+    if Path(job["outputs"][0]).suffix.casefold() != ".mp3":
+        raise ValueError("ai33 tts adapter requires an MP3 target")
+    fields: dict[str, Any] = {
+        "text": prompt,
+        "voice_id": voice_id,
+        "speed": speed,
+        "with_transcript": with_transcript,
+    }
+    if dictionary_id is not None:
+        fields["pronunciation_dictionary_id"] = dictionary_id
+    return fields
+
+
+def compile_ai33_music_payload(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Compile a music job into ai33's Suno v1s custom-mode JSON body.
+
+    Only Suno's ``custom`` mode is ever used. Its ``simple`` mode drafts its
+    own lyrics from a short description at generation time, which is exactly
+    the unconfirmed-supplier-content problem the MiniMax adapter's
+    ``lyrics_optimizer`` rejection guards against; custom mode requires the
+    creator-confirmed lyrics (or none, for an instrumental) verbatim.
+    """
+    prompt, parameters = _require_job(job, "music")
+    parameters = _take(
+        parameters, {"lyrics", "is_instrumental", "title", "vocal_gender"}
+    )
+    lyrics = parameters.pop("lyrics", None)
+    instrumental = parameters.pop("is_instrumental", False)
+    title = parameters.pop("title", None)
+    vocal_gender = parameters.pop("vocal_gender", None)
+    if not isinstance(instrumental, bool):
+        raise ValueError("ai33 is_instrumental must be a boolean")
+    if instrumental and lyrics not in (None, ""):
+        raise ValueError("ai33 instrumental music must not carry lyrics")
+    if not instrumental and (not isinstance(lyrics, str) or not lyrics.strip()):
+        raise ValueError("ai33 vocal music requires confirmed lyrics")
+    if lyrics is not None and (not isinstance(lyrics, str) or len(lyrics) > 5000):
+        raise ValueError("ai33 lyrics must be a string within the provider limit")
+    if not prompt.strip() or len(prompt) > 1000:
+        raise ValueError("ai33 music prompt (style/tags) exceeds the provider limit")
+    if title is not None and (not isinstance(title, str) or len(title) > 80):
+        raise ValueError("ai33 title must be a string within the provider limit")
+    if vocal_gender is not None and vocal_gender not in {"f", "m"}:
+        raise ValueError("ai33 vocal_gender must be 'f' or 'm'")
+    if Path(job["outputs"][0]).suffix.casefold() != ".mp3":
+        raise ValueError("ai33 music adapter requires an MP3 target")
+    body: dict[str, Any] = {"create_mode": "custom", "tags": prompt}
+    if lyrics is not None:
+        body["lyrics"] = lyrics
+    if title is not None:
+        body["title"] = title
+    if vocal_gender is not None:
+        body["vocal_gender"] = vocal_gender
+    return body
+
+
 def _base_url(env_name: str, default: str) -> str:
     value = os.environ.get(env_name, default).rstrip("/")
     parsed = urllib.parse.urlparse(value)
@@ -498,10 +677,13 @@ def _request_json(
     method: str = "POST",
     body: Mapping[str, Any] | None = None,
     token: str,
+    auth_header: str = "Authorization",
+    auth_value: str | None = None,
 ) -> tuple[dict[str, Any], Mapping[str, str]]:
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header(auth_header, auth_value if auth_value is not None else f"Bearer {token}")
+    request.add_header("User-Agent", USER_AGENT)
     if body is not None:
         request.add_header("Content-Type", "application/json")
     try:
@@ -541,6 +723,58 @@ def _request_json(
     return document, headers
 
 
+def _multipart_request(
+    url: str,
+    *,
+    provider: str,
+    fields: Mapping[str, Any],
+    paths: Sequence[Path],
+    file_field_name: str,
+    auth_header: str,
+    auth_value: str,
+    timeout: int = 300,
+) -> dict[str, Any]:
+    encoded, content_type = _multipart(fields, paths, file_field_name=file_field_name)
+    request = urllib.request.Request(url, data=encoded, method="POST")
+    request.add_header(auth_header, auth_value)
+    request.add_header("Content-Type", content_type)
+    request.add_header("User-Agent", USER_AGENT)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read(MAX_JSON_RESPONSE + 1)
+    except urllib.error.HTTPError as exc:
+        raise _http_failure(provider, exc) from exc
+    except TimeoutError as exc:
+        raise AdapterFailure(
+            f"{provider} HTTP request timed out",
+            category="timeout",
+            code="request_timeout",
+            retryable=True,
+        ) from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise AdapterFailure(
+            f"{provider} HTTP request failed",
+            category="network",
+            code="network_error",
+            retryable=True,
+        ) from exc
+    if len(raw) > MAX_JSON_RESPONSE:
+        raise AdapterFailure(
+            f"{provider} response is too large", code="response_too_large"
+        )
+    try:
+        document = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise AdapterFailure(
+            f"{provider} returned invalid JSON", code="invalid_json"
+        ) from exc
+    if not isinstance(document, dict):
+        raise AdapterFailure(
+            f"{provider} returned an invalid response", code="invalid_response"
+        )
+    return document
+
+
 def _read_reference(path: Path) -> bytes:
     before = path.lstat()
     if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
@@ -568,7 +802,12 @@ def _read_reference(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def _multipart(fields: Mapping[str, Any], paths: Sequence[Path]) -> tuple[bytes, str]:
+def _multipart(
+    fields: Mapping[str, Any],
+    paths: Sequence[Path],
+    *,
+    file_field_name: str = "image[]",
+) -> tuple[bytes, str]:
     boundary = "short-drama-" + secrets.token_hex(16)
     chunks: list[bytes] = []
     for name, value in fields.items():
@@ -586,7 +825,7 @@ def _multipart(fields: Mapping[str, Any], paths: Sequence[Path]) -> tuple[bytes,
         chunks.extend(
             [
                 f"--{boundary}\r\n".encode(),
-                f'Content-Disposition: form-data; name="image[]"; filename="{path.name}"\r\n'.encode(),
+                f'Content-Disposition: form-data; name="{file_field_name}"; filename="{path.name}"\r\n'.encode(),
                 f"Content-Type: {media_type}\r\n\r\n".encode(),
                 content,
                 b"\r\n",
@@ -685,8 +924,10 @@ def _download(
         raise AdapterFailure("provider output URL is invalid")
     path = _output_root(job) / ("result" + Path(target).suffix.casefold())
     size = 0
+    request = urllib.request.Request(url)
+    request.add_header("User-Agent", USER_AGENT)
     try:
-        with urllib.request.urlopen(url, timeout=180) as response, path.open("xb") as handle:
+        with urllib.request.urlopen(request, timeout=180) as response, path.open("xb") as handle:
             while chunk := response.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_OUTPUT_BYTES:
@@ -810,6 +1051,7 @@ def _run_openai(job: Mapping[str, Any]) -> tuple[Path, str | None]:
         request = urllib.request.Request(f"{base}/images/edits", data=encoded, method="POST")
         request.add_header("Authorization", f"Bearer {token}")
         request.add_header("Content-Type", content_type)
+        request.add_header("User-Agent", USER_AGENT)
         try:
             with urllib.request.urlopen(request, timeout=300) as response:
                 raw = response.read(MAX_JSON_RESPONSE + 1)
@@ -909,6 +1151,196 @@ def _run_minimax(job: Mapping[str, Any]) -> tuple[Path, str | None]:
     )
 
 
+# Observed in production testing: ai33's edge layer intermittently returns
+# these on an otherwise-valid request (403 is not even one of ai33's own
+# documented app-level error codes, which strongly suggests a WAF/edge
+# blip rather than a real permission decision). The underlying task
+# already exists and is billed the moment creation succeeds, so a poll
+# request hitting one of these transiently must not abandon a job that is
+# still completing normally server-side; it is safe to retry because
+# polling is read-only. The one-shot paid creation call is deliberately
+# NOT retried here: retrying a request that may have already succeeded
+# server-side risks creating and billing a duplicate task.
+_AI33_POLL_TRANSIENT_STATUSES = frozenset({401, 403, 429, 500, 502, 503, 504})
+
+
+def _ai33_poll(
+    base: str,
+    token: str,
+    task_id: str,
+    *,
+    provider: str,
+    timeout_env: str,
+    default_timeout: float,
+) -> Mapping[str, Any]:
+    try:
+        interval = float(os.environ.get("AI33_POLL_INTERVAL", "5"))
+        deadline = time.monotonic() + float(
+            os.environ.get(timeout_env, str(default_timeout))
+        )
+    except ValueError as exc:
+        raise AdapterFailure(f"{provider} polling configuration is invalid") from exc
+    if interval <= 0 or deadline <= time.monotonic():
+        raise AdapterFailure(f"{provider} polling configuration is invalid")
+    while time.monotonic() < deadline:
+        try:
+            status_doc, _ = _request_json(
+                f"{base}/v1/task/{urllib.parse.quote(task_id, safe='')}",
+                provider=provider,
+                method="GET",
+                token=token,
+                auth_header="xi-api-key",
+                auth_value=token,
+            )
+        except AdapterFailure as exc:
+            if (
+                exc.http_status in _AI33_POLL_TRANSIENT_STATUSES
+                or exc.category in {"timeout", "network"}
+            ):
+                time.sleep(interval)
+                continue
+            raise
+        status = status_doc.get("status")
+        if status == "done":
+            return status_doc
+        if status == "error":
+            raise AdapterFailure(
+                f"{provider} task failed",
+                code="task_error",
+                request_id=_safe_token(task_id),
+            )
+        if status != "doing":
+            raise AdapterFailure(
+                f"{provider} returned an unknown task status",
+                code="unknown_task_status",
+                request_id=_safe_token(task_id),
+            )
+        time.sleep(interval)
+    raise AdapterFailure(
+        f"{provider} task polling timed out",
+        category="timeout",
+        code="task_poll_timeout",
+        request_id=_safe_token(task_id),
+        retryable=True,
+    )
+
+
+def _ai33_task_id(result: Mapping[str, Any], provider: str) -> str:
+    if result.get("success") is not True:
+        raise AdapterFailure(
+            f"{provider} task creation failed",
+            code=_provider_code(result) or "creation_failed",
+        )
+    task_id = result.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        raise AdapterFailure(f"{provider} did not return a task id", code="missing_task_id")
+    return task_id
+
+
+def _run_ai33_image(job: Mapping[str, Any]) -> tuple[Path, str | None]:
+    token = _credential("AI33_API_KEY")
+    base = _base_url("AI33_BASE_URL", AI33_BASE_URL)
+    fields = compile_ai33_image_payload(job)
+    references = _reference_paths(job)
+    result = _multipart_request(
+        f"{base}/v1i/task/generate-image",
+        provider="ai33-image",
+        fields=fields,
+        paths=references,
+        file_field_name="assets",
+        auth_header="xi-api-key",
+        auth_value=token,
+    )
+    task_id = _ai33_task_id(result, "ai33-image")
+    status_doc = _ai33_poll(
+        base,
+        token,
+        task_id,
+        provider="ai33-image",
+        timeout_env="AI33_IMAGE_TIMEOUT_SECONDS",
+        default_timeout=300,
+    )
+    metadata = status_doc.get("metadata")
+    images = metadata.get("result_images") if isinstance(metadata, Mapping) else None
+    url = (
+        images[0].get("imageUrl")
+        if isinstance(images, list) and len(images) == 1 and isinstance(images[0], Mapping)
+        else None
+    )
+    if not isinstance(url, str):
+        raise AdapterFailure(
+            "ai33 image task succeeded without an image URL",
+            code="missing_image_url",
+            request_id=task_id,
+        )
+    return _download(job, url, job["outputs"][0], provider="ai33-image"), task_id
+
+
+def _run_ai33_tts(job: Mapping[str, Any]) -> tuple[Path, str | None]:
+    token = _credential("AI33_API_KEY")
+    base = _base_url("AI33_BASE_URL", AI33_BASE_URL)
+    fields = compile_ai33_tts_payload(job)
+    result = _multipart_request(
+        f"{base}/v3/text-to-speech",
+        provider="ai33-tts",
+        fields=fields,
+        paths=(),
+        file_field_name="assets",
+        auth_header="xi-api-key",
+        auth_value=token,
+    )
+    task_id = _ai33_task_id(result, "ai33-tts")
+    status_doc = _ai33_poll(
+        base,
+        token,
+        task_id,
+        provider="ai33-tts",
+        timeout_env="AI33_TTS_TIMEOUT_SECONDS",
+        default_timeout=180,
+    )
+    metadata = status_doc.get("metadata")
+    url = metadata.get("audio_url") if isinstance(metadata, Mapping) else None
+    if not isinstance(url, str):
+        raise AdapterFailure(
+            "ai33 tts task succeeded without an audio URL",
+            code="missing_audio_url",
+            request_id=task_id,
+        )
+    return _download(job, url, job["outputs"][0], provider="ai33-tts"), task_id
+
+
+def _run_ai33_music(job: Mapping[str, Any]) -> tuple[Path, str | None]:
+    token = _credential("AI33_API_KEY")
+    base = _base_url("AI33_BASE_URL", AI33_BASE_URL)
+    body = compile_ai33_music_payload(job)
+    result, _ = _request_json(
+        f"{base}/v1s/task/music-generation",
+        provider="ai33-music",
+        body=body,
+        token=token,
+        auth_header="xi-api-key",
+        auth_value=token,
+    )
+    task_id = _ai33_task_id(result, "ai33-music")
+    status_doc = _ai33_poll(
+        base,
+        token,
+        task_id,
+        provider="ai33-music",
+        timeout_env="AI33_MUSIC_TIMEOUT_SECONDS",
+        default_timeout=600,
+    )
+    metadata = status_doc.get("metadata")
+    url = metadata.get("audio_url") if isinstance(metadata, Mapping) else None
+    if not isinstance(url, str):
+        raise AdapterFailure(
+            "ai33 music task succeeded without an audio URL",
+            code="missing_audio_url",
+            request_id=task_id,
+        )
+    return _download(job, url, job["outputs"][0], provider="ai33-music"), task_id
+
+
 def _selftest() -> None:
     image = {
         "modality": "image", "prompt": "portrait", "references": [],
@@ -962,10 +1394,86 @@ def _selftest() -> None:
     else:
         raise AssertionError("non-image Seedance reference was accepted")
 
+    ai33_image = {
+        "modality": "image", "prompt": "a lantern-lit alley", "references": [],
+        "outputs": ["制作成果/a.png"],
+        "parameters": {"model_id": "bytedance-seedream-4.5", "aspect_ratio": "16:9"},
+    }
+    compiled_ai33_image = compile_ai33_image_payload(ai33_image)
+    if compiled_ai33_image["model_id"] != "bytedance-seedream-4.5":
+        raise RuntimeError("ai33 image model self-test failed")
+    if json.loads(compiled_ai33_image["model_parameters"])["aspect_ratio"] != "16:9":
+        raise RuntimeError("ai33 image model_parameters self-test failed")
+    ai33_image_with_refs = {**ai33_image, "references": ["a.png", "b.png"]}
+    if "@img1 @img2" not in compile_ai33_image_payload(ai33_image_with_refs)["prompt"]:
+        raise RuntimeError("ai33 image reference token self-test failed")
+    for invalid in (
+        {**ai33_image, "parameters": {}},
+        {**ai33_image, "parameters": {"model_id": "   "}},
+    ):
+        try:
+            compile_ai33_image_payload(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("ai33 image payload without model_id was accepted")
+
+    ai33_tts = {
+        "modality": "tts", "prompt": "Hello there", "references": [],
+        "outputs": ["制作成果/a.mp3"], "parameters": {"voice_id": "minimax_male-qn-qingse"},
+    }
+    if compile_ai33_tts_payload(ai33_tts)["voice_id"] != "minimax_male-qn-qingse":
+        raise RuntimeError("ai33 tts self-test failed")
+    for invalid in (
+        {**ai33_tts, "parameters": {"voice_id": "unknownprovider_x"}},
+        {**ai33_tts, "parameters": {"voice_id": "minimax_x", "speed": 2}},
+        {**ai33_tts, "outputs": ["制作成果/a.wav"]},
+    ):
+        try:
+            compile_ai33_tts_payload(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid ai33 tts payload was accepted")
+
+    ai33_music = {
+        "modality": "music", "prompt": "indie pop, cinematic drums", "references": [],
+        "outputs": ["制作成果/a.mp3"], "parameters": {"lyrics": "[Verse]\nHello"},
+    }
+    compiled_ai33_music = compile_ai33_music_payload(ai33_music)
+    if compiled_ai33_music["create_mode"] != "custom" or "lyrics" not in compiled_ai33_music:
+        raise RuntimeError("ai33 music self-test failed")
+    ai33_music_instrumental = {
+        **ai33_music, "parameters": {"is_instrumental": True},
+    }
+    if "lyrics" in compile_ai33_music_payload(ai33_music_instrumental):
+        raise RuntimeError("ai33 instrumental music self-test failed")
+    for invalid in (
+        {**ai33_music, "parameters": {"is_instrumental": True, "lyrics": "nope"}},
+        {**ai33_music, "parameters": {}},
+    ):
+        try:
+            compile_ai33_music_payload(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid ai33 music payload was accepted")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("provider", nargs="?", choices=("seedance", "gpt-image-2", "minimax-music"))
+    parser.add_argument(
+        "provider",
+        nargs="?",
+        choices=(
+            "seedance",
+            "gpt-image-2",
+            "minimax-music",
+            "ai33-image",
+            "ai33-tts",
+            "ai33-music",
+        ),
+    )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
     if args.selftest:
@@ -977,7 +1485,14 @@ def main() -> int:
         job = json.load(sys.stdin.buffer)
         if not isinstance(job, Mapping):
             raise ValueError("adapter input must be an object")
-        runners = {"seedance": _run_seedance, "gpt-image-2": _run_openai, "minimax-music": _run_minimax}
+        runners = {
+            "seedance": _run_seedance,
+            "gpt-image-2": _run_openai,
+            "minimax-music": _run_minimax,
+            "ai33-image": _run_ai33_image,
+            "ai33-tts": _run_ai33_tts,
+            "ai33-music": _run_ai33_music,
+        }
         path, provider_job_id = runners[args.provider](job)
         response: dict[str, Any] = {
             "outputs": [{"target": job["outputs"][0], "source": str(path)}]
