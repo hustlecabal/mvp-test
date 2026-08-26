@@ -153,11 +153,19 @@ test('a real MCP client can discover all 76 tools', async () => {
   // service.js (independent PASS/FAIL/WARN findings, never a combined
   // score). Never a third generation pipeline; never wired into the
   // existing generation services' own hot path.
-  assert.equal(names.length, 119);
+  // MEDIA ACQUISITION added 3 tools: acquire_stock_media,
+  // list_stock_media_providers, list_media_acquisitions — thin wrappers
+  // over services/media-acquisition-service.js (Pexels/Pixabay stock
+  // image/video search, download, validation) and services/media-
+  // acquisition-store.js. acquire_stock_media is the only one that makes
+  // a real network call; it never falls back between providers and never
+  // touches approval-gate.js (free, nothing to authorize spend for).
+  assert.equal(names.length, 122);
   assert.deepEqual(names, [
     'acknowledge_budget_overage',
     'acknowledge_creative_brain_unknown_cost',
     'acknowledge_video_unknown_cost',
+    'acquire_stock_media',
     'add_entity_reference_asset',
     'analyze_shot_keyframes',
     'apply_visual_world_to_keyframe',
@@ -236,12 +244,14 @@ test('a real MCP client can discover all 76 tools', async () => {
     'list_keyframe_handoffs',
     'list_keyframe_prompt_packages',
     'list_keyframes',
+    'list_media_acquisitions',
     'list_pre_production_gate_results',
     'list_production_jobs',
     'list_projects',
     'list_reference_library',
     'list_scenes',
     'list_shots',
+    'list_stock_media_providers',
     'list_video_prompt_packages',
     'poll_generation',
     'prepare_keyframe_execution',

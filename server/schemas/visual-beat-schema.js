@@ -104,6 +104,16 @@ const MATERIAL_SOURCES = [
   'BROLL_LIBRARY', // pulled from an ingested B-roll index
   'DETERMINISTIC_TEMPLATE', // rendered by a template/graphics engine, no
                               // AI/licensing involved
+  'STOCK_MEDIA', // acquired on demand from an external stock-media provider
+                   // (services/media-acquisition-service.js — Pexels/
+                   // Pixabay today) — distinct from BROLL_LIBRARY, which is
+                   // a project's own manually-curated/ingested index; this
+                   // is a live search against a third-party catalogue.
+                   // Pairs with visualTreatment STILL_IMAGE (a stock photo)
+                   // or BROLL_CLIP (stock footage — BROLL_CLIP's own
+                   // definition above, "a trimmed segment of licensed/stock
+                   // footage", already covers this; no new treatment value
+                   // is needed).
 ];
 
 // The Material Resolution Engine's primary hard-gate signal (Stage 26

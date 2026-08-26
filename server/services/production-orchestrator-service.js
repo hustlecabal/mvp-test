@@ -43,6 +43,17 @@
 // accumulating implementation logic that belongs in specialist services"
 // stop condition this stage's own instructions forbid.
 //
+// MEDIA ACQUISITION (free, but still real network I/O): the exact same
+// escalation treatment applies to a beat resolved to STOCK_MEDIA with no
+// already-acquired asset yet (NO_ACQUIRED_STOCK_MEDIA_EXISTS,
+// stock-media-executor.js) — never auto-acquired from inside this
+// synchronous orchestrator, even though there is no spend to authorize.
+// This file only ever calls services/media-acquisition-service.js's
+// listAvailableProviders() (a plain, synchronous env-var check feeding
+// Material Resolution's own candidate-availability gate); the acquisition
+// itself runs via the acquire_stock_media MCP tool, ahead of a
+// production run — see media-acquisition-service.js's own header for why.
+//
 // RENDERING ENGINE (Part 10/11): every render this file performs calls
 // services/renderers/hyperframes-renderer.js DIRECTLY — the same "exercise
 // the module directly, bypassing renderer-registry.js's SVG-default
@@ -70,6 +81,13 @@ const productionJobStore = require('./production-job-store');
 const beatGraphDerivationService = require('./beat-graph-derivation-service');
 const materialResolutionService = require('./material-resolution-service');
 const materialExecutionService = require('./material-execution-service');
+// Media Acquisition — read-only from this file's point of view: only
+// listAvailableProviders() is ever called here (a plain, synchronous
+// env-var check, same cost as reading any other env var this file already
+// reads), never acquireMedia() itself. See services/media-acquisition-
+// service.js's own header for why the actual (async) acquisition call is
+// deliberately kept OUT of this synchronous orchestrator entirely.
+const mediaAcquisitionService = require('./media-acquisition-service');
 const hyperframesRenderer = require('./renderers/hyperframes-renderer');
 const { directNarration } = require('./narration-director-service');
 const { generateNarratedAudioEvent } = require('./voice-generation-service');
@@ -380,7 +398,12 @@ function resumeProduction(productionJobId) {
   // expensive (no provider call, no rendering, no file I/O beyond project
   // store reads) so there is nothing to protect a resume from redoing. ---
   job = persist(job, { status: 'RESOLVING_MATERIALS' });
-  const beatGraphResolution = materialResolutionService.resolveBeatGraph(projectId, job.beatGraph, job.derivationContext || {});
+  // STOCK_MEDIA candidate availability (Media Acquisition) — a plain,
+  // synchronous env-var check, computed fresh every resume exactly like
+  // every other piece of derivationContext below it. Never itself an
+  // acquisition call — see the require() above.
+  const resolutionContext = { ...(job.derivationContext || {}), stockMediaProviders: mediaAcquisitionService.listAvailableProviders() };
+  const beatGraphResolution = materialResolutionService.resolveBeatGraph(projectId, job.beatGraph, resolutionContext);
   const resolutionByBeatId = new Map(beatGraphResolution.resolutions.map((r) => [r.beatId, r]));
   for (const r of beatGraphResolution.resolutions) {
     if (r.status !== 'RESOLVED') {
@@ -420,9 +443,17 @@ function resumeProduction(productionJobId) {
     const beatOptions = (job.materialOptions && job.materialOptions[beat.id]) || {};
     const execution = materialExecutionService.executeMaterial(projectId, beat, resolution, beatOptions);
     if (execution.status !== 'COMPLETED') {
-      const genRequired = execution.diagnostics.some((d) => d.code === 'NO_APPROVED_GENERATION_EXISTS');
+      // NO_ACQUIRED_STOCK_MEDIA_EXISTS (services/material-executors/stock-
+      // media-executor.js) is the free-source counterpart to
+      // NO_APPROVED_GENERATION_EXISTS — same escalate-one-beat-and-keep-
+      // going treatment, never a job-ending failure, even though Media
+      // Acquisition never touches approval-gate.js (there is no spend to
+      // authorize, only a real network call this synchronous orchestrator
+      // never performs itself — see this file's own require() comment).
+      const ESCALATION_CODES = ['NO_APPROVED_GENERATION_EXISTS', 'NO_ACQUIRED_STOCK_MEDIA_EXISTS'];
+      const genRequired = execution.diagnostics.some((d) => ESCALATION_CODES.includes(d.code));
       if (genRequired) {
-        const reason = execution.diagnostics.find((d) => d.code === 'NO_APPROVED_GENERATION_EXISTS').message;
+        const reason = execution.diagnostics.find((d) => ESCALATION_CODES.includes(d.code)).message;
         escalations.push(createProductionEscalation({ beatId: beat.id, reason }));
         job = upsertBeatProgress(job, beat.id, { resolution, escalation: createProductionEscalation({ beatId: beat.id, reason }) });
       } else {

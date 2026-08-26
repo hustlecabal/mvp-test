@@ -148,6 +148,7 @@ function createResolutionSummary(overrides = {}) {
     unresolvedBeats: 0,
     existingAssetCount: 0, // selectedMaterial.materialSource === PROJECT_ASSET_REUSE
     brollCount: 0, // selectedMaterial.materialSource === BROLL_LIBRARY
+    stockMediaCount: 0, // selectedMaterial.materialSource === STOCK_MEDIA
     stillImageCount: 0, // selectedMaterial.visualTreatment === STILL_IMAGE, any source
     motionGraphicCount: 0, // selectedMaterial.visualTreatment === MOTION_GRAPHIC
     whiteboardCount: 0, // selectedMaterial.visualTreatment === WHITEBOARD

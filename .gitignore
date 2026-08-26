@@ -19,6 +19,7 @@ server/data/video-prompt-packages/*.json
 server/data/video-generation-approvals/*.json
 server/data/broll/*.json
 server/data/production-jobs/*.json
+server/data/media-acquisition/*.json
 
 # INT-1/INT-2 — video-intelligence pipeline data (real acquired reference
 # videos, derived measurements/observations/interpretations/patterns/

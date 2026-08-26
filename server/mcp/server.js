@@ -38,6 +38,7 @@ const registerProductionTools = require('./tools/production-tools');
 const registerIntelligenceTools = require('./tools/intelligence-tools');
 const registerCreativeBrainTools = require('./tools/creative-brain-tools');
 const registerVisualWorldTools = require('./tools/visual-world-tools');
+const registerMediaAcquisitionTools = require('./tools/media-acquisition-tools');
 
 function createServer() {
   const server = new McpServer({
@@ -70,6 +71,7 @@ function createServer() {
   registerIntelligenceTools(server);
   registerCreativeBrainTools(server);
   registerVisualWorldTools(server);
+  registerMediaAcquisitionTools(server);
 
   return server;
 }

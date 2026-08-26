@@ -511,6 +511,7 @@ function scoreContinuity(materialSource, { existingReuseScoreTotal, hasIdentityO
     return 1;
   }
   if (materialSource === 'BROLL_LIBRARY') return 0; // location/prop-only survivor — unverifiable match
+  if (materialSource === 'STOCK_MEDIA') return 0; // same reasoning as BROLL_LIBRARY — a live search cannot verify an identity/continuity match either
   return 0.5; // DETERMINISTIC_TEMPLATE with requirements present — coarse neutral
 }
 
@@ -518,7 +519,7 @@ function scoreContinuity(materialSource, { existingReuseScoreTotal, hasIdentityO
 // PHASE D — REUSE. Prefers already-existing valid material over unnecessary
 // new creation, independent of cost. Fixed ordinal, not derived from price.
 // ---------------------------------------------------------------------------
-const REUSE_ORDINAL = { PROJECT_ASSET_REUSE: 3, BROLL_LIBRARY: 2, DETERMINISTIC_TEMPLATE: 1, GENERATED_NEW: 0 };
+const REUSE_ORDINAL = { PROJECT_ASSET_REUSE: 3, BROLL_LIBRARY: 2, STOCK_MEDIA: 2, DETERMINISTIC_TEMPLATE: 1, GENERATED_NEW: 0 };
 function scoreReuse(materialSource) {
   return REUSE_ORDINAL[materialSource] ?? 0;
 }
@@ -547,7 +548,7 @@ function scoreCost(materialSource, { cheapestModel } = {}) {
 // ---------------------------------------------------------------------------
 function scoreComplexity(materialSource, visualTreatment) {
   if (materialSource === 'PROJECT_ASSET_REUSE') return 3;
-  if (materialSource === 'DETERMINISTIC_TEMPLATE' || materialSource === 'BROLL_LIBRARY') return 2;
+  if (materialSource === 'DETERMINISTIC_TEMPLATE' || materialSource === 'BROLL_LIBRARY' || materialSource === 'STOCK_MEDIA') return 2;
   if (materialSource === 'GENERATED_NEW' && visualTreatment === 'STILL_IMAGE') return 1;
   return 0; // GENERATED_NEW + AI_VIDEO — most complex/highest-risk path
 }
@@ -907,6 +908,84 @@ function resolveMaterial(projectId, beat, context = {}) {
     }
   }
 
+  // --- STOCK_MEDIA — STILL_IMAGE / BROLL_CLIP, acquired on demand from an
+  // external provider (services/media-acquisition-service.js) ---
+  //
+  // `context.stockMediaProviders` — an OPTIONAL, INJECTABLE array of
+  // provider names (e.g. ['pexels', 'pixabay']) considered AVAILABLE in
+  // this environment. Defaults to `[]`, exactly like context.brollSegments
+  // above (Stage 26.3's own precedent) — this file stays 100% pure/
+  // read-only: it never reads process.env itself (that would make this
+  // resolver's output depend on ambient state instead of its explicit
+  // inputs), so services/production-orchestrator-service.js computes this
+  // list once (services/media-acquisition-service.js's
+  // listAvailableProviders(), a plain env-var check) and passes it in,
+  // exactly like it already assembles every other piece of
+  // derivationContext.
+  //
+  // A candidate here is a PROPOSED STRATEGY, not yet a realized asset —
+  // same shape as GENERATED_NEW below: resolveMaterial() never calls a
+  // provider or checks whether a search would actually succeed. Whether
+  // stock media has actually been acquired for this beat is checked at
+  // EXECUTION time (services/material-executors/stock-media-executor.js),
+  // never here — this is the same "resolvers decide, executors execute"
+  // layering GENERATED_NEW already established, applied to a free
+  // (never approval-gated) source instead of a paid one.
+  for (const treatment of ['STILL_IMAGE', 'BROLL_CLIP']) {
+    if (!beatAllowsTreatment(beat, treatment)) continue;
+    const candidateId = `STOCK_MEDIA+${treatment}`;
+    const availableProviders = Array.isArray(context.stockMediaProviders) ? context.stockMediaProviders : [];
+
+    if (availableProviders.length === 0) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'NO_PROVIDER_CONFIGURED',
+          reason: 'no stock-media provider is configured in this environment (context.stockMediaProviders is empty)',
+          eligibleRoles: [],
+        })
+      );
+      continue;
+    }
+
+    // Same identity-protection rule as BROLL_LIBRARY above, applied to
+    // BOTH treatments here (unlike BROLL_LIBRARY, which only ever offers
+    // BROLL_CLIP): a generic stock photo can no more depict a specific
+    // named character than stock footage can — neither treatment can ever
+    // win PRIMARY for a beat that requires a specific character's
+    // identity.
+    if (characterIdentity) {
+      hardGateResults.push(
+        createHardGateResult({
+          candidate: candidateId,
+          allowed: false,
+          rejectedBy: 'IDENTITY_REQUIRES_NON_STOCK_PRIMARY',
+          reason: "beat requires a specific character's identity, which stock media cannot represent as PRIMARY material",
+          eligibleRoles: ['OVERLAY', 'BACKGROUND', 'INSERT'],
+        })
+      );
+      continue;
+    }
+
+    hardGateResults.push(createHardGateResult({ candidate: candidateId, allowed: true, eligibleRoles: ['PRIMARY'] }));
+    survivors.push(
+      createCandidateResult({
+        candidate: candidateId,
+        materialSource: 'STOCK_MEDIA',
+        visualTreatment: treatment,
+        eligibleRoles: ['PRIMARY'],
+        phaseScores: {
+          creativeFit: scoreCreativeFit(beat, 'STOCK_MEDIA', treatment),
+          continuity: scoreContinuity('STOCK_MEDIA', { hasIdentityOrContinuityReqs: identityOrContinuity }),
+          reuse: scoreReuse('STOCK_MEDIA'),
+          cost: scoreCost('STOCK_MEDIA'),
+          complexity: scoreComplexity('STOCK_MEDIA', treatment),
+        },
+      })
+    );
+  }
+
   // --- DETERMINISTIC_TEMPLATE — MOTION_GRAPHIC / KINETIC_TYPOGRAPHY / WHITEBOARD ---
   for (const treatment of DETERMINISTIC_TREATMENTS) {
     if (!beatAllowsTreatment(beat, treatment)) continue;
@@ -1082,13 +1161,14 @@ function resolveMaterial(projectId, beat, context = {}) {
 function tallyResolvedBeat(summary, candidate) {
   if (candidate.materialSource === 'PROJECT_ASSET_REUSE') summary.existingAssetCount += 1;
   if (candidate.materialSource === 'BROLL_LIBRARY') summary.brollCount += 1;
+  if (candidate.materialSource === 'STOCK_MEDIA') summary.stockMediaCount += 1;
   if (candidate.visualTreatment === 'STILL_IMAGE') summary.stillImageCount += 1;
   if (candidate.visualTreatment === 'MOTION_GRAPHIC') summary.motionGraphicCount += 1;
   if (candidate.visualTreatment === 'WHITEBOARD') summary.whiteboardCount += 1;
   if (candidate.visualTreatment === 'KINETIC_TYPOGRAPHY') summary.kineticTypographyCount += 1;
   if (candidate.visualTreatment === 'AI_VIDEO') summary.aiVideoCount += 1;
   if (candidate.materialSource === 'GENERATED_NEW') summary.estimatedGenerationCandidates += 1;
-  if (['PROJECT_ASSET_REUSE', 'BROLL_LIBRARY', 'DETERMINISTIC_TEMPLATE'].includes(candidate.materialSource)) {
+  if (['PROJECT_ASSET_REUSE', 'BROLL_LIBRARY', 'DETERMINISTIC_TEMPLATE', 'STOCK_MEDIA'].includes(candidate.materialSource)) {
     summary.zeroCostDeterministicCount += 1;
   }
 }
@@ -1101,8 +1181,10 @@ function tallyResolvedBeat(summary, candidate) {
 // or deletes anything; never calls a provider; never spends a credit.
 //
 // `context` — the SAME injectable context resolveMaterial() accepts
-// (`context.brollSegments`, Stage 26.3), passed straight through to every
-// beat's own resolution — one B-roll fixture set for the whole graph.
+// (`context.brollSegments`, Stage 26.3; `context.stockMediaProviders`, see
+// this file's STOCK_MEDIA block above), passed straight through to every
+// beat's own resolution — one B-roll fixture set / one available-provider
+// list for the whole graph.
 // ---------------------------------------------------------------------------
 function resolveBeatGraph(projectId, beatGraph, context = {}) {
   const beatGraphId = beatGraph && beatGraph.projectId ? beatGraph.projectId : null;

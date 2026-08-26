@@ -51,6 +51,21 @@ const { createExecutionResult, createDiagnostic } = require('../schemas/material
 //     PROJECT_ASSET_REUSE can ALSO satisfy a BROLL_CLIP-treatment beat via
 //     an existing video asset — see the branch below — and that path must
 //     keep routing to PROJECT_ASSET_REUSE, never this one)
+//   materialSource STOCK_MEDIA + visualTreatment STILL_IMAGE
+//     -> STOCK_MEDIA_IMAGE (Media Acquisition — checked as a specific
+//     pair, BEFORE the generic STILL_IMAGE rule below, same discipline as
+//     GENERATED_NEW+STILL_IMAGE: a thin bridge that looks up an
+//     already-acquired stock asset via services/media-acquisition-
+//     store.js and delegates to STILL_IMAGE_MOTION's own executor —
+//     never acquires anything itself)
+//   materialSource STOCK_MEDIA + visualTreatment BROLL_CLIP
+//     -> STOCK_MEDIA_VIDEO (Media Acquisition — same bridge pattern,
+//     delegates to PROJECT_ASSET_REUSE's own executor once an already-
+//     acquired stock video asset exists; checked BEFORE the
+//     BROLL_LIBRARY+BROLL_CLIP rule, since that rule is specific to
+//     materialSource BROLL_LIBRARY and would never match STOCK_MEDIA
+//     anyway — listed here purely for the reader's sake, not because
+//     ordering with that rule matters)
 //   materialSource PROJECT_ASSET_REUSE   -> PROJECT_ASSET_REUSE (every other
 //     treatment reached via existing-asset reuse — e.g. AI_VIDEO/BROLL_CLIP
 //     treatments satisfied by an already-existing video asset: just placed,
@@ -60,6 +75,8 @@ function resolveExecutorType(selectedMaterial) {
   if (!selectedMaterial) return null;
   if (selectedMaterial.materialSource === 'GENERATED_NEW' && selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'GENERATED_NEW_STILL_IMAGE';
   if (selectedMaterial.materialSource === 'GENERATED_NEW' && selectedMaterial.visualTreatment === 'AI_VIDEO') return 'GENERATED_NEW_VIDEO';
+  if (selectedMaterial.materialSource === 'STOCK_MEDIA' && selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'STOCK_MEDIA_IMAGE';
+  if (selectedMaterial.materialSource === 'STOCK_MEDIA' && selectedMaterial.visualTreatment === 'BROLL_CLIP') return 'STOCK_MEDIA_VIDEO';
   if (selectedMaterial.visualTreatment === 'STILL_IMAGE') return 'STILL_IMAGE_MOTION';
   if (selectedMaterial.visualTreatment === 'KINETIC_TYPOGRAPHY') return 'KINETIC_TYPOGRAPHY';
   if (selectedMaterial.visualTreatment === 'MOTION_GRAPHIC') return 'MOTION_GRAPHIC';

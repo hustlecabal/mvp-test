@@ -53,7 +53,18 @@ const EXECUTION_STATUSES = ['COMPLETED', 'FAILED'];
 // already-approved asset from the existing Pipeline A generation flow and
 // delegate actual render-spec construction to the existing
 // still-image-motion-executor.js/project-asset-reuse-executor.js.
-const EXECUTOR_TYPES = ['PROJECT_ASSET_REUSE', 'STILL_IMAGE_MOTION', 'KINETIC_TYPOGRAPHY', 'MOTION_GRAPHIC', 'WHITEBOARD', 'BROLL_CLIP', 'GENERATED_NEW_STILL_IMAGE', 'GENERATED_NEW_VIDEO'];
+const EXECUTOR_TYPES = [
+  'PROJECT_ASSET_REUSE',
+  'STILL_IMAGE_MOTION',
+  'KINETIC_TYPOGRAPHY',
+  'MOTION_GRAPHIC',
+  'WHITEBOARD',
+  'BROLL_CLIP',
+  'GENERATED_NEW_STILL_IMAGE',
+  'GENERATED_NEW_VIDEO',
+  'STOCK_MEDIA_IMAGE', // Media Acquisition — services/material-executors/stock-media-executor.js, same thin-bridge discipline as GENERATED_NEW_*
+  'STOCK_MEDIA_VIDEO', // same module, branches on visualTreatment
+];
 
 // One structured diagnostic entry — same {code, message} shape used
 // throughout this stage's executors, never a bare string, so a caller can

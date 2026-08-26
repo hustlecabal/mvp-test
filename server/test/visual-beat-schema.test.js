@@ -107,6 +107,7 @@ test('2b. MATERIAL_SOURCES is the exact approved orthogonal vocabulary (material
     'GENERATED_NEW',
     'BROLL_LIBRARY',
     'DETERMINISTIC_TEMPLATE',
+    'STOCK_MEDIA', // Media Acquisition — see services/media-acquisition-service.js
   ]);
 });
 
