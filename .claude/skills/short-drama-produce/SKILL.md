@@ -99,7 +99,7 @@ adapter 配置必须在项目外，只包含 argv 命令和超时；凭据由 ad
 引用语义说明（中文名、用途、允许控制与不得控制范围）；不会把槽位名误当成要渲染进画面的文字。
 外部 adapter 也必须保留这组语义或明确拒绝，不能只上传文件而静默丢失控制边界。
 
-本技能可选提供三个 stdlib adapter，均通过项目外 adapter config 选择，凭据只从运行环境读取：
+本技能可选提供六个 stdlib adapter，均通过项目外 adapter config 选择，凭据只从运行环境读取：
 
 - [Seedance](references/providers/seedance.md)：模型/Endpoint ID 必须由账号显式配置；内置 runtime
   只承诺已验证的 text-to-video，未配置可信上传时本地参考图 fail closed。
@@ -107,6 +107,13 @@ adapter 配置必须在项目外，只包含 argv 命令和超时；凭据由 ad
   固定高保真引用并校验尺寸、格式与透明背景限制。
 - [MiniMax Music](references/providers/minimax-music.md)：使用 `music-3.0` 与 hex 结果，区分主题曲
   和纯配乐，不伪造时长请求字段。
+- [ai33 Image](references/providers/ai33-image.md)：单一账号/单一 credit 余额下转发到多个底层图片
+  模型（Imagen v1i），`model_id` 必须由 job 显式指定，不假设默认模型。
+- [ai33 TTS](references/providers/ai33-tts.md)：统一 v3 语音合成端点，`voice_id` 携带供应商前缀
+  （`elevenlabs_`/`minimax_`/`clone_`/`edge_`/`kokoro_`/`vbee_`/`fishaudio_`）以在多家语音供应商间路由。
+- [ai33 Music](references/providers/ai33-music.md)：Suno v1s，只使用 `custom` 模式并要求确认过的
+  歌词逐字送出；拒绝会临场自撰歌词的 `simple` 模式，原则与 MiniMax Music 的 `lyrics_optimizer`
+  拒绝一致。
 
 这些 adapter 是已验证请求契约，不是账号可用性或生成质量保证；正式生产仍必须通过上面的本次
 确认闸门，并由审查 Skill 判断产物质量。
