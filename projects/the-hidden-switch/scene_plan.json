@@ -1,0 +1,226 @@
+{
+  "version": "1.0",
+  "scenes": [
+    {
+      "id": "scene_001",
+      "type": "broll",
+      "description": "Cold-open hook. Narrator states the past result without yet explaining it. Motif plant: a figure pushing a car uphill — withhold the engine, mirroring the line's own withholding.",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "script_section_id": "phase_1_warm_entry",
+      "framing": "Wide, unhurried — give the line room, no cutting on every phrase.",
+      "movement": "Slow push-in, barely perceptible",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_language": {
+        "shot_size": "wide",
+        "camera_movement": "dolly_in",
+        "lighting_key": "overcast_soft",
+        "depth_of_field": "medium",
+        "color_temperature": "neutral"
+      },
+      "shot_intent": "Establish the hook without giving away the mechanism — the payoff is withheld on purpose.",
+      "narrative_role": "establish_context",
+      "information_role": "The viewer learns something changed, not yet what or why.",
+      "hero_moment": true,
+      "texture_keywords": ["quiet", "unresolved", "overcast"],
+      "required_assets": [
+        {
+          "type": "video",
+          "description": "motif_hidden_engine_001 (plant) — figure pushing a car uphill, engine not shown/implied hidden. Establishes the visual language this motif will reuse at payoff.",
+          "source": "generate"
+        }
+      ]
+    },
+    {
+      "id": "scene_002",
+      "type": "broll",
+      "description": "Morning inertia: alarm set early, waking up, the blanket-as-concrete feeling, the to-do list that won't be started.",
+      "start_seconds": 20,
+      "end_seconds": 45,
+      "script_section_id": "phase_2_honest_struggle",
+      "framing": "Close, tactile — texture of the blanket, weight of the moment",
+      "movement": "Static or minimal handheld drift",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_language": {
+        "shot_size": "close_up",
+        "camera_movement": "static",
+        "lighting_key": "low_key",
+        "depth_of_field": "shallow",
+        "color_temperature": "cool"
+      },
+      "shot_intent": "Make the resistance physically legible — this isn't abstract laziness, it's a felt weight.",
+      "narrative_role": "build_tension",
+      "information_role": "The viewer recognizes the feeling before the narrator names it.",
+      "hero_moment": false,
+      "texture_keywords": ["heavy", "grey", "still"],
+      "required_assets": [
+        {
+          "type": "video",
+          "description": "Morning bedroom, alarm clock, blanket, unopened to-do list — stock or generated, no faces needed (faceless format).",
+          "source": "source"
+        }
+      ]
+    },
+    {
+      "id": "scene_003",
+      "type": "text_card",
+      "description": "The self-blaming inner voice: 'I thought I was lazy... push harder, be tougher.'",
+      "start_seconds": 45,
+      "end_seconds": 58,
+      "script_section_id": "phase_2_honest_struggle",
+      "overlay_notes": "Kinetic typography of the self-talk lines, terse and clipped, not a paragraph block.",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_intent": "Give the misdiagnosis its own visual beat so the reveal in scene_004 lands as a correction, not a footnote.",
+      "narrative_role": "emotional_beat",
+      "information_role": "The viewer sees the narrator's old (wrong) explanation stated plainly.",
+      "hero_moment": false,
+      "required_assets": [
+        {
+          "type": "animation",
+          "description": "Kinetic typography treatment for 'not disciplined enough / push harder / be tougher'.",
+          "source": "generate"
+        }
+      ]
+    },
+    {
+      "id": "scene_004",
+      "type": "diagram",
+      "description": "The correction and the concept: 'wrong fuel' — two types of motivational fuel, extrinsic vs. the still-unnamed second source.",
+      "start_seconds": 58,
+      "end_seconds": 70,
+      "script_section_id": "phase_2_honest_struggle",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_intent": "Introduce the video's central concept as a simple two-tank/two-column diagram, not a data chart — this is the thesis, keep it visually plain so the metaphor (scene_005) carries the weight.",
+      "narrative_role": "deliver_payload",
+      "information_role": "The viewer learns the frame: two fuels, one of them is weaker, the narrator had been using it.",
+      "hero_moment": false,
+      "required_assets": [
+        {
+          "type": "diagram",
+          "description": "Two-tank or two-column diagram: extrinsic fuel (labeled) vs. second fuel (deliberately left unlabeled/blank — it hasn't been revealed in the source script yet).",
+          "source": "generate"
+        }
+      ]
+    },
+    {
+      "id": "scene_005",
+      "type": "generated",
+      "description": "Motif payoff: the race car filled with regular gas from the corner store — 'it works, but it's not what the car was built for.' Must visually rhyme with scene_001's motif plant (same car, same visual language).",
+      "start_seconds": 70,
+      "end_seconds": 83,
+      "script_section_id": "phase_2_honest_struggle",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_language": {
+        "shot_size": "medium",
+        "camera_movement": "static",
+        "lighting_key": "natural",
+        "depth_of_field": "shallow",
+        "color_temperature": "warm"
+      },
+      "shot_intent": "This is the video's central visual metaphor — treat it as the hero moment of the extrinsic-motivation explanation.",
+      "narrative_role": "deliver_payload",
+      "information_role": "The viewer understands 'extrinsic motivation' as a felt image, not a definition.",
+      "hero_moment": true,
+      "texture_keywords": ["warm", "ordinary", "corner-store"],
+      "required_assets": [
+        {
+          "type": "video",
+          "description": "motif_hidden_engine_001 (payoff, partial) — the same race car from scene_001, now shown at a corner-store gas pump being filled with regular gas.",
+          "source": "generate"
+        }
+      ]
+    },
+    {
+      "id": "scene_006",
+      "type": "text_card",
+      "description": "Definition list: extrinsic motivation = money, praise, status, avoiding getting yelled at.",
+      "start_seconds": 83,
+      "end_seconds": 93,
+      "script_section_id": "phase_2_honest_struggle",
+      "overlay_notes": "Short list reveal, one item at a time, matched to the narrator's own list cadence.",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_intent": "Ground the metaphor in concrete, recognizable examples before the dopamine explanation.",
+      "narrative_role": "deliver_payload",
+      "information_role": "The viewer maps the metaphor onto their own life.",
+      "hero_moment": false,
+      "required_assets": [
+        {
+          "type": "animation",
+          "description": "Sequential text reveal: Money / Praise / Status / Avoiding getting yelled at.",
+          "source": "generate"
+        }
+      ]
+    },
+    {
+      "id": "scene_007",
+      "type": "broll",
+      "description": "Christmas Eve anticipation vs. Christmas morning anticlimax, mapped onto 'wanting the thing' vs. 'getting the thing.'",
+      "start_seconds": 93,
+      "end_seconds": 108,
+      "script_section_id": "phase_2_honest_struggle",
+      "transition_in": "cut",
+      "transition_out": "cut",
+      "shot_language": {
+        "shot_size": "medium_wide",
+        "camera_movement": "static",
+        "lighting_key": "tungsten_warm",
+        "depth_of_field": "medium",
+        "color_temperature": "warm"
+      },
+      "shot_intent": "Two-shot contrast: anticipation (warm, lit tree, wrapped presents) cutting to the flatness right after (same room, morning light, presents already open).",
+      "narrative_role": "evidence",
+      "information_role": "The viewer feels the anticlimax the narrator is describing, not just hears about it.",
+      "hero_moment": false,
+      "required_assets": [
+        {
+          "type": "video",
+          "description": "Two-part contrast shot: Christmas Eve anticipation vs. Christmas morning anticlimax, same room.",
+          "source": "source"
+        }
+      ]
+    },
+    {
+      "id": "scene_008",
+      "type": "broll",
+      "description": "The promotion-chase / dopamine-crash beat leading into 'chasing the next thing, thinking — okay when I hit this—' where the source script currently cuts off.",
+      "start_seconds": 108,
+      "end_seconds": 120,
+      "script_section_id": "phase_2_honest_struggle",
+      "transition_in": "cut",
+      "shot_intent": "Show the repeating cycle (chase, win, flatten, chase again) as a loop, not a single event — this is what makes the eventual fuel-switch land as a break in the pattern rather than one more win.",
+      "narrative_role": "build_tension",
+      "information_role": "The viewer sees the treadmill the narrator is stuck on, right before the source material runs out.",
+      "hero_moment": false,
+      "required_assets": [
+        {
+          "type": "video",
+          "description": "Workplace/desk broll suggesting a repeating cycle — chase, brief high, flatness. PROVISIONAL: this scene's out-point and transition_out depend on the still-missing rest of Phase 2.",
+          "source": "source"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "status": "draft — covers only the source material received (Phase 1 + Phase 2, itself cut off mid-sentence). Do not extend past scene_008 by inventing content.",
+    "evolink_continuity_graph": {
+      "motif_hidden_engine_001": {
+        "type": "recurring_visual_motif",
+        "introduced": "scene_001 (planted, engine withheld)",
+        "developed": "scene_005 (payoff: extrinsic-fuel explanation)",
+        "pending": "expected final payoff when the second fuel source is revealed (script not yet supplied) — the engine should visually 'switch on' at that point, rhymed with scene_001/scene_005."
+      }
+    },
+    "evolink_open_items": [
+      "Remainder of Phase 2 (scene_008 has no confirmed out-point)",
+      "The hidden-switch reveal phase — undefined, not yet in source script",
+      "Closing/resolution phase implied by the ~20-minute target runtime",
+      "Style playbook / renderer_family / render_runtime not yet chosen — pending an OpenMontage proposal-stage pass once this scene_plan is handed off"
+    ]
+  }
+}

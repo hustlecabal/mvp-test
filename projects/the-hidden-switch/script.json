@@ -1,0 +1,69 @@
+{
+  "version": "1.0",
+  "title": "The Hidden Switch — How I Stopped Hating Hard Work (And Started Craving It)",
+  "total_duration_seconds": 1200,
+  "voice_performance": {
+    "performance_intent": "First-person, real-time-thinking confession. The narrator is figuring it out again as they say it, not reciting a conclusion.",
+    "pacing_profile": "conversational",
+    "energy_curve": "Low, halting, searching for words through the struggle beats; opens up and quickens slightly once the fuel metaphor lands.",
+    "pause_policy": "Preserve every written pause (em dash, ellipsis, sentence fragment) as an actual beat of silence or breath — do not let TTS or a human VO smooth these into continuous prose.",
+    "sample_section_id": "phase_2_honest_struggle",
+    "provider_notes": {}
+  },
+  "sections": [
+    {
+      "id": "phase_1_warm_entry",
+      "label": "Phase 1: The Warm Entry",
+      "text": "I had the best three months of work in my life last year.\n\nNot because I worked less. I actually — I mean I worked more. But it didn't feel like work. Which sounds like one of those things people say when they're trying to sell you something. But it's not that.\n\nIt was more like. I don't know. Like I'd been pushing a car uphill for years and someone finally told me there was an engine inside it the whole time.",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "speaker_directions": "Direct address, quiet confidence — not a pitch. Let the self-corrections ('I actually — I mean') read as genuine, not scripted.",
+      "delivery_cues": {
+        "pace": "measured",
+        "emphasis_words": ["best", "more", "engine"],
+        "delivery_note": "The 'engine inside it the whole time' line is the hook's plant of the recurring visual motif — deliver it as a held beat, not thrown away."
+      },
+      "enhancement_cues": [
+        {
+          "type": "broll",
+          "description": "Motif plant: motif_hidden_engine_001 — a car being pushed uphill by a figure; do not yet reveal the engine visually, mirror the line's own withholding.",
+          "timestamp_seconds": 14
+        }
+      ]
+    },
+    {
+      "id": "phase_2_honest_struggle",
+      "label": "Phase 2: The Honest Struggle",
+      "text": "So here's what happened before that.\n\nI was stuck. Like. Really stuck. I'd wake up. Set the alarm early. Tell myself tonight — tomorrow's different. Tomorrow I start the real work.\n\nAnd then morning comes and. The blanket feels like concrete. The to-do list just — it sits there staring back at you. And you know you should work but something inside you just. Won't cooperate.\n\nI thought I was lazy. That's what I told myself anyway. I'd say — okay you're just not disciplined enough. You need to push harder. Be tougher. All that stuff.\n\nBut here's the thing I didn't understand yet.\n\nI wasn't lazy. I was just. Running on the wrong fuel.\n\nThere's two types of fuel your brain can use for motivation. And I'd been using the weaker one. The one that runs out.\n\nIt's like — okay imagine you've got this incredible race car. And you keep filling it with regular gas from the corner store. It works. It gets you moving. But it's not what the car was built for.\n\nThat's extrinsic motivation. Money. Praise. Status. Avoiding getting yelled at. All the stuff that comes from outside.\n\nAnd here's the weird part about how your brain processes that stuff.\n\nYour brain gets more excited about wanting the thing than actually getting the thing. It's like being a kid on Christmas Eve. The anticipation is — it's almost better than Christmas morning. Because Christmas morning you open the present and then. It's over.\n\nSame thing happens with work rewards. You're chasing the promotion. Brain's lighting up. Dopamine everywhere. You get the promotion and. Three days later you're back to feeling flat.\n\nSo I kept doing this. Chasing the next thing. Thinking — okay when I hit this—",
+      "start_seconds": 20,
+      "end_seconds": 120,
+      "speaker_directions": "The self-diagnosis beats ('I thought I was lazy') should land harder than the explanatory beats — this is confession, not a lecture, until the fuel metaphor arrives.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["stuck", "lazy", "wrong fuel", "wanting", "flat"],
+        "delivery_note": "TRUNCATED — source text cuts off mid-sentence at 'when I hit this—'. Re-time this section once the rest of Phase 2 and the reveal phase are supplied; 120s is the script's own header estimate, not a verified read-time for this much text at the locked conversational pace."
+      },
+      "enhancement_cues": [
+        {
+          "type": "diagram",
+          "description": "Two-fuel-source concept graphic (extrinsic vs. the still-unnamed second source) — introduce as a simple two-column or two-tank visual, not a data chart.",
+          "timestamp_seconds": 55
+        },
+        {
+          "type": "broll",
+          "description": "motif_hidden_engine_001 payoff of the plant: race car at a corner-store pump, visually rhymed with the Phase 1 uphill-push shot.",
+          "timestamp_seconds": 70
+        },
+        {
+          "type": "broll",
+          "description": "Christmas Eve anticipation vs. Christmas morning anticlimax — two-shot visual contrast.",
+          "timestamp_seconds": 95
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "status": "draft — incomplete. Missing: remainder of Phase 2, the hidden-switch reveal phase, and the closing/resolution phase implied by the ~20-minute target runtime.",
+    "source": "user-provided script, verbatim through the point it was cut off"
+  }
+}

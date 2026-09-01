@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "title": "The Hidden Switch — How I Stopped Hating Hard Work (And Started Craving It)",
+  "hook": "About Me (Past Result) — cold open on 'the best three months of work in my life last year,' before explaining the mechanism that caused it.",
+  "key_points": [
+    "There are two fuel sources for motivation: extrinsic (money, praise, status, avoiding punishment) and a second, stronger one the narrator didn't know existed.",
+    "The brain gets more dopamine from wanting a reward than from getting it, so extrinsic-fuel wins go flat within days.",
+    "What reads as laziness or lack of discipline is actually a fuel-source problem, not a character problem.",
+    "PROVISIONAL — incomplete: the actual mechanism/reveal of the second fuel source, and how the narrator's daily experience changed once they switched to it, are not yet in the source script."
+  ],
+  "core_message": "You are not lazy — you may just be running your motivation on the wrong fuel.",
+  "tone": "Raw & Unfiltered — first-person, real-time-thinking cadence, self-interrupted, unpolished.",
+  "style": "Narrated monologue / faceless YouTube explainer — motion graphics and visual-metaphor illustration over voiceover, no on-camera talent.",
+  "target_platform": "youtube",
+  "target_duration_seconds": 1200,
+  "reference_material": [
+    "projects/the-hidden-switch/script.json"
+  ],
+  "metadata": {
+    "status": "draft — source script incomplete (see STORY_BIBLE.md open items)",
+    "openmontage_pipeline_candidates": ["animated-explainer", "documentary-montage"]
+  }
+}
