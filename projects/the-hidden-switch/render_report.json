@@ -2,31 +2,34 @@
   "version": "1.0",
   "outputs": [
     {
-      "path": "renders/final.mp4",
+      "path": "renders/final_v2.mp4",
       "format": "mp4",
       "codec": "h264",
       "audio_codec": "aac",
       "resolution": "1920x1080",
       "fps": 30.0,
-      "duration_seconds": 605.41,
-      "file_size_bytes": 295539268,
+      "duration_seconds": 604.78,
+      "file_size_bytes": 297975956,
       "platform_target": "youtube"
     }
   ],
-  "render_time_seconds": 812.73,
+  "render_time_seconds": 825.25,
   "warnings": [
-    "Automated self-review flagged possible audio clipping (max volume 0.0 dB).",
-    "Automated self-review's music_present=true is unexplained \u2014 no music_plan was configured (opted out); likely detecting the B-roll clips' own embedded ambient audio, which was never explicitly muted in edit_decisions. Needs verification, not assumed benign.",
-    "transcript_comparison was skipped (no narration_transcript supplied) \u2014 narration accuracy against script.json was never actually verified by the transcriber tool.",
-    "Manual visual spot-check of the tool's own 4 self-review frames found at least one clearly mismatched clip (an eyelash-curling/makeup close-up, not matching any planned scene description) that the automated visual_spotcheck (black-frame/overlay/text checks only) did not catch. Full 27-scene visual review has NOT been done \u2014 only ~5 of 54 downloaded candidates were manually inspected before picking.",
-    "scene_007c and scene_013 were already flagged as weak content matches in asset_manifest.json before this render; they were rendered as-is, not fixed."
+    "FIXED from v1: v1 (renders/final.mp4) had no audible narration at all — video_compose only replaces a cut's own embedded audio when an explicit pre-mixed audio_path is supplied; that mixdown step was skipped entirely. Built assets/audio/mixed_narration.wav via audio_mixer (operation=full_mix, 9 speech tracks placed at their edit_decisions.audio.narration.segments start times, target_duration=604.838, loudnorm -14 LUFS) and re-rendered with audio_path set. Independently verified audible (not just trusting the tool's has_mixed_audio flag) via volumedetect at 0s/60s/300s/500s/580s: consistently -14 to -11 dB mean, -1.1 to 0.0 dB max — normal speech levels throughout, not silence.",
+    "FIXED: asset_manifest.json's narration asset paths were missing the projects/the-hidden-switch/ prefix that video asset paths correctly had (a manifest-construction bug, not a real file-location issue). This is what caused audio_mixer's first attempt to fail with 'Track not found'.",
+    "STILL OPEN: automated self-review still reports 'Max volume 0.0 dB — possible clipping' on v2. My own 10-second spot checks at 5 points came in at -1.1 to 0.0 dB max, consistent with the tool's finding — this is a real true-peak clipping risk somewhere in the 605s timeline, not fully ruled out, and would benefit from a peak limiter before this is treated as final audio.",
+    "STILL OPEN, likely a false positive: self-review's audio_spotcheck still reports music_present=true on v2, despite the mixed audio track being independently verifiable as 9 speech-only tracks with no music_path ever passed to audio_mixer. Most likely the heuristic is misreading loudness-normalized, sustained speech as music; noting it rather than either dismissing it or presenting it as confirmed music contamination.",
+    "transcript_comparison was still skipped (no narration_transcript supplied) — narration accuracy against script.json has never been verified by the transcriber tool.",
+    "Manual visual spot-check of the v1 self-review's 4 sample frames found at least one clearly mismatched clip (an eyelash-curling/makeup close-up, not matching any planned scene description) that the automated visual_spotcheck did not catch. Full 27-scene visual review has still NOT been done — only ~5 of 54 downloaded candidates were manually inspected before picking. v2 reuses the same picks as v1 (only the audio changed).",
+    "scene_007c and scene_013 remain flagged as weak content matches in asset_manifest.json; rendered as-is, not fixed."
   ],
   "render_grammar": "documentary-montage",
   "metadata": {
     "pipeline": "animated-explainer (structural) + direct_clip_search tool substitution",
     "no_proposal_packet": true,
-    "no_checkpoints": "OpenMontage's write_checkpoint() rejected assets/edit checkpoints for this project because research/proposal stages were never completed (EvoLink skipped them) \u2014 see git history in mvp-test for the actual project record instead.",
+    "no_checkpoints": "OpenMontage's write_checkpoint() rejected assets/edit checkpoints for this project because research/proposal stages were never completed (EvoLink skipped them) — see git history in mvp-test for the actual project record instead.",
     "cost_total_usd": 0.1527,
-    "status": "rough cut \u2014 automated self-review passed with caveats above; full manual visual/audio review not yet done"
+    "delivery_note": "Full-quality output (297,975,956 bytes) exceeds the 30MB user-file delivery limit in this session. A compressed copy (960x540, ~26MB) was sent to the user for review; it is NOT representative of final output quality, only of content/timing/audio-presence.",
+    "status": "rough cut — narration-audio bug fixed and independently verified; visual mismatches and clipping/music-detection flags from v1 remain open"
   }
 }
