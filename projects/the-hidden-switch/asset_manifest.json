@@ -409,7 +409,7 @@
     {
       "id": "narration_phase_1_warm_entry",
       "type": "narration",
-      "path": "assets/narration/phase_1_sample.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_1_sample.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "scene_001",
       "duration_seconds": 25.181938,
@@ -421,7 +421,7 @@
     {
       "id": "narration_phase_2_honest_struggle",
       "type": "narration",
-      "path": "assets/narration/phase_2_honest_struggle.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_2_honest_struggle.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_2_honest_struggle",
       "duration_seconds": 118.204,
@@ -433,7 +433,7 @@
     {
       "id": "narration_phase_3_reveal",
       "type": "narration",
-      "path": "assets/narration/phase_3_reveal.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_3_reveal.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_3_reveal",
       "duration_seconds": 39.340313,
@@ -445,7 +445,7 @@
     {
       "id": "narration_phase_4_discovery",
       "type": "narration",
-      "path": "assets/narration/phase_4_discovery.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_4_discovery.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_4_discovery",
       "duration_seconds": 65.070938,
@@ -457,7 +457,7 @@
     {
       "id": "narration_phase_5_framework",
       "type": "narration",
-      "path": "assets/narration/phase_5_framework.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_5_framework.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_5_framework",
       "duration_seconds": 94.328063,
@@ -469,7 +469,7 @@
     {
       "id": "narration_phase_6_application",
       "type": "narration",
-      "path": "assets/narration/phase_6_application.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_6_application.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_6_application",
       "duration_seconds": 87.954188,
@@ -481,7 +481,7 @@
     {
       "id": "narration_phase_7_nuance",
       "type": "narration",
-      "path": "assets/narration/phase_7_nuance.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_7_nuance.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_7_nuance",
       "duration_seconds": 73.5085,
@@ -493,7 +493,7 @@
     {
       "id": "narration_phase_8_invitation",
       "type": "narration",
-      "path": "assets/narration/phase_8_invitation.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_8_invitation.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_8_invitation",
       "duration_seconds": 48.561563,
@@ -505,7 +505,7 @@
     {
       "id": "narration_phase_9_resolution",
       "type": "narration",
-      "path": "assets/narration/phase_9_resolution.mp3",
+      "path": "projects/the-hidden-switch/assets/narration/phase_9_resolution.mp3",
       "source_tool": "fish_audio_tts",
       "scene_id": "phase_9_resolution",
       "duration_seconds": 52.688875,
