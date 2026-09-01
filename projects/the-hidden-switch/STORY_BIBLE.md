@@ -48,6 +48,29 @@ treatment Phase 1 uses for it, Phase 2's explanation and any later reveal/payoff
 beat must visually rhyme with it (same car, same visual language), or the plant/payoff
 breaks.
 
+## Production decisions (confirmed with the user)
+
+- **No animation.** Real B-roll/stock/archival footage only — no motion graphics,
+  no illustrated diagrams, no kinetic typography. The only on-screen graphic in the
+  entire piece is a single closing text overlay (see end-tag below).
+- **Narration provider: Fish Audio TTS** (`fish_audio_tts`), explicitly requested.
+  Voice selection is deferred to OpenMontage's own asset stage.
+- **Pipeline: `documentary-montage`.** The only OpenMontage pipeline that retrieves
+  real footage from stock/archive libraries (Pexels, Archive.org, Wikimedia, etc.)
+  from a written brief rather than assuming footage is already supplied. Tradeoffs
+  accepted: a single fixed tone register (`dreamlike` — EvoLink's pick, not the
+  user's; flag for override if it reads wrong once real footage is in), a
+  long-form runtime well past this pipeline's documented 30s–3min sweet spot, and
+  its mandatory music/end-tag contract (resolved below).
+- **Music: opted out.** No music-generation/search API is currently configured —
+  recorded as an explicit `music_plan.source = "none"` opt-out, not a silent
+  omission.
+- **End-tag: opted in.** A single closing line fades in as a text overlay over the
+  final shot (`"The engine was already there."` — EvoLink's pick, ties off the
+  motif plant/payoff; two alternates logged in `scene_plan.json` if this doesn't
+  land). This is a static text card, not motion graphics, consistent with the
+  no-animation constraint.
+
 ## Known open items (do not resolve by inventing)
 
 The source script currently runs Phase 1 (0–20s) and Phase 2 (20–120s, cut off

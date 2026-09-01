@@ -4,223 +4,283 @@
     {
       "id": "scene_001",
       "type": "broll",
-      "description": "Cold-open hook. Narrator states the past result without yet explaining it. Motif plant: a figure pushing a car uphill — withhold the engine, mirroring the line's own withholding.",
+      "description": "A person pushing an old sedan uphill on an empty road, straining, low afternoon light, wide shot. Motif plant: motif_hidden_engine_001 — do not reveal the engine running yet.",
       "start_seconds": 0,
       "end_seconds": 20,
       "script_section_id": "phase_1_warm_entry",
-      "framing": "Wide, unhurried — give the line room, no cutting on every phrase.",
-      "movement": "Slow push-in, barely perceptible",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_language": {
-        "shot_size": "wide",
-        "camera_movement": "dolly_in",
-        "lighting_key": "overcast_soft",
-        "depth_of_field": "medium",
-        "color_temperature": "neutral"
-      },
-      "shot_intent": "Establish the hook without giving away the mechanism — the payoff is withheld on purpose.",
       "narrative_role": "establish_context",
-      "information_role": "The viewer learns something changed, not yet what or why.",
+      "shot_intent": "Plant the recurring visual motif without explaining it — mirrors the narration's own withholding.",
       "hero_moment": true,
-      "texture_keywords": ["quiet", "unresolved", "overcast"],
+      "texture_keywords": ["straining", "overcast", "quiet"],
       "required_assets": [
-        {
-          "type": "video",
-          "description": "motif_hidden_engine_001 (plant) — figure pushing a car uphill, engine not shown/implied hidden. Establishes the visual language this motif will reuse at payoff.",
-          "source": "generate"
-        }
+        { "type": "video", "description": "motif_hidden_engine_001 (plant): person pushing a stalled/broken-down car uphill on an empty road.", "source": "source" }
       ]
     },
     {
       "id": "scene_002",
       "type": "broll",
-      "description": "Morning inertia: alarm set early, waking up, the blanket-as-concrete feeling, the to-do list that won't be started.",
+      "description": "An alarm clock on a nightstand at dawn, a hand reaching to silence it, dim bedroom light.",
       "start_seconds": 20,
-      "end_seconds": 45,
+      "end_seconds": 30,
       "script_section_id": "phase_2_honest_struggle",
-      "framing": "Close, tactile — texture of the blanket, weight of the moment",
-      "movement": "Static or minimal handheld drift",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_language": {
-        "shot_size": "close_up",
-        "camera_movement": "static",
-        "lighting_key": "low_key",
-        "depth_of_field": "shallow",
-        "color_temperature": "cool"
-      },
-      "shot_intent": "Make the resistance physically legible — this isn't abstract laziness, it's a felt weight.",
       "narrative_role": "build_tension",
-      "information_role": "The viewer recognizes the feeling before the narrator names it.",
+      "shot_intent": "Open the 'stuck' beat on the most literal image of the daily attempt to start.",
       "hero_moment": false,
-      "texture_keywords": ["heavy", "grey", "still"],
       "required_assets": [
-        {
-          "type": "video",
-          "description": "Morning bedroom, alarm clock, blanket, unopened to-do list — stock or generated, no faces needed (faceless format).",
-          "source": "source"
-        }
+        { "type": "video", "description": "Alarm clock buzzing at dawn, hand silencing it, dim bedroom.", "source": "source" }
       ]
     },
     {
       "id": "scene_003",
-      "type": "text_card",
-      "description": "The self-blaming inner voice: 'I thought I was lazy... push harder, be tougher.'",
-      "start_seconds": 45,
-      "end_seconds": 58,
+      "type": "broll",
+      "description": "A rumpled blanket and tangled bedsheet under grey morning light, close up, static; cut to a handwritten to-do list on a cluttered desk, unchecked boxes.",
+      "start_seconds": 30,
+      "end_seconds": 45,
       "script_section_id": "phase_2_honest_struggle",
-      "overlay_notes": "Kinetic typography of the self-talk lines, terse and clipped, not a paragraph block.",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_intent": "Give the misdiagnosis its own visual beat so the reveal in scene_004 lands as a correction, not a footnote.",
-      "narrative_role": "emotional_beat",
-      "information_role": "The viewer sees the narrator's old (wrong) explanation stated plainly.",
+      "narrative_role": "build_tension",
+      "shot_intent": "Make the resistance physically legible — a felt weight, not an abstract complaint.",
       "hero_moment": false,
       "required_assets": [
-        {
-          "type": "animation",
-          "description": "Kinetic typography treatment for 'not disciplined enough / push harder / be tougher'.",
-          "source": "generate"
-        }
+        { "type": "video", "description": "Rumpled blanket, grey morning light, close up.", "source": "source" },
+        { "type": "video", "description": "Handwritten to-do list on a cluttered desk, unchecked boxes, morning light.", "source": "source" }
       ]
     },
     {
       "id": "scene_004",
-      "type": "diagram",
-      "description": "The correction and the concept: 'wrong fuel' — two types of motivational fuel, extrinsic vs. the still-unnamed second source.",
-      "start_seconds": 58,
-      "end_seconds": 70,
+      "type": "broll",
+      "description": "A person's hands rubbing tired eyes at a kitchen table, unmade, muted colors, medium close-up — no on-screen text, the self-blame is carried entirely by narration.",
+      "start_seconds": 45,
+      "end_seconds": 58,
       "script_section_id": "phase_2_honest_struggle",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_intent": "Introduce the video's central concept as a simple two-tank/two-column diagram, not a data chart — this is the thesis, keep it visually plain so the metaphor (scene_005) carries the weight.",
-      "narrative_role": "deliver_payload",
-      "information_role": "The viewer learns the frame: two fuels, one of them is weaker, the narrator had been using it.",
+      "narrative_role": "emotional_beat",
+      "shot_intent": "Give the misdiagnosis ('I thought I was lazy') a real, unglamorous image instead of a graphic treatment.",
       "hero_moment": false,
       "required_assets": [
-        {
-          "type": "diagram",
-          "description": "Two-tank or two-column diagram: extrinsic fuel (labeled) vs. second fuel (deliberately left unlabeled/blank — it hasn't been revealed in the source script yet).",
-          "source": "generate"
-        }
+        { "type": "video", "description": "Tired hands rubbing eyes at a kitchen table, muted light.", "source": "source" }
       ]
     },
     {
       "id": "scene_005",
-      "type": "generated",
-      "description": "Motif payoff: the race car filled with regular gas from the corner store — 'it works, but it's not what the car was built for.' Must visually rhyme with scene_001's motif plant (same car, same visual language).",
-      "start_seconds": 70,
-      "end_seconds": 83,
+      "type": "broll",
+      "description": "Two different gas-pump nozzles side by side at a gas station — a worn regular-unleaded handle and a clean premium handle — daylight, no overlay text.",
+      "start_seconds": 58,
+      "end_seconds": 70,
       "script_section_id": "phase_2_honest_struggle",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_language": {
-        "shot_size": "medium",
-        "camera_movement": "static",
-        "lighting_key": "natural",
-        "depth_of_field": "shallow",
-        "color_temperature": "warm"
-      },
-      "shot_intent": "This is the video's central visual metaphor — treat it as the hero moment of the extrinsic-motivation explanation.",
       "narrative_role": "deliver_payload",
-      "information_role": "The viewer understands 'extrinsic motivation' as a felt image, not a definition.",
-      "hero_moment": true,
-      "texture_keywords": ["warm", "ordinary", "corner-store"],
+      "shot_intent": "Carry the two-fuel concept as a real, concrete image instead of an illustrated diagram.",
+      "hero_moment": false,
       "required_assets": [
-        {
-          "type": "video",
-          "description": "motif_hidden_engine_001 (payoff, partial) — the same race car from scene_001, now shown at a corner-store gas pump being filled with regular gas.",
-          "source": "generate"
-        }
+        { "type": "video", "description": "Two different gas pump nozzles side by side, daylight.", "source": "source" }
       ]
     },
     {
       "id": "scene_006",
-      "type": "text_card",
-      "description": "Definition list: extrinsic motivation = money, praise, status, avoiding getting yelled at.",
-      "start_seconds": 83,
-      "end_seconds": 93,
+      "type": "broll",
+      "description": "Motif payoff: the same car from scene_001 at a corner-store gas pump, being filled with regular gas. Must visually rhyme with scene_001 — same vehicle/visual language if the same source clip is available.",
+      "start_seconds": 70,
+      "end_seconds": 83,
       "script_section_id": "phase_2_honest_struggle",
-      "overlay_notes": "Short list reveal, one item at a time, matched to the narrator's own list cadence.",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_intent": "Ground the metaphor in concrete, recognizable examples before the dopamine explanation.",
       "narrative_role": "deliver_payload",
-      "information_role": "The viewer maps the metaphor onto their own life.",
+      "shot_intent": "Central visual metaphor of the extrinsic-motivation explanation.",
       "hero_moment": false,
+      "texture_keywords": ["ordinary", "warm", "corner-store"],
       "required_assets": [
-        {
-          "type": "animation",
-          "description": "Sequential text reveal: Money / Praise / Status / Avoiding getting yelled at.",
-          "source": "generate"
-        }
+        { "type": "video", "description": "motif_hidden_engine_001 (payoff, partial): car at a corner-store gas pump, being fueled with regular gas.", "source": "source" }
       ]
     },
     {
-      "id": "scene_007",
+      "id": "scene_007a",
       "type": "broll",
-      "description": "Christmas Eve anticipation vs. Christmas morning anticlimax, mapped onto 'wanting the thing' vs. 'getting the thing.'",
-      "start_seconds": 93,
-      "end_seconds": 108,
+      "description": "Hands counting cash bills at a table, close up, daylight.",
+      "start_seconds": 83,
+      "end_seconds": 85.5,
       "script_section_id": "phase_2_honest_struggle",
-      "transition_in": "cut",
-      "transition_out": "cut",
-      "shot_language": {
-        "shot_size": "medium_wide",
-        "camera_movement": "static",
-        "lighting_key": "tungsten_warm",
-        "depth_of_field": "medium",
-        "color_temperature": "warm"
-      },
-      "shot_intent": "Two-shot contrast: anticipation (warm, lit tree, wrapped presents) cutting to the flatness right after (same room, morning light, presents already open).",
-      "narrative_role": "evidence",
-      "information_role": "The viewer feels the anticlimax the narrator is describing, not just hears about it.",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete referent for 'money' — one of four quick cuts illustrating extrinsic motivation examples.",
       "hero_moment": false,
-      "required_assets": [
-        {
-          "type": "video",
-          "description": "Two-part contrast shot: Christmas Eve anticipation vs. Christmas morning anticlimax, same room.",
-          "source": "source"
-        }
-      ]
+      "required_assets": [{ "type": "video", "description": "Hands counting cash, close up.", "source": "source" }]
+    },
+    {
+      "id": "scene_007b",
+      "type": "broll",
+      "description": "A handshake and applause after a presentation in an office setting, soft light.",
+      "start_seconds": 85.5,
+      "end_seconds": 88,
+      "script_section_id": "phase_2_honest_struggle",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete referent for 'praise'.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Handshake and applause, office setting.", "source": "source" }]
+    },
+    {
+      "id": "scene_007c",
+      "type": "broll",
+      "description": "A nameplate on an office door, or a promotion certificate on a desk, close up.",
+      "start_seconds": 88,
+      "end_seconds": 90.5,
+      "script_section_id": "phase_2_honest_struggle",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete referent for 'status'.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Office door nameplate or promotion certificate, close up.", "source": "source" }]
+    },
+    {
+      "id": "scene_007d",
+      "type": "broll",
+      "description": "A manager's stern silhouette in a doorway, backlit, tense atmosphere.",
+      "start_seconds": 90.5,
+      "end_seconds": 93,
+      "script_section_id": "phase_2_honest_struggle",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete referent for 'avoiding getting yelled at' — closes the four-item list on the most negative example, matching the narration's own ordering.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Stern manager silhouette in a doorway, backlit.", "source": "source" }]
     },
     {
       "id": "scene_008",
       "type": "broll",
-      "description": "The promotion-chase / dopamine-crash beat leading into 'chasing the next thing, thinking — okay when I hit this—' where the source script currently cuts off.",
-      "start_seconds": 108,
-      "end_seconds": 120,
+      "description": "Christmas Eve anticipation (lit tree, wrapped presents, warm tungsten light) cutting to Christmas morning anticlimax (same room, presents already open, flatter light).",
+      "start_seconds": 93,
+      "end_seconds": 108,
       "script_section_id": "phase_2_honest_struggle",
-      "transition_in": "cut",
-      "shot_intent": "Show the repeating cycle (chase, win, flatten, chase again) as a loop, not a single event — this is what makes the eventual fuel-switch land as a break in the pattern rather than one more win.",
-      "narrative_role": "build_tension",
-      "information_role": "The viewer sees the treadmill the narrator is stuck on, right before the source material runs out.",
+      "narrative_role": "evidence",
+      "shot_intent": "Two-shot contrast mapped onto 'wanting the thing' vs. 'getting the thing' — same room if the source clip/corpus can supply both moments.",
       "hero_moment": false,
       "required_assets": [
-        {
-          "type": "video",
-          "description": "Workplace/desk broll suggesting a repeating cycle — chase, brief high, flatness. PROVISIONAL: this scene's out-point and transition_out depend on the still-missing rest of Phase 2.",
-          "source": "source"
-        }
+        { "type": "video", "description": "Christmas Eve anticipation: lit tree, wrapped presents, warm light.", "source": "source" },
+        { "type": "video", "description": "Christmas morning anticlimax: same room, presents opened, flatter light.", "source": "source" }
+      ]
+    },
+    {
+      "id": "scene_009",
+      "type": "broll",
+      "description": "PLACEHOLDER beat (illustrates EvoLink-authored script filler). A repeating cycle — treadmill, revolving door, or the same commute repeated — visualizing 'chasing the next thing' as a loop rather than a single event.",
+      "start_seconds": 108,
+      "end_seconds": 135,
+      "script_section_id": "phase_2_honest_struggle",
+      "narrative_role": "build_tension",
+      "shot_intent": "Show the treadmill pattern right before the turn, so the eventual switch reads as breaking a cycle, not winning one more round.",
+      "hero_moment": false,
+      "required_assets": [
+        { "type": "video", "description": "Repeating/cyclical footage: treadmill, revolving door, or repeated commute.", "source": "source" }
+      ]
+    },
+    {
+      "id": "scene_010",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person's hands working intently on a craft or instrument, focused, warm natural light, close up, unaware of the camera — genuine absorption, not performed happiness.",
+      "start_seconds": 135,
+      "end_seconds": 155,
+      "script_section_id": "phase_3_reveal",
+      "narrative_role": "emotional_beat",
+      "shot_intent": "Illustrate intrinsic engagement as a felt image before the narration names it.",
+      "hero_moment": false,
+      "required_assets": [
+        { "type": "video", "description": "Hands working intently on a craft/instrument, focused, warm light, close up.", "source": "source" }
+      ]
+    },
+    {
+      "id": "scene_011",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. The turn. The same car from scene_001/scene_006, now driving smoothly down an open road at golden hour — visually rhymed with both prior motif shots.",
+      "start_seconds": 155,
+      "end_seconds": 165,
+      "script_section_id": "phase_3_reveal",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "The motif's central turn — the car under its own power for the first time.",
+      "hero_moment": true,
+      "texture_keywords": ["golden hour", "open road", "release"],
+      "required_assets": [
+        { "type": "video", "description": "motif_hidden_engine_001 (turn): the same car driving smoothly on an open road, golden hour.", "source": "source" }
+      ]
+    },
+    {
+      "id": "scene_012",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. Final image: the same car driving away under its own power, open road, before the end-tag fades in over the last seconds of this shot.",
+      "start_seconds": 165,
+      "end_seconds": 185,
+      "script_section_id": "phase_4_resolution",
+      "narrative_role": "resolution",
+      "shot_intent": "Closing image the end-tag overlay will sit on top of — needs a visually uncluttered final few seconds for the text to read.",
+      "hero_moment": true,
+      "texture_keywords": ["release", "open road", "quiet"],
+      "required_assets": [
+        { "type": "video", "description": "motif_hidden_engine_001 (final payoff): the car driving away under its own power, open road, final seconds visually clean enough for a text overlay.", "source": "source" }
       ]
     }
   ],
   "metadata": {
-    "status": "draft — covers only the source material received (Phase 1 + Phase 2, itself cut off mid-sentence). Do not extend past scene_008 by inventing content.",
+    "pipeline": "documentary-montage",
+    "shape": "three-act",
+    "tone": "dreamlike",
+    "tone_rationale": "EvoLink's creative call, not user-specified: 'dreamlike' was picked over the other four fixed registers (elegiac/urgent/reverent/wry) because its definition — repeated motifs, non-linear, reflective — is the only one that fits a memory-driven personal-growth monologue built around one recurring visual motif planted and paid off three times. None of the five registers was designed for this content type; flag for override if it reads wrong once footage is in.",
+    "thematic_question": "What if you're not lazy — you're just running on the wrong fuel?",
+    "topic": "Switching from extrinsic to intrinsic motivation",
+    "duration_seconds": 1200,
+    "era_mix": "modern",
+    "sources_allowed": ["pexels", "pixabay_video", "coverr", "mixkit", "videvo", "wikimedia"],
+    "generated_clips_allowed": false,
+    "narration": {
+      "used": true,
+      "provider": "fish_audio_tts",
+      "voice": "pending — selected at the OpenMontage asset stage",
+      "script_ref": "script.json"
+    },
+    "music_plan": {
+      "source": "none",
+      "opt_out_reason": "User explicitly opted out — no music-generation/search API currently configured for this project."
+    },
+    "end_tag_plan": {
+      "text": "The engine was already there.",
+      "text_alternatives_considered": [
+        "You're not lazy. You're just misfueled.",
+        "Stop pushing. Start running on what you're built for."
+      ],
+      "palette": "warm_ivory_on_black",
+      "duration_seconds": 6.5,
+      "render_engine": "remotion",
+      "component": "EndTag",
+      "mode": "overlay"
+    },
+    "target_platform": "youtube",
+    "slots": [
+      { "id": "scene_001", "description": "a person pushing a stalled sedan uphill on an empty road, straining, wide shot, overcast light", "hero": true, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["man pushing broken down car", "pushing stalled car uphill", "car pushed on road"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" },
+      { "id": "scene_002", "description": "an alarm clock buzzing on a nightstand at dawn, hand reaching to silence it, dim bedroom", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["alarm clock dawn bedroom", "hand silencing alarm clock", "waking up early morning"], "min_duration": 6, "target_hold_seconds": 10, "era_hint": "modern" },
+      { "id": "scene_003", "description": "a rumpled blanket under grey morning light close up, and a handwritten to-do list on a cluttered desk", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["rumpled blanket morning light", "messy unmade bed close up", "to-do list notepad desk"], "min_duration": 8, "target_hold_seconds": 15, "era_hint": "modern" },
+      { "id": "scene_004", "description": "tired hands rubbing eyes at a kitchen table, muted colors, medium close-up", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["tired eyes hands face morning", "exhausted person kitchen table"], "min_duration": 7, "target_hold_seconds": 13, "era_hint": "modern" },
+      { "id": "scene_005", "description": "two different gas pump nozzles side by side at a gas station, worn regular handle and clean premium handle, daylight", "hero": false, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["two fuel pumps gas station", "regular vs premium fuel nozzle", "gas station pump close up"], "min_duration": 7, "target_hold_seconds": 12, "era_hint": "modern" },
+      { "id": "scene_006", "description": "a car at a corner-store gas pump being filled with regular gas, warm ordinary daylight", "hero": false, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car fueling gas station", "filling car with gas", "corner store gas pump"], "min_duration": 8, "target_hold_seconds": 13, "era_hint": "modern" },
+      { "id": "scene_007a", "description": "hands counting cash bills at a table, close up, daylight", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["counting cash hands close up", "money changing hands"], "min_duration": 1.5, "target_hold_seconds": 2.5, "era_hint": "modern" },
+      { "id": "scene_007b", "description": "a handshake and applause after a presentation, office setting, soft light", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["handshake applause office", "congratulations workplace"], "min_duration": 1.5, "target_hold_seconds": 2.5, "era_hint": "modern" },
+      { "id": "scene_007c", "description": "an office door nameplate or promotion certificate on a desk, close up", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["office door nameplate", "promotion certificate desk"], "min_duration": 1.5, "target_hold_seconds": 2.5, "era_hint": "modern" },
+      { "id": "scene_007d", "description": "a manager's stern silhouette in a doorway, backlit, tense office atmosphere", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["stern boss silhouette doorway", "tense manager backlit office"], "min_duration": 1.5, "target_hold_seconds": 2.5, "era_hint": "modern" },
+      { "id": "scene_008", "description": "christmas eve tree and wrapped presents warm light, cut to christmas morning opened presents flatter light, same room", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["christmas eve tree presents", "christmas morning opened presents", "family christmas living room"], "min_duration": 9, "target_hold_seconds": 15, "era_hint": "modern" },
+      { "id": "scene_009", "description": "a repeating cycle: treadmill running, or a revolving door, or a commuter repeating the same route", "hero": false, "preferred_sources": ["pexels", "pixabay_video", "videvo"], "queries": ["treadmill running repetitive", "revolving door repeating", "commuter daily routine"], "min_duration": 16, "target_hold_seconds": 27, "era_hint": "modern" },
+      { "id": "scene_010", "description": "hands working intently on a craft or instrument, focused, warm natural light, close up", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["hands working craft focused", "person absorbed in work close up", "focused artisan workshop"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" },
+      { "id": "scene_011", "description": "the same car driving smoothly on an open road at golden hour, engine running freely", "hero": true, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car driving open road golden hour", "car driving smoothly highway"], "min_duration": 6, "target_hold_seconds": 10, "era_hint": "modern" },
+      { "id": "scene_012", "description": "the same car driving away under its own power on an open road, final seconds visually clean for a text overlay", "hero": true, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car driving away open road", "car disappearing into distance"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" }
+    ],
     "evolink_continuity_graph": {
       "motif_hidden_engine_001": {
         "type": "recurring_visual_motif",
-        "introduced": "scene_001 (planted, engine withheld)",
-        "developed": "scene_005 (payoff: extrinsic-fuel explanation)",
-        "pending": "expected final payoff when the second fuel source is revealed (script not yet supplied) — the engine should visually 'switch on' at that point, rhymed with scene_001/scene_005."
+        "plant": "scene_001",
+        "extrinsic_payoff": "scene_006",
+        "turn": "scene_011 (PLACEHOLDER beat)",
+        "final_payoff": "scene_012 (PLACEHOLDER beat)",
+        "continuity_caveat": "This is real stock/archival footage, not a custom-shot continuity asset — literal same-vehicle continuity across scene_001/006/011/012 is only achievable if the asset-director's retrieval pulls multiple clips from the same source video/series, or if the user supplies/records one car specifically for this motif. If retrieval returns four unrelated cars, downgrade the ambition from 'same car' continuity to 'same visual language' (similar era, color, framing) rather than failing the beat."
       }
     },
     "evolink_open_items": [
-      "Remainder of Phase 2 (scene_008 has no confirmed out-point)",
-      "The hidden-switch reveal phase — undefined, not yet in source script",
-      "Closing/resolution phase implied by the ~20-minute target runtime",
-      "Style playbook / renderer_family / render_runtime not yet chosen — pending an OpenMontage proposal-stage pass once this scene_plan is handed off"
-    ]
+      "Slots scene_009 through scene_012 illustrate EvoLink-placeholder script content (see script.json [[PLACEHOLDER]] markers) — replace once the real reveal and closing exist.",
+      "This scene_plan covers 0-185s of the 1200s (~20 min) target runtime — only as much as current script content supports. Extend once more script material or more placeholder phases are approved.",
+      "Long-form vs. pipeline sweet spot: documentary-montage's own worked examples top out around 2-3 minutes / ~50 slots; this build's eventual full 20-minute runtime will need on the order of 10x that, planned in sections rather than one single beat-density pass.",
+      "style_playbook intentionally left null — documentary-montage's compatible_playbooks allow custom; no playbook has been chosen yet."
+    ],
+    "production_constraints": {
+      "visual_treatment": "Real B-roll/stock/archival footage only — no animation, no motion graphics, no illustrated diagrams, no kinetic typography. Every scene above is type 'broll' for this reason; the only on-screen graphic in the whole piece is the single end-tag text overlay in the pipeline's mandatory closing card, per user's explicit yes to end_tag_plan.",
+      "narration_provider": "Fish Audio TTS (fish_audio_tts), per explicit user request.",
+      "music": "Explicitly opted out (see music_plan above) — no API configured."
+    }
   }
 }

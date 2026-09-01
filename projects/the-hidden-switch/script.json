@@ -8,7 +8,9 @@
     "energy_curve": "Low, halting, searching for words through the struggle beats; opens up and quickens slightly once the fuel metaphor lands.",
     "pause_policy": "Preserve every written pause (em dash, ellipsis, sentence fragment) as an actual beat of silence or breath — do not let TTS or a human VO smooth these into continuous prose.",
     "sample_section_id": "phase_2_honest_struggle",
-    "provider_notes": {}
+    "provider_notes": {
+      "fish_audio_tts": "Locked narration provider per user request. Voice/reference-audio selection still pending — happens at the OpenMontage asset stage, not here."
+    }
   },
   "sections": [
     {
@@ -34,36 +36,85 @@
     {
       "id": "phase_2_honest_struggle",
       "label": "Phase 2: The Honest Struggle",
-      "text": "So here's what happened before that.\n\nI was stuck. Like. Really stuck. I'd wake up. Set the alarm early. Tell myself tonight — tomorrow's different. Tomorrow I start the real work.\n\nAnd then morning comes and. The blanket feels like concrete. The to-do list just — it sits there staring back at you. And you know you should work but something inside you just. Won't cooperate.\n\nI thought I was lazy. That's what I told myself anyway. I'd say — okay you're just not disciplined enough. You need to push harder. Be tougher. All that stuff.\n\nBut here's the thing I didn't understand yet.\n\nI wasn't lazy. I was just. Running on the wrong fuel.\n\nThere's two types of fuel your brain can use for motivation. And I'd been using the weaker one. The one that runs out.\n\nIt's like — okay imagine you've got this incredible race car. And you keep filling it with regular gas from the corner store. It works. It gets you moving. But it's not what the car was built for.\n\nThat's extrinsic motivation. Money. Praise. Status. Avoiding getting yelled at. All the stuff that comes from outside.\n\nAnd here's the weird part about how your brain processes that stuff.\n\nYour brain gets more excited about wanting the thing than actually getting the thing. It's like being a kid on Christmas Eve. The anticipation is — it's almost better than Christmas morning. Because Christmas morning you open the present and then. It's over.\n\nSame thing happens with work rewards. You're chasing the promotion. Brain's lighting up. Dopamine everywhere. You get the promotion and. Three days later you're back to feeling flat.\n\nSo I kept doing this. Chasing the next thing. Thinking — okay when I hit this—",
+      "text": "So here's what happened before that.\n\nI was stuck. Like. Really stuck. I'd wake up. Set the alarm early. Tell myself tonight — tomorrow's different. Tomorrow I start the real work.\n\nAnd then morning comes and. The blanket feels like concrete. The to-do list just — it sits there staring back at you. And you know you should work but something inside you just. Won't cooperate.\n\nI thought I was lazy. That's what I told myself anyway. I'd say — okay you're just not disciplined enough. You need to push harder. Be tougher. All that stuff.\n\nBut here's the thing I didn't understand yet.\n\nI wasn't lazy. I was just. Running on the wrong fuel.\n\nThere's two types of fuel your brain can use for motivation. And I'd been using the weaker one. The one that runs out.\n\nIt's like — okay imagine you've got this incredible race car. And you keep filling it with regular gas from the corner store. It works. It gets you moving. But it's not what the car was built for.\n\nThat's extrinsic motivation. Money. Praise. Status. Avoiding getting yelled at. All the stuff that comes from outside.\n\nAnd here's the weird part about how your brain processes that stuff.\n\nYour brain gets more excited about wanting the thing than actually getting the thing. It's like being a kid on Christmas Eve. The anticipation is — it's almost better than Christmas morning. Because Christmas morning you open the present and then. It's over.\n\nSame thing happens with work rewards. You're chasing the promotion. Brain's lighting up. Dopamine everywhere. You get the promotion and. Three days later you're back to feeling flat.\n\nSo I kept doing this. Chasing the next thing. Thinking — okay when I hit this — [[PLACEHOLDER — replace: 'this next number, this next milestone, this is where it clicks.' And it never clicked. I'd hit it. Feel something for about a day. Maybe two. And then I was already looking for the next one.]]\n\n[[PLACEHOLDER]] That's the loop. That was three years of my life, basically on repeat.",
       "start_seconds": 20,
-      "end_seconds": 120,
-      "speaker_directions": "The self-diagnosis beats ('I thought I was lazy') should land harder than the explanatory beats — this is confession, not a lecture, until the fuel metaphor arrives.",
+      "end_seconds": 135,
+      "speaker_directions": "The self-diagnosis beats ('I thought I was lazy') should land harder than the explanatory beats — this is confession, not a lecture, until the fuel metaphor arrives. The [[PLACEHOLDER]] close should land flat and tired — this is the low point right before the turn.",
       "delivery_cues": {
         "pace": "conversational",
-        "emphasis_words": ["stuck", "lazy", "wrong fuel", "wanting", "flat"],
-        "delivery_note": "TRUNCATED — source text cuts off mid-sentence at 'when I hit this—'. Re-time this section once the rest of Phase 2 and the reveal phase are supplied; 120s is the script's own header estimate, not a verified read-time for this much text at the locked conversational pace."
+        "emphasis_words": ["stuck", "lazy", "wrong fuel", "wanting", "flat", "repeat"],
+        "delivery_note": "The bracketed [[PLACEHOLDER]] continuation is EvoLink-authored filler closing the loop the source script left open — swap for the real continuation the moment it exists. Everything before the first [[PLACEHOLDER]] is the user's verbatim text."
       },
       "enhancement_cues": [
         {
-          "type": "diagram",
-          "description": "Two-fuel-source concept graphic (extrinsic vs. the still-unnamed second source) — introduce as a simple two-column or two-tank visual, not a data chart.",
+          "type": "broll",
+          "description": "Two-fuel-source concept, shown as real footage of two visibly different fuel pumps/nozzles side by side (regular vs. a premium/racing fuel), not an illustrated diagram — no on-screen graphic overlay.",
           "timestamp_seconds": 55
         },
         {
           "type": "broll",
-          "description": "motif_hidden_engine_001 payoff of the plant: race car at a corner-store pump, visually rhymed with the Phase 1 uphill-push shot.",
+          "description": "motif_hidden_engine_001 payoff of the plant: race car at a corner-store pump, visually rhymed with the Phase 1 uphill-push shot — same footage source if possible, otherwise same visual language (angle, era, color).",
           "timestamp_seconds": 70
         },
         {
           "type": "broll",
-          "description": "Christmas Eve anticipation vs. Christmas morning anticlimax — two-shot visual contrast.",
+          "description": "Christmas Eve anticipation vs. Christmas morning anticlimax — two-shot real-footage contrast, same room/tree if the same source clip can supply both moments.",
           "timestamp_seconds": 95
+        },
+        {
+          "type": "broll",
+          "description": "[[PLACEHOLDER]] The chase-and-flatten loop as repeating real footage — e.g. a treadmill, a revolving door, or a commute repeated — something inherently cyclical, not narrated abstractly.",
+          "timestamp_seconds": 125
+        }
+      ]
+    },
+    {
+      "id": "phase_3_reveal",
+      "label": "Phase 3: The Hidden Switch (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored, replace with the real reveal]]\n\nThen something changed. Not overnight. But something changed.\n\nI started noticing — the days that didn't feel like work weren't the days I got praised, or paid more, or hit some number. They were the days I was just. Stuck into something. Curious about it. Actually cared how it turned out, apart from what it got me.\n\nTurns out that's the second fuel. The one that was already built into the car. You don't add it from outside — you just stop starving it by only ever running on the other one.\n\nSome people call it intrinsic motivation. I just call it — actually wanting to know the answer.",
+      "start_seconds": 135,
+      "end_seconds": 165,
+      "speaker_directions": "PLACEHOLDER PHASE. The energy should lift here — first time in the monologue the narrator isn't struggling to find the words.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["something changed", "second fuel", "already built in"],
+        "delivery_note": "[[PLACEHOLDER]] — this entire section is EvoLink filler standing in for the real reveal. Do not treat 'intrinsic motivation' as a locked answer; it is a plausible placeholder mechanism only, chosen because it fits the two-fuel setup already in the source script."
+      },
+      "enhancement_cues": [
+        {
+          "type": "broll",
+          "description": "[[PLACEHOLDER]] motif_hidden_engine_001 partial payoff: the same car from scene_001/phase_2, now running — engine sound audible, movement fluid, still no literal 'switch' shown yet.",
+          "timestamp_seconds": 155
+        }
+      ]
+    },
+    {
+      "id": "phase_4_resolution",
+      "label": "Phase 4: Resolution (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored, replace with the real closing]]\n\nSo that's the switch. Not a productivity hack. Not a new morning routine. Just — running on the fuel the thing was built for in the first place.\n\nThat's what those three months were. I wasn't pushing the car anymore. I turned the engine on.\n\nIf you're stuck right now, and it feels like discipline should be working and it's not — maybe it's not a discipline problem. Maybe you're just on the wrong fuel too.",
+      "start_seconds": 165,
+      "end_seconds": 185,
+      "speaker_directions": "PLACEHOLDER PHASE. Callback delivery — quieter than the reveal, closer in tone to Phase 1's opening line, since it's literally closing that loop.",
+      "delivery_cues": {
+        "pace": "measured",
+        "emphasis_words": ["switch", "engine on", "wrong fuel too"],
+        "delivery_note": "[[PLACEHOLDER]] — closing thesis restatement. Deliberately echoes Phase 1's 'engine inside it the whole time' line so the motif resolves on replay, not just on read-through."
+      },
+      "enhancement_cues": [
+        {
+          "type": "broll",
+          "description": "motif_hidden_engine_001 final payoff: the same car, now moving freely under its own power — visually rhymed with both scene_001 (plant) and the phase_2 corner-store pump shot (extrinsic-fuel payoff).",
+          "timestamp_seconds": 175
         }
       ]
     }
   ],
   "metadata": {
-    "status": "draft — incomplete. Missing: remainder of Phase 2, the hidden-switch reveal phase, and the closing/resolution phase implied by the ~20-minute target runtime.",
-    "source": "user-provided script, verbatim through the point it was cut off"
+    "status": "draft — Phase 1 and the verbatim portion of Phase 2 are the user's source text. Everything inside [[PLACEHOLDER]] markers (the rest of Phase 2, all of Phase 3, all of Phase 4) is EvoLink-authored filler standing in for missing material — swap it out before this goes further than a structural draft.",
+    "source": "user-provided script (Phase 1 + partial Phase 2) plus EvoLink placeholder continuation, clearly marked inline",
+    "production_constraints": {
+      "visual_treatment": "Real B-roll footage only — no animation, no motion graphics, no illustrated diagrams, no kinetic typography. All enhancement_cues below are 'broll' for this reason (previous diagram/animation cues were converted).",
+      "narration_provider": "Fish Audio TTS (fish_audio_tts), per explicit user request. Voice selection pending."
+    }
   }
 }
