@@ -73,16 +73,34 @@ breaks.
 
 ## Known open items (do not resolve by inventing)
 
-The source script currently runs Phase 1 (0–20s) and Phase 2 (20–120s, cut off
-mid-sentence: "...thinking — okay when I hit this—"), against a stated ~20-minute
-runtime. Missing and required before this project can move past a draft scene plan:
+The user-supplied source script covers only Phase 1 (0–20s) and part of Phase 2
+(cut off mid-sentence: "...thinking — okay when I hit this—"). Everything past that
+point — the rest of Phase 2, the reveal (Phase 3), the discovery story (Phase 4),
+the framework (Phase 5), application/proof (Phase 6), nuance/objections (Phase 7),
+the call to action (Phase 8), and the resolution (Phase 9) — is EvoLink-authored
+placeholder content, per explicit instruction to extend the draft rather than stop
+at the gap. Every placeholder passage is bracketed `[[PLACEHOLDER]]` in
+`script.json` so it's easy to find and replace piece by piece.
 
-- The rest of Phase 2 (where the "chasing the next thing" thread resolves).
-- The actual **reveal of the hidden switch** — what the second, stronger fuel
-  source is, and the mechanism/insight that flips it. This is the title's payload
-  and currently undefined.
-- Whatever action/resolution phase closes the ~20-minute runtime (the video's
-  version of a call-to-action or thesis restatement).
+Ranked by how likely each placeholder is to need full replacement rather than light
+editing, once real material exists:
 
-Everything downstream (full scene plan, generation units, the `brief.key_points`
-list, the eventual video length) is provisional until these land.
+- **Highest fabrication risk:** Phase 4's discovery story invents a specific person
+  (a retired department mentor) and incident (a missed promotion). If the real
+  story differs at all in its particulars, this phase should be rewritten from
+  scratch, not patched.
+- **Named mechanism, not confirmed:** Phase 3/5 name the second fuel as intrinsic
+  motivation, broken into a choice/progress/connection framework (Self-Determination
+  Theory territory). This is a plausible, defensible answer given the two-fuel setup
+  Phase 2 already established, but it is EvoLink's inference, not the user's stated
+  answer.
+- **Structural, lower risk:** Phases 6–9 (application, nuance, invitation,
+  resolution) follow generically from whatever Phase 3–5 end up saying, so they're
+  more likely to survive with edits than need a full rewrite.
+
+The full arc now runs ~933s (~15.5 min) against the script header's original
+~20-minute target — see `script.json.metadata.runtime_note` and
+`scene_plan.json.metadata.duration_seconds_note` for why that gap wasn't padded to
+match. Closing it legitimately means either real material replacing a placeholder
+phase (which will change its length), or deliberately expanding one phase (more
+application examples, more objections addressed).

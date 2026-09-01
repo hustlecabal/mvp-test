@@ -6,19 +6,20 @@
     "There are two fuel sources for motivation: extrinsic (money, praise, status, avoiding punishment) and a second, stronger one the narrator didn't know existed.",
     "The brain gets more dopamine from wanting a reward than from getting it, so extrinsic-fuel wins go flat within days.",
     "What reads as laziness or lack of discipline is actually a fuel-source problem, not a character problem.",
-    "PLACEHOLDER (EvoLink-authored, not in source script): the second fuel is intrinsic motivation — being absorbed in the work itself rather than what it gets you."
+    "PLACEHOLDER (EvoLink-authored, not in source script): the second fuel is intrinsic motivation — being absorbed in the work itself rather than what it gets you.",
+    "PLACEHOLDER: a specific discovery story (a retired mentor's comment after a missed promotion), a three-part framework (choice, progress, connection), an application/proof phase, an objections/nuance phase, and a small-scope call to action round out the full arc — see script.json for all of it, clearly bracketed."
   ],
   "core_message": "You are not lazy — you may just be running your motivation on the wrong fuel.",
   "tone": "dreamlike",
   "style": "Documentary-montage: real B-roll/stock footage only (no animation, no motion graphics, no illustrated diagrams) over Fish Audio TTS narration, closing on a single text end-tag.",
   "target_platform": "youtube",
-  "target_duration_seconds": 1200,
+  "target_duration_seconds": 933,
   "reference_material": [
     "projects/the-hidden-switch/script.json",
     "projects/the-hidden-switch/scene_plan.json"
   ],
   "metadata": {
-    "status": "draft — source script incomplete (see STORY_BIBLE.md open items); scene_plan currently covers 0-185s of the 1200s target",
+    "status": "draft — full narrative arc complete (hook through resolution) but almost entirely EvoLink-placeholder past Phase 2; runs ~933s (~15.5 min), short of the script header's original ~1200s (20 min) target by design rather than padded (see script.json.metadata.runtime_note)",
     "openmontage_pipeline": "documentary-montage",
     "pipeline_choice_rationale": "User confirmed: real B-roll only (no animation), Fish Audio TTS narration. documentary-montage is the only OpenMontage pipeline that retrieves real footage from stock/archive libraries from a written brief rather than expecting footage already in hand — chosen over cinematic for that reason, with the tradeoff of a fixed tone register and a long-form runtime well beyond its documented 30s-3min sweet spot (see scene_plan.metadata.evolink_open_items).",
     "user_decisions": {

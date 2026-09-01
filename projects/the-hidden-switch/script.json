@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "title": "The Hidden Switch — How I Stopped Hating Hard Work (And Started Craving It)",
-  "total_duration_seconds": 1200,
+  "total_duration_seconds": 933,
   "voice_performance": {
     "performance_intent": "First-person, real-time-thinking confession. The narrator is figuring it out again as they say it, not reciting a conclusion.",
     "pacing_profile": "conversational",
@@ -89,29 +89,113 @@
       ]
     },
     {
-      "id": "phase_4_resolution",
-      "label": "Phase 4: Resolution (PLACEHOLDER — not in source script)",
-      "text": "[[PLACEHOLDER — entirely EvoLink-authored, replace with the real closing]]\n\nSo that's the switch. Not a productivity hack. Not a new morning routine. Just — running on the fuel the thing was built for in the first place.\n\nThat's what those three months were. I wasn't pushing the car anymore. I turned the engine on.\n\nIf you're stuck right now, and it feels like discipline should be working and it's not — maybe it's not a discipline problem. Maybe you're just on the wrong fuel too.",
+      "id": "phase_4_discovery",
+      "label": "Phase 4: The Discovery Story (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nOkay so — who told me. Let me back up and actually tell you when this happened.\n\nIt was after I didn't get a promotion I'd basically killed myself for. I'd tracked every metric. Stayed late most nights. Said yes to everything, even the stuff nobody wanted. And it went to someone else. Someone who, from where I was standing, worked visibly fewer hours than me.\n\nI was furious. Legitimately furious. I ended up venting about it to this older guy — used to run the department before me, retired a few years back, we'd just stayed in touch.\n\nAnd he said something that annoyed me at the time. He said, 'Of course you didn't get it. You were doing the job to get the promotion. She was doing the job because she actually liked doing it. You can feel that difference from the outside. Everyone can.'\n\nI wanted to argue with him. I actually had a whole rebuttal lined up. But I just — I sat with it instead.\n\nBecause he was right. I hated most of what I did every single day. I was just really, really good at hating it efficiently.\n\nSo I started paying attention differently. Not to what got me rewarded. To what I actually leaned into, on the good days, without anyone making me.",
       "start_seconds": 165,
-      "end_seconds": 185,
-      "speaker_directions": "PLACEHOLDER PHASE. Callback delivery — quieter than the reveal, closer in tone to Phase 1's opening line, since it's literally closing that loop.",
+      "end_seconds": 288,
+      "speaker_directions": "PLACEHOLDER PHASE. This is the concrete answer to Phase 1's 'someone finally told me' — deliver the mentor's line as a direct quote, almost verbatim recall, then let the anger-to-reflection turn happen slowly, not instantly.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["furious", "he was right", "efficiently"],
+        "delivery_note": "[[PLACEHOLDER]] — invents a specific mentor and incident. This is the most fabricated section in the whole draft; if the real story exists, it almost certainly replaces this entirely rather than being patched."
+      },
+      "enhancement_cues": [
+        { "type": "broll", "description": "A person sitting alone in a car in a parking lot at dusk, hands on the wheel, tense, motionless — the anger beat.", "timestamp_seconds": 185 },
+        { "type": "broll", "description": "Two people at a kitchen table, one older, listening intently, warm lamp light, over-the-shoulder framing — the mentor conversation.", "timestamp_seconds": 230 }
+      ]
+    },
+    {
+      "id": "phase_5_framework",
+      "label": "Phase 5: The Framework (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nTurns out there's actual research on this. Not just one guy's retirement-speech opinion. Psychologists have been mapping this for decades, and when you strip away the jargon, it comes down to three things. Three conditions that flip the switch.\n\nFirst one — you have to feel like you're choosing it. Not being told to do it. Here's the strange part. The exact same task, word for word, identical task — if it feels assigned versus chosen, your brain processes it completely differently. Once I knew to look for that, it was everywhere. The stuff I dreaded most wasn't the hard stuff. It was the stuff that felt handed to me instead of picked by me.\n\nSecond — you have to feel like you're getting better at something. Not finished. Getting better. There's this specific, quiet satisfaction in tracking your own improvement that has nothing to do with anyone else noticing. I started keeping this dumb little log. Not for a manager. Not for a review. Just for me. A running list of stuff I was visibly worse at a month before.\n\nThird — it has to connect to something bigger than the task itself. And I don't mean in some grand mission-statement way, printed on a wall somewhere. I mean something smaller and more honest. Who does this actually help. What does this actually build. Even boring, tedious work — if you can draw a straight line from the task to something you actually care about, it changes how the task feels in your hands.\n\nChoice. Progress. Connection. That's the second fuel. That's what was already built into the car — I just never knew to look for the ignition.",
+      "start_seconds": 288,
+      "end_seconds": 438,
+      "speaker_directions": "PLACEHOLDER PHASE. This is the video's explainer core — treat it almost like three mini-chapters (choice / progress / connection), each with its own brief pause before and after.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["choosing it", "getting better", "connect", "choice", "progress", "connection"],
+        "delivery_note": "[[PLACEHOLDER]] — names a real, findable framework (autonomy/mastery/purpose, Self-Determination Theory territory) in the narrator's own words rather than citing it academically. Verify against actual sourcing before treating any research claim as final."
+      },
+      "enhancement_cues": [
+        { "type": "broll", "description": "A person at a fork in a hiking trail, pausing, choosing a direction, natural daylight — illustrates 'choice'.", "timestamp_seconds": 310 },
+        { "type": "broll", "description": "A hand writing in a private journal or notebook, close up, no one else present, evening light — illustrates 'progress'.", "timestamp_seconds": 360 },
+        { "type": "broll", "description": "A small business owner or craftsperson handing a finished product to a customer, genuine smile, natural light — illustrates 'connection'.", "timestamp_seconds": 410 }
+      ]
+    },
+    {
+      "id": "phase_6_application",
+      "label": "Phase 6: Proof / Application (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nSo what did I actually do differently. Because I want to be honest — it wasn't a system. I didn't build a whole new productivity method. It was smaller and dumber than that.\n\nI started asking one question before I said yes to anything. Not 'will this look good.' Just — 'am I even a little bit curious how this turns out.' If the honest answer was no, I still sometimes did it, because bills are real. But I stopped pretending those tasks were the main event. I did them fast, cleanly, and moved on, instead of trying to squeeze meaning out of something that didn't have any for me.\n\nAnd the stuff where the answer was yes — even a small yes — I gave it way more room than it probably deserved on paper. I let myself go down rabbit holes. I asked more questions than I needed to. I redid things that were already good enough, because I wanted to see if I could make them better, not because anyone asked.\n\nFrom the outside, I probably looked less efficient some weeks. From the inside, I stopped counting hours. I'd look up and it'd be dark outside and I hadn't noticed, and that hadn't happened to me in years.\n\nThat's the three months. Not more hours. Not less hours. Just — most of the hours were finally running on the fuel the work was built to run on.",
+      "start_seconds": 438,
+      "end_seconds": 578,
+      "speaker_directions": "PLACEHOLDER PHASE. This is the payoff of Phase 1's opening claim — deliver it like the narrator is genuinely a little surprised remembering it, not like a rehearsed case study.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["curious", "rabbit holes", "stopped counting hours", "fuel the work was built to run on"],
+        "delivery_note": "[[PLACEHOLDER]] — closes the loop on Phase 1's 'best three months' claim with specifics. Replace with the narrator's real behavior change if it differs from this invented account."
+      },
+      "enhancement_cues": [
+        { "type": "broll", "description": "A person deeply absorbed at a workbench or desk late at night, unaware of the time, warm lamp light.", "timestamp_seconds": 470 },
+        { "type": "broll", "description": "A window showing it's dark outside; the same person looks up, mildly surprised — the passage-of-time beat.", "timestamp_seconds": 540 }
+      ]
+    },
+    {
+      "id": "phase_7_nuance",
+      "label": "Phase 7: Nuance / Objections (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nNow — I know what some of you are thinking, because I thought it too. 'Great, but my job is genuinely boring. There's no curiosity angle on data entry. There's no mastery arc in answering the same three emails all day.'\n\nFair. I'm not going to stand here and tell you every task in existence can be reframed into a passion project. That's the kind of thing that sounds good in a video and falls apart the second you actually try it at 4pm on a Thursday.\n\nHere's what I'd actually say instead. You don't need every task to run on the second fuel. You need enough of your week running on it that the extrinsic stuff doesn't define the whole picture. If eighty percent of your day is stuff you're just getting through, that's a real structural problem, and no amount of mindset is going to fuel-switch your way out of it. That might mean the actual answer is changing roles, not changing your attitude about the current one.\n\nBut if it's more like — the core of what you do has some real hook in it, and it's just gotten buried under years of doing it for the wrong reasons — that's fixable. That's most of us, most of the time. The job didn't change. We just forgot why we picked it up in the first place, if we ever really knew.",
+      "start_seconds": 578,
+      "end_seconds": 718,
+      "speaker_directions": "PLACEHOLDER PHASE. This is the credibility check — deliver it more plainly and less performed than the framework section, almost like an aside.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["genuinely boring", "structural problem", "fixable"],
+        "delivery_note": "[[PLACEHOLDER]] — this section exists to keep the video honest rather than sounding like a hustle-culture pitch. Keep it even if the rest of the phase gets rewritten."
+      },
+      "enhancement_cues": [
+        { "type": "broll", "description": "A repetitive task close up — hands on a keyboard doing data entry, fluorescent office light, monotone framing.", "timestamp_seconds": 600 },
+        { "type": "broll", "description": "A person walking out of an office building at golden hour, contemplative, considering a bigger change.", "timestamp_seconds": 670 }
+      ]
+    },
+    {
+      "id": "phase_8_invitation",
+      "label": "Phase 8: The Invitation (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nSo if you want to actually try this — and I'd genuinely start small, because I made the mistake of trying to overhaul everything at once and it just collapsed —\n\nPick one task this week. One. Something you do regularly that you've been running purely on obligation. And ask which of the three is actually missing. Is it that you didn't choose it. Is it that you're not tracking any improvement. Is it that you can't see who or what it actually helps.\n\nThen change one variable. Just one. If it's the choice problem, find the one piece of it you do get to decide, and decide it on purpose instead of drifting through it. If it's the progress problem, track something — anything — that isn't for a boss. If it's the connection problem, go find the person on the other end of the work and actually talk to them.\n\nYou're not trying to fall in love with the task in one week. You're just trying to feel the engine turn over once. That's it. That's the whole ask.",
+      "start_seconds": 718,
+      "end_seconds": 833,
+      "speaker_directions": "PLACEHOLDER PHASE. Direct address, second person — this is the one section of the video actually talking to the viewer's own week rather than the narrator's past.",
+      "delivery_cues": {
+        "pace": "conversational",
+        "emphasis_words": ["pick one task", "change one variable", "turn over once"],
+        "delivery_note": "[[PLACEHOLDER]] — deliberately small-scope call to action, avoiding a generic 'like and subscribe, change your life' close."
+      },
+      "enhancement_cues": [
+        { "type": "broll", "description": "A single item circled or checked on a handwritten list, close up, pen still in hand.", "timestamp_seconds": 740 },
+        { "type": "broll", "description": "A person turning to speak to a coworker, or picking up a phone to make a call, genuine posture, natural light.", "timestamp_seconds": 800 }
+      ]
+    },
+    {
+      "id": "phase_9_resolution",
+      "label": "Phase 9: Resolution (PLACEHOLDER — not in source script)",
+      "text": "[[PLACEHOLDER — entirely EvoLink-authored]]\n\nSo that's it. That's the whole switch.\n\nIt's not a productivity hack. It's not a new morning routine, or a better to-do list app, or waking up at five. I tried all of that, by the way. None of it stuck, because none of it touched the actual problem.\n\nThe actual problem was I'd spent years trying to get better at hating my work efficiently, instead of asking why I hated it in the first place.\n\nThat's what those three months were, in the end. I wasn't pushing the car uphill anymore. I wasn't gritting my teeth and forcing another mile out of a tank that was already empty.\n\nI just turned the engine on. The one that was already there. The one I'd been ignoring because nobody ever told me to go looking for it.\n\nSo if you're stuck right now — and it feels like discipline should be working, and it's just not — I'd gently push back on the story you're telling yourself about why.\n\nMaybe it's not a discipline problem.\n\nMaybe you're just on the wrong fuel too.",
+      "start_seconds": 833,
+      "end_seconds": 933,
+      "speaker_directions": "PLACEHOLDER PHASE. Callback delivery — quieter than the framework/application sections, closer in tone to Phase 1's opening line, since it's literally closing that loop. The final two lines should be the slowest, most spaced-out delivery in the whole piece.",
       "delivery_cues": {
         "pace": "measured",
         "emphasis_words": ["switch", "engine on", "wrong fuel too"],
-        "delivery_note": "[[PLACEHOLDER]] — closing thesis restatement. Deliberately echoes Phase 1's 'engine inside it the whole time' line so the motif resolves on replay, not just on read-through."
+        "delivery_note": "[[PLACEHOLDER]] — closing thesis restatement. Deliberately echoes Phase 1's 'engine inside it the whole time' line so the motif resolves on replay, not just on read-through. The end-tag overlay ('The engine was already there.') fades in during the final B-roll shot under the last line."
       },
       "enhancement_cues": [
-        {
-          "type": "broll",
-          "description": "motif_hidden_engine_001 final payoff: the same car, now moving freely under its own power — visually rhymed with both scene_001 (plant) and the phase_2 corner-store pump shot (extrinsic-fuel payoff).",
-          "timestamp_seconds": 175
-        }
+        { "type": "broll", "description": "A quick, soft callback montage of earlier images — the alarm clock, the journal, the mentor's table — in rapid, warm succession.", "timestamp_seconds": 850 },
+        { "type": "broll", "description": "motif_hidden_engine_001 final payoff: the same car, now moving freely under its own power on an open road — visually rhymed with scene_001 (plant), the corner-store pump shot (extrinsic-fuel payoff), and the earlier golden-hour turn. End-tag text overlay fades in over this shot's final seconds.", "timestamp_seconds": 915 }
       ]
     }
   ],
   "metadata": {
-    "status": "draft — Phase 1 and the verbatim portion of Phase 2 are the user's source text. Everything inside [[PLACEHOLDER]] markers (the rest of Phase 2, all of Phase 3, all of Phase 4) is EvoLink-authored filler standing in for missing material — swap it out before this goes further than a structural draft.",
-    "source": "user-provided script (Phase 1 + partial Phase 2) plus EvoLink placeholder continuation, clearly marked inline",
+    "status": "draft — Phase 1 and the verbatim portion of Phase 2 are the user's source text. Everything inside [[PLACEHOLDER]] markers (the rest of Phase 2, and all of Phases 3 through 9) is EvoLink-authored filler standing in for missing material — swap it out before this goes further than a structural draft.",
+    "source": "user-provided script (Phase 1 + partial Phase 2) plus EvoLink placeholder continuation for the full remaining arc, clearly marked inline",
+    "runtime_note": "This draft's sections sum to ~933s (~15.5 min) at an estimated conversational pace (~120 words/min given the halting, paused delivery style), short of the script header's stated ~20-minute (1200s) target. Rather than pad the placeholder content artificially to hit 1200s exactly, the full narrative arc (hook -> struggle -> reveal -> discovery -> framework -> application -> nuance -> invitation -> resolution) was completed at the length it actually needed. Closing the ~267s gap legitimately means either more real script material, or deliberately expanding a specific phase (more application examples, more objections addressed) rather than inflating pacing.",
     "production_constraints": {
       "visual_treatment": "Real B-roll footage only — no animation, no motion graphics, no illustrated diagrams, no kinetic typography. All enhancement_cues below are 'broll' for this reason (previous diagram/animation cues were converted).",
       "narration_provider": "Fish Audio TTS (fish_audio_tts), per explicit user request. Voice selection pending."

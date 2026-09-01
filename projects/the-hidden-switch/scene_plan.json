@@ -195,12 +195,159 @@
       ]
     },
     {
-      "id": "scene_012",
+      "id": "scene_013",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person sitting alone in a car in a parking lot at dusk, hands on the wheel, tense, motionless — the anger beat after being passed over.",
+      "start_seconds": 165,
+      "end_seconds": 205,
+      "script_section_id": "phase_4_discovery",
+      "narrative_role": "emotional_beat",
+      "shot_intent": "Give the frustration a real, contained image before the mentor conversation defuses it.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Person alone in a car, parking lot, dusk, hands on wheel, tense.", "source": "source" }]
+    },
+    {
+      "id": "scene_014",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. Two people at a kitchen table, one older, listening intently, warm lamp light, over-the-shoulder framing — the mentor conversation that answers Phase 1's 'someone finally told me.'",
+      "start_seconds": 205,
+      "end_seconds": 288,
+      "script_section_id": "phase_4_discovery",
+      "narrative_role": "introduce_subject",
+      "shot_intent": "This is the literal payoff of the hook's 'someone told me' line — give it room and warmth, not a quick cutaway.",
+      "hero_moment": true,
+      "texture_keywords": ["warm", "intimate", "lamp light"],
+      "required_assets": [{ "type": "video", "description": "Two people at a kitchen table, one older listening intently, warm lamp light.", "source": "source" }]
+    },
+    {
+      "id": "scene_015",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person at a fork in a hiking trail, pausing, choosing a direction, natural daylight — illustrates the 'choice' condition.",
+      "start_seconds": 288,
+      "end_seconds": 338,
+      "script_section_id": "phase_5_framework",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete image for 'you have to feel like you're choosing it.'",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Person pausing at a trail fork, choosing a direction, daylight.", "source": "source" }]
+    },
+    {
+      "id": "scene_016",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A hand writing in a private journal or notebook, close up, no one else present, evening light — illustrates the 'progress' condition.",
+      "start_seconds": 338,
+      "end_seconds": 388,
+      "script_section_id": "phase_5_framework",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete image for tracking your own improvement, for no one but yourself.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Hand writing in a private journal, close up, evening light.", "source": "source" }]
+    },
+    {
+      "id": "scene_017",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A small business owner or craftsperson handing a finished product to a customer, genuine smile, natural light — illustrates the 'connection' condition.",
+      "start_seconds": 388,
+      "end_seconds": 438,
+      "script_section_id": "phase_5_framework",
+      "narrative_role": "deliver_payload",
+      "shot_intent": "Concrete image for work connecting to something beyond the task itself — closes the three-part framework.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Craftsperson handing a finished product to a customer, genuine moment, natural light.", "source": "source" }]
+    },
+    {
+      "id": "scene_018",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person deeply absorbed at a workbench or desk late at night, unaware of the time, warm lamp light.",
+      "start_seconds": 438,
+      "end_seconds": 508,
+      "script_section_id": "phase_6_application",
+      "narrative_role": "evidence",
+      "shot_intent": "Show the 'lost track of hours' claim as a felt image rather than narrated abstractly.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Person absorbed at a workbench/desk late at night, warm lamp light.", "source": "source" }]
+    },
+    {
+      "id": "scene_019",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A window showing it's dark outside; the same person looks up, mildly surprised — the passage-of-time beat.",
+      "start_seconds": 508,
+      "end_seconds": 578,
+      "script_section_id": "phase_6_application",
+      "narrative_role": "evidence",
+      "shot_intent": "Payoff of scene_018 — the surprise of realizing how much time passed.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Window showing darkness outside, person looking up surprised.", "source": "source" }]
+    },
+    {
+      "id": "scene_020",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A repetitive task close up — hands on a keyboard doing data entry, fluorescent office light, monotone framing.",
+      "start_seconds": 578,
+      "end_seconds": 648,
+      "script_section_id": "phase_7_nuance",
+      "narrative_role": "comparison",
+      "shot_intent": "Concrete referent for the objection: 'my job is genuinely boring.'",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Hands doing data entry, fluorescent office light, monotone.", "source": "source" }]
+    },
+    {
+      "id": "scene_021",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person walking out of an office building at golden hour, contemplative, considering a bigger change.",
+      "start_seconds": 648,
+      "end_seconds": 718,
+      "script_section_id": "phase_7_nuance",
+      "narrative_role": "comparison",
+      "shot_intent": "Illustrate 'that might mean the actual answer is changing roles' without narrating it literally on screen.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Person walking out of an office building, golden hour, contemplative.", "source": "source" }]
+    },
+    {
+      "id": "scene_022",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A single item circled or checked on a handwritten list, close up, pen still in hand.",
+      "start_seconds": 718,
+      "end_seconds": 773,
+      "script_section_id": "phase_8_invitation",
+      "narrative_role": "call_to_action",
+      "shot_intent": "Visualize 'pick one task this week' as a concrete, small action.",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Single item circled/checked on a handwritten list, close up.", "source": "source" }]
+    },
+    {
+      "id": "scene_023",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A person turning to speak to a coworker, or picking up a phone to make a call, genuine posture, natural light.",
+      "start_seconds": 773,
+      "end_seconds": 833,
+      "script_section_id": "phase_8_invitation",
+      "narrative_role": "call_to_action",
+      "shot_intent": "Visualize 'go find the person on the other end of the work and actually talk to them.'",
+      "hero_moment": false,
+      "required_assets": [{ "type": "video", "description": "Person turning to speak to a coworker or picking up a phone, natural light.", "source": "source" }]
+    },
+    {
+      "id": "scene_024",
+      "type": "broll",
+      "description": "PLACEHOLDER beat. A quick, soft callback montage of earlier images — the alarm clock, the journal, the mentor's table — in rapid, warm succession.",
+      "start_seconds": 833,
+      "end_seconds": 903,
+      "script_section_id": "phase_9_resolution",
+      "narrative_role": "resolution",
+      "shot_intent": "Give the closing thesis a felt sense of the whole journey without literally restating every beat in narration.",
+      "hero_moment": false,
+      "required_assets": [
+        { "type": "video", "description": "Rapid, warm callback cuts reusing/echoing scene_002, scene_016, and scene_014's visual language.", "source": "source" }
+      ]
+    },
+    {
+      "id": "scene_025",
       "type": "broll",
       "description": "PLACEHOLDER beat. Final image: the same car driving away under its own power, open road, before the end-tag fades in over the last seconds of this shot.",
-      "start_seconds": 165,
-      "end_seconds": 185,
-      "script_section_id": "phase_4_resolution",
+      "start_seconds": 903,
+      "end_seconds": 933,
+      "script_section_id": "phase_9_resolution",
       "narrative_role": "resolution",
       "shot_intent": "Closing image the end-tag overlay will sit on top of — needs a visually uncluttered final few seconds for the text to read.",
       "hero_moment": true,
@@ -217,7 +364,8 @@
     "tone_rationale": "EvoLink's creative call, not user-specified: 'dreamlike' was picked over the other four fixed registers (elegiac/urgent/reverent/wry) because its definition — repeated motifs, non-linear, reflective — is the only one that fits a memory-driven personal-growth monologue built around one recurring visual motif planted and paid off three times. None of the five registers was designed for this content type; flag for override if it reads wrong once footage is in.",
     "thematic_question": "What if you're not lazy — you're just running on the wrong fuel?",
     "topic": "Switching from extrinsic to intrinsic motivation",
-    "duration_seconds": 1200,
+    "duration_seconds": 933,
+    "duration_seconds_note": "933s (~15.5 min) is the length the full drafted arc actually needs at an estimated conversational pace, not the script header's original ~1200s (20 min) target — see script.json.metadata.runtime_note for why this wasn't padded to match.",
     "era_mix": "modern",
     "sources_allowed": ["pexels", "pixabay_video", "coverr", "mixkit", "videvo", "wikimedia"],
     "generated_clips_allowed": false,
@@ -259,7 +407,19 @@
       { "id": "scene_009", "description": "a repeating cycle: treadmill running, or a revolving door, or a commuter repeating the same route", "hero": false, "preferred_sources": ["pexels", "pixabay_video", "videvo"], "queries": ["treadmill running repetitive", "revolving door repeating", "commuter daily routine"], "min_duration": 16, "target_hold_seconds": 27, "era_hint": "modern" },
       { "id": "scene_010", "description": "hands working intently on a craft or instrument, focused, warm natural light, close up", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["hands working craft focused", "person absorbed in work close up", "focused artisan workshop"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" },
       { "id": "scene_011", "description": "the same car driving smoothly on an open road at golden hour, engine running freely", "hero": true, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car driving open road golden hour", "car driving smoothly highway"], "min_duration": 6, "target_hold_seconds": 10, "era_hint": "modern" },
-      { "id": "scene_012", "description": "the same car driving away under its own power on an open road, final seconds visually clean for a text overlay", "hero": true, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car driving away open road", "car disappearing into distance"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" }
+      { "id": "scene_013", "description": "a person alone in a car in a parking lot at dusk, hands on the wheel, tense, motionless", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["person alone in car parking lot dusk", "hands on steering wheel tense"], "min_duration": 20, "target_hold_seconds": 40, "era_hint": "modern" },
+      { "id": "scene_014", "description": "two people at a kitchen table, one older, listening intently, warm lamp light, over-the-shoulder", "hero": true, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["two people kitchen table conversation", "older man listening intently table"], "min_duration": 45, "target_hold_seconds": 83, "era_hint": "modern" },
+      { "id": "scene_015", "description": "a person pausing at a fork in a hiking trail, choosing a direction, natural daylight", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["hiking trail fork choice", "person pausing trail junction"], "min_duration": 25, "target_hold_seconds": 50, "era_hint": "modern" },
+      { "id": "scene_016", "description": "a hand writing in a private journal or notebook, close up, evening light, alone", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["hand writing journal close up", "writing notebook evening light"], "min_duration": 25, "target_hold_seconds": 50, "era_hint": "modern" },
+      { "id": "scene_017", "description": "a craftsperson handing a finished product to a customer, genuine smile, natural light", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["craftsperson handing product customer", "small business owner customer smile"], "min_duration": 25, "target_hold_seconds": 50, "era_hint": "modern" },
+      { "id": "scene_018", "description": "a person absorbed at a workbench or desk late at night, unaware of time, warm lamp light", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["person working late night desk", "absorbed workbench lamp light"], "min_duration": 35, "target_hold_seconds": 70, "era_hint": "modern" },
+      { "id": "scene_019", "description": "a window showing darkness outside, a person looking up from work mildly surprised", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["dark window night person looking up", "surprised realizing time passed"], "min_duration": 35, "target_hold_seconds": 70, "era_hint": "modern" },
+      { "id": "scene_020", "description": "hands doing data entry on a keyboard, fluorescent office light, monotone", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["data entry hands keyboard office", "typing fluorescent office monotone"], "min_duration": 35, "target_hold_seconds": 70, "era_hint": "modern" },
+      { "id": "scene_021", "description": "a person walking out of an office building at golden hour, contemplative", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["person leaving office golden hour", "contemplative walk out of building"], "min_duration": 35, "target_hold_seconds": 70, "era_hint": "modern" },
+      { "id": "scene_022", "description": "a single item circled or checked on a handwritten list, close up, pen in hand", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["circling item on list close up", "checking off handwritten list"], "min_duration": 28, "target_hold_seconds": 55, "era_hint": "modern" },
+      { "id": "scene_023", "description": "a person turning to speak to a coworker, or picking up a phone to call, natural light", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["person turning to speak coworker", "picking up phone to call"], "min_duration": 30, "target_hold_seconds": 60, "era_hint": "modern" },
+      { "id": "scene_024", "description": "rapid warm callback montage cuts: alarm clock, journal writing, kitchen table conversation", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["quick montage warm nostalgic cuts"], "min_duration": 35, "target_hold_seconds": 70, "era_hint": "modern" },
+      { "id": "scene_025", "description": "the same car driving away under its own power on an open road, final seconds visually clean for a text overlay", "hero": true, "preferred_sources": ["pexels", "pixabay_video", "coverr"], "queries": ["car driving away open road", "car disappearing into distance"], "min_duration": 15, "target_hold_seconds": 30, "era_hint": "modern" }
     ],
     "evolink_continuity_graph": {
       "motif_hidden_engine_001": {
@@ -267,15 +427,16 @@
         "plant": "scene_001",
         "extrinsic_payoff": "scene_006",
         "turn": "scene_011 (PLACEHOLDER beat)",
-        "final_payoff": "scene_012 (PLACEHOLDER beat)",
-        "continuity_caveat": "This is real stock/archival footage, not a custom-shot continuity asset — literal same-vehicle continuity across scene_001/006/011/012 is only achievable if the asset-director's retrieval pulls multiple clips from the same source video/series, or if the user supplies/records one car specifically for this motif. If retrieval returns four unrelated cars, downgrade the ambition from 'same car' continuity to 'same visual language' (similar era, color, framing) rather than failing the beat."
+        "final_payoff": "scene_025 (PLACEHOLDER beat)",
+        "continuity_caveat": "This is real stock/archival footage, not a custom-shot continuity asset — literal same-vehicle continuity across scene_001/006/011/025 is only achievable if the asset-director's retrieval pulls multiple clips from the same source video/series, or if the user supplies/records one car specifically for this motif. If retrieval returns four unrelated cars, downgrade the ambition from 'same car' continuity to 'same visual language' (similar era, color, framing) rather than failing the beat."
       }
     },
     "evolink_open_items": [
-      "Slots scene_009 through scene_012 illustrate EvoLink-placeholder script content (see script.json [[PLACEHOLDER]] markers) — replace once the real reveal and closing exist.",
-      "This scene_plan covers 0-185s of the 1200s (~20 min) target runtime — only as much as current script content supports. Extend once more script material or more placeholder phases are approved.",
-      "Long-form vs. pipeline sweet spot: documentary-montage's own worked examples top out around 2-3 minutes / ~50 slots; this build's eventual full 20-minute runtime will need on the order of 10x that, planned in sections rather than one single beat-density pass.",
-      "style_playbook intentionally left null — documentary-montage's compatible_playbooks allow custom; no playbook has been chosen yet."
+      "Scenes scene_009 through scene_025 illustrate EvoLink-placeholder script content (see script.json [[PLACEHOLDER]] markers) — replace section by section once real material exists; scene_013/scene_014 (the mentor/discovery beat) are the most fabricated and the most likely to need full replacement rather than editing.",
+      "This scene_plan now covers the full drafted arc, 0-933s — see duration_seconds_note above for why that's short of the script header's original ~1200s (20 min) target rather than padded to match.",
+      "Long-form vs. pipeline sweet spot: documentary-montage's own worked examples top out around 2-3 minutes / ~50 slots; this build uses 27 slots across 933s (~15.5 min) with deliberately longer per-slot holds (narration-paced, not tone-poem-paced) — a documented, intentional deviation, not an oversight.",
+      "style_playbook intentionally left null — documentary-montage's compatible_playbooks allow custom; no playbook has been chosen yet.",
+      "scene_014 and scene_024 are marked/described for footage reuse (same conversation, same earlier images) — the asset-director should treat these as continuity requests, not fresh retrieval, where the corpus allows it."
     ],
     "production_constraints": {
       "visual_treatment": "Real B-roll/stock/archival footage only — no animation, no motion graphics, no illustrated diagrams, no kinetic typography. Every scene above is type 'broll' for this reason; the only on-screen graphic in the whole piece is the single end-tag text overlay in the pipeline's mandatory closing card, per user's explicit yes to end_tag_plan.",
