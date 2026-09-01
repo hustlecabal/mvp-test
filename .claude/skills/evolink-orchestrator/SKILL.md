@@ -1,6 +1,6 @@
 ---
 name: evolink-orchestrator
-description: "Creative production orchestrator that sits above the project's production engine. Takes a script, screenplay, transcript, treatment, story concept, documentary script, commercial brief, or music-video concept and turns it into a complete, continuity-aware, shot-level production blueprint — invoking $story-bible-builder, $character-builder, $banana-pro-director-30 and $cinema-director as needed, then compiling a production package for this repo's render pipeline. Use when the user hands over a script and says 'build this', asks for a full script-to-video pipeline, or gives a natural-language creative note ('make Marcus angry in scene 4', 'scene 7 feels boring', 'make the whole thing more cinematic') that should route to the right specialist and update project state. Do not use for a single isolated image or video prompt with no surrounding project — route those directly to the specialist skill instead."
+description: "Creative production orchestrator that sits above OpenMontage (github.com/calesthio/OpenMontage), the downstream agentic production engine. Takes a script, screenplay, transcript, treatment, story concept, documentary script, commercial brief, or music-video concept and turns it into a complete, continuity-aware, shot-level production blueprint — invoking $story-bible-builder, $character-builder, $banana-pro-director-30 and $cinema-director as needed, then compiling that blueprint into OpenMontage's own schema-valid artifacts (brief/script/scene_plan) so OpenMontage's pipeline can execute it. Use when the user hands over a script and says 'build this', asks for a full script-to-video pipeline, or gives a natural-language creative note ('make Marcus angry in scene 4', 'scene 7 feels boring', 'make the whole thing more cinematic') that should route to the right specialist and update project state. Do not use for a single isolated image or video prompt with no surrounding project — route those directly to the specialist skill instead."
 license: MIT
 ---
 
@@ -30,7 +30,7 @@ Before delegating to any of them, locate the skill and read its actual `SKILL.md
 Full mechanics for everything below this line — scene/shot schemas, the generation-unit and frame-continuity rules, the continuity graph, the audio-visual timeline, QA, and repair — live in `references/` and should be loaded on demand, not memorized:
 
 - **`references/pipeline-and-continuity.md`** — narrative segmentation → scenes → shots → generation units; start/end frame protocol; character/location/prop continuity; the visual system; audio-visual timeline; creative QA checklist; targeted repair; project structure and stable ID scheme.
-- **`references/production-handoff.md`** — the production compiler, this repo's actual production engine, the export package, and model-agnostic generation-method selection.
+- **`references/production-handoff.md`** — the production compiler: how EvoLink's project state becomes OpenMontage's own `brief`/`script`/`scene_plan`/`asset_manifest`/`edit_decisions` artifacts (with a field-by-field mapping grounded in OpenMontage's actual `schemas/artifacts/`), OpenMontage's Rule Zero and governance constraints EvoLink must respect, pipeline selection across `pipeline_defs/`, and the thinner Remotion-scaffold fallback for when no OpenMontage checkout is available.
 
 ## Default orchestration order
 
@@ -54,8 +54,8 @@ Not a rigid waterfall — iterate when a downstream pass exposes a gap upstream 
 9. **Generation planning** — shots become ≤10-second generation units with explicit start/end frame contracts.
 10. **Continuity** — build the character/location/prop state graph and dependency graph.
 11. **Creative QA** — find and repair contradictions before compiling.
-12. **Compilation** — build the production package (`references/production-handoff.md`).
-13. **Handoff** — hand the package to this repo's render pipeline. Do not trigger actual rendering unless the user explicitly asks for production execution — creative-ready is not the same as production-rendered.
+12. **Compilation** — write EvoLink's project state into OpenMontage's own `brief`/`script`/`scene_plan` artifacts, schema-valid, so its stage director skills can pick up from `scene_plan` or `assets` onward (`references/production-handoff.md`).
+13. **Handoff** — hand off to OpenMontage, still stage by stage through its own pipeline manifest per its Rule Zero — EvoLink's canon replaces guesswork in each stage, it doesn't replace the stages. Do not trigger actual rendering or an OpenMontage pipeline run unless the user explicitly asks for production execution — creative-ready is not the same as production-rendered.
 
 ## Commands
 
