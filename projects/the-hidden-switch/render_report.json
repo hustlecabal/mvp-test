@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "outputs": [
+    {
+      "path": "renders/final.mp4",
+      "format": "mp4",
+      "codec": "h264",
+      "audio_codec": "aac",
+      "resolution": "1920x1080",
+      "fps": 30.0,
+      "duration_seconds": 605.41,
+      "file_size_bytes": 295539268,
+      "platform_target": "youtube"
+    }
+  ],
+  "render_time_seconds": 812.73,
+  "warnings": [
+    "Automated self-review flagged possible audio clipping (max volume 0.0 dB).",
+    "Automated self-review's music_present=true is unexplained \u2014 no music_plan was configured (opted out); likely detecting the B-roll clips' own embedded ambient audio, which was never explicitly muted in edit_decisions. Needs verification, not assumed benign.",
+    "transcript_comparison was skipped (no narration_transcript supplied) \u2014 narration accuracy against script.json was never actually verified by the transcriber tool.",
+    "Manual visual spot-check of the tool's own 4 self-review frames found at least one clearly mismatched clip (an eyelash-curling/makeup close-up, not matching any planned scene description) that the automated visual_spotcheck (black-frame/overlay/text checks only) did not catch. Full 27-scene visual review has NOT been done \u2014 only ~5 of 54 downloaded candidates were manually inspected before picking.",
+    "scene_007c and scene_013 were already flagged as weak content matches in asset_manifest.json before this render; they were rendered as-is, not fixed."
+  ],
+  "render_grammar": "documentary-montage",
+  "metadata": {
+    "pipeline": "animated-explainer (structural) + direct_clip_search tool substitution",
+    "no_proposal_packet": true,
+    "no_checkpoints": "OpenMontage's write_checkpoint() rejected assets/edit checkpoints for this project because research/proposal stages were never completed (EvoLink skipped them) \u2014 see git history in mvp-test for the actual project record instead.",
+    "cost_total_usd": 0.1527,
+    "status": "rough cut \u2014 automated self-review passed with caveats above; full manual visual/audio review not yet done"
+  }
+}
