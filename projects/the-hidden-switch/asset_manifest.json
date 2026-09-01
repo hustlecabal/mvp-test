@@ -1,0 +1,673 @@
+{
+  "version": "1.0",
+  "assets": [
+    {
+      "id": "asset_scene_001",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_31547962.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_001",
+      "duration_seconds": 16.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/man-opening-damaged-car-hood-in-winter-scene-31547962/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'car broken down roadside hood open'. Source tags: 'man opening damaged car hood in winter scene'."
+    },
+    {
+      "id": "asset_scene_002",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_3580077.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_002",
+      "duration_seconds": 30.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/a-digital-alarm-clock-displaying-time-3580077/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'alarm clock dawn bedroom'. Source tags: 'a digital alarm clock displaying time'."
+    },
+    {
+      "id": "asset_scene_003",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7131640.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_003",
+      "duration_seconds": 28.0,
+      "resolution": "1366x720",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/woman-waking-up-from-her-bed-7131640/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'rumpled blanket morning light'. Source tags: 'woman waking up from her bed'."
+    },
+    {
+      "id": "asset_scene_004",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_4540038.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_004",
+      "duration_seconds": 8.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/woman-having-tired-eyes-4540038/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'tired eyes hands face morning'. Source tags: 'woman having tired eyes'."
+    },
+    {
+      "id": "asset_scene_005",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_14603998.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_005",
+      "duration_seconds": 13.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/gas-station-at-night-14603998/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'two fuel pumps gas station'. Source tags: 'gas station at night'."
+    },
+    {
+      "id": "asset_scene_006",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_29576549.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_006",
+      "duration_seconds": 21.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/person-filling-car-with-gasoline-at-station-29576549/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'car fueling gas station'. Source tags: 'person filling car with gasoline at station'."
+    },
+    {
+      "id": "asset_scene_007a",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_5466769.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_007a",
+      "duration_seconds": 14.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/a-person-counting-money-5466769/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'counting cash hands close up'. Source tags: 'a person counting money'."
+    },
+    {
+      "id": "asset_scene_007b",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7581375.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_007b",
+      "duration_seconds": 7.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/people-congratulating-their-colleague-7581375/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'handshake applause office'. Source tags: 'people congratulating their colleague'."
+    },
+    {
+      "id": "asset_scene_007c",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_32925746.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_007c",
+      "duration_seconds": 16.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/modern-building-entrance-during-rainy-day-32925746/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'office door nameplate'. Source tags: 'modern building entrance during rainy day'."
+    },
+    {
+      "id": "asset_scene_007d",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_10577436.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_007d",
+      "duration_seconds": 26.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/woman-walking-and-getting-scared-at-night-10577436/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'stern boss silhouette doorway'. Source tags: 'woman walking and getting scared at night'."
+    },
+    {
+      "id": "asset_scene_008",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_6098174.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_008",
+      "duration_seconds": 17.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/video-of-a-christmas-gifts-6098174/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'christmas eve tree presents'. Source tags: 'video of a christmas gifts'."
+    },
+    {
+      "id": "asset_scene_009",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_9777604.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_009",
+      "duration_seconds": 8.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/young-man-running-on-treadmill-9777604/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'treadmill running repetitive'. Source tags: 'young man running on treadmill'."
+    },
+    {
+      "id": "asset_scene_010",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_5972650.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_010",
+      "duration_seconds": 11.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/wood-man-hands-working-5972650/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'hands working craft focused'. Source tags: 'wood man hands working'."
+    },
+    {
+      "id": "asset_scene_011",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_17810190.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_011",
+      "duration_seconds": 20.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/the-sun-setting-over-a-highway-in-china-17810190/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'car driving open road golden hour'. Source tags: 'the sun setting over a highway in china'."
+    },
+    {
+      "id": "asset_scene_013",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7644388.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_013",
+      "duration_seconds": 14.0,
+      "resolution": "1366x720",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/women-skateboarding-in-a-parking-space-7644388/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'person alone in car parking lot dusk'. Source tags: 'women skateboarding in a parking space'."
+    },
+    {
+      "id": "asset_scene_014",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_13324067.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_014",
+      "duration_seconds": 10.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/two-young-men-eating-breakfast-together-13324067/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'two people kitchen table conversation'. Source tags: 'two young men eating breakfast together'."
+    },
+    {
+      "id": "asset_scene_015",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_10091405.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_015",
+      "duration_seconds": 26.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/camera-moving-along-path-in-forest-10091405/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'hiking trail fork choice'. Source tags: 'camera moving along path in forest'."
+    },
+    {
+      "id": "asset_scene_016",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_6566559.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_016",
+      "duration_seconds": 13.0,
+      "resolution": "1280x720",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/video-of-a-person-writing-6566559/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'hand writing journal close up'. Source tags: 'video of a person writing'."
+    },
+    {
+      "id": "asset_scene_017",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_34740433.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_017",
+      "duration_seconds": 7.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/artisan-crafting-leather-bag-in-workshop-34740433/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'craftsperson handing product customer'. Source tags: 'artisan crafting leather bag in workshop'."
+    },
+    {
+      "id": "asset_scene_018",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_34492301.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_018",
+      "duration_seconds": 9.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/man-working-late-on-computer-editing-video-content-34492301/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'person working late night desk'. Source tags: 'man working late on computer editing video content'."
+    },
+    {
+      "id": "asset_scene_019",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_16777488.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_019",
+      "duration_seconds": 3.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/man-looking-up-at-building-in-city-at-night-16777488/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'dark window night person looking up'. Source tags: 'man looking up at building in city at night'."
+    },
+    {
+      "id": "asset_scene_020",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_1326864.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_020",
+      "duration_seconds": 12.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/person-using-a-keyboard-1326864/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'data entry hands keyboard office'. Source tags: 'person using a keyboard'."
+    },
+    {
+      "id": "asset_scene_021",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_35649915.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_021",
+      "duration_seconds": 32.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/sunrise-timelapse-through-office-window-35649915/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'person leaving office golden hour'. Source tags: 'sunrise timelapse through office window'."
+    },
+    {
+      "id": "asset_scene_022",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_1793371.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_022",
+      "duration_seconds": 15.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/person-saving-a-date-on-his-planner-1793371/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'circling item on list close up'. Source tags: 'person saving a date on his planner'."
+    },
+    {
+      "id": "asset_scene_023",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7647691.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_023",
+      "duration_seconds": 10.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/woman-in-conference-room-talking-with-someone-7647691/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'person turning to speak coworker'. Source tags: 'woman in conference room talking with someone'."
+    },
+    {
+      "id": "asset_scene_024",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_3588893.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_024",
+      "duration_seconds": 11.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/old-video-footage-of-a-man-driving-a-top-down-sports-car-around-the-city-3588893/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'quick montage warm nostalgic cuts'. Source tags: 'old video footage of a man driving a top down sports car around the city'."
+    },
+    {
+      "id": "asset_scene_025",
+      "type": "video",
+      "path": "projects/the-hidden-switch/assets/video/raw/clips/pexels_13211307.mp4",
+      "source_tool": "direct_clip_search",
+      "scene_id": "scene_025",
+      "duration_seconds": 16.0,
+      "resolution": "1920x1080",
+      "format": "mp4",
+      "provider": "pexels",
+      "license": "Pexels License (free, no attribution required)",
+      "original_url": "https://www.pexels.com/video/car-on-road-13211307/",
+      "subtype": "stock",
+      "generation_summary": "Retrieved via direct_clip_search for query 'car driving away open road'. Source tags: 'car on road'."
+    },
+    {
+      "id": "narration_phase_1_warm_entry",
+      "type": "narration",
+      "path": "assets/narration/phase_1_sample.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "scene_001",
+      "duration_seconds": 25.181938,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0062,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_2_honest_struggle",
+      "type": "narration",
+      "path": "assets/narration/phase_2_honest_struggle.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_2_honest_struggle",
+      "duration_seconds": 118.204,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0293,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_3_reveal",
+      "type": "narration",
+      "path": "assets/narration/phase_3_reveal.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_3_reveal",
+      "duration_seconds": 39.340313,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.009,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_4_discovery",
+      "type": "narration",
+      "path": "assets/narration/phase_4_discovery.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_4_discovery",
+      "duration_seconds": 65.070938,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0178,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_5_framework",
+      "type": "narration",
+      "path": "assets/narration/phase_5_framework.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_5_framework",
+      "duration_seconds": 94.328063,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0239,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_6_application",
+      "type": "narration",
+      "path": "assets/narration/phase_6_application.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_6_application",
+      "duration_seconds": 87.954188,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.019,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_7_nuance",
+      "type": "narration",
+      "path": "assets/narration/phase_7_nuance.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_7_nuance",
+      "duration_seconds": 73.5085,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0185,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_8_invitation",
+      "type": "narration",
+      "path": "assets/narration/phase_8_invitation.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_8_invitation",
+      "duration_seconds": 48.561563,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0145,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    },
+    {
+      "id": "narration_phase_9_resolution",
+      "type": "narration",
+      "path": "assets/narration/phase_9_resolution.mp3",
+      "source_tool": "fish_audio_tts",
+      "scene_id": "phase_9_resolution",
+      "duration_seconds": 52.688875,
+      "format": "mp3",
+      "provider": "fish_audio",
+      "cost_usd": 0.0145,
+      "generation_summary": "s2.1-pro-free model, no reference_id (default voice)."
+    }
+  ],
+  "total_cost_usd": 0.1527,
+  "metadata": {
+    "pipeline": "animated-explainer",
+    "narration_provider": "fish_audio_tts (model=s2.1-pro-free, no voice_id/reference_id selected yet)",
+    "video_source": "direct_clip_search, sources=['pexels'] only (free stock, no generated visuals per explicit user instruction)",
+    "pick_methodology": "For each of the 27 scenes, direct_clip_search returned 2 Pexels candidates. Picks were made by reviewing source_tags/duration for all scenes, with full visual (thumbnail) review for scene_001, scene_007c, scene_013, scene_017, scene_021 specifically \u2014 NOT all 54 downloaded clips were visually inspected. The unpicked candidate for every scene remains on disk at the same path with '_alt' implied (see rejected_picks) for manual swap.",
+    "rejected_picks": [
+      {
+        "scene_id": "scene_001",
+        "clip_id": "pexels_852362",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_002",
+        "clip_id": "pexels_7164570",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_003",
+        "clip_id": "pexels_6792554",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_004",
+        "clip_id": "pexels_9902183",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_005",
+        "clip_id": "pexels_4254117",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_006",
+        "clip_id": "pexels_15556113",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_007a",
+        "clip_id": "pexels_34579094",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_007b",
+        "clip_id": "pexels_7414175",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_007c",
+        "clip_id": "pexels_1509536",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_007d",
+        "clip_id": "pexels_7523663",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_008",
+        "clip_id": "pexels_10634498",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_009",
+        "clip_id": "pexels_3875590",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_010",
+        "clip_id": "pexels_4452753",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_011",
+        "clip_id": "pexels_14595039",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_013",
+        "clip_id": "pexels_8388278",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_014",
+        "clip_id": "pexels_6270410",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_015",
+        "clip_id": "pexels_8552759",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_016",
+        "clip_id": "pexels_6326847",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_017",
+        "clip_id": "pexels_4452792",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_018",
+        "clip_id": "pexels_32788087",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_019",
+        "clip_id": "pexels_4538212",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_020",
+        "clip_id": "pexels_4426025",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_021",
+        "clip_id": "pexels_36351953",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_022",
+        "clip_id": "pexels_10797880",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_023",
+        "clip_id": "pexels_7844921",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_024",
+        "clip_id": "pexels_3588888",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      },
+      {
+        "scene_id": "scene_025",
+        "clip_id": "pexels_5558025",
+        "reason": "not selected \u2014 alternate candidate kept on disk for manual swap if needed"
+      }
+    ],
+    "weak_matches_flagged_for_review": [
+      {
+        "scene_id": "scene_007c",
+        "reason": "Query 'office door nameplate' returned generic hallway/building-entrance footage, not an actual nameplate/certificate. Both candidates are weak; recommend requery with a different concrete noun (e.g. 'engraved name plate close up', 'framed certificate on wall office') or accepting a generic office cutaway."
+      },
+      {
+        "scene_id": "scene_013",
+        "reason": "Query 'person alone in car parking lot dusk' returned a skateboarding clip and a stylized film-noir detective shot with a flashlight \u2014 neither matches 'tense, motionless, hands on the wheel'. This is the most fabricated scene in the whole plan (paired with the most fabricated script beat, phase_4_discovery) and should be requeried or reconsidered together with that script content."
+      }
+    ],
+    "narration_timing_finding": "CRITICAL: actual generated narration audio totals ~605s (~10.1 min) versus the scene_plan's word-count-estimated 933s (~15.5 min) target -- a ~35% overestimate concentrated in phases 4-9 (each ran 37-58% shorter than planned; phase_1 and phase_3 ran 26-31% LONGER than planned). scene_plan.json's start_seconds/end_seconds are now known-stale for every section from phase_2 onward and must be re-cut against the real audio files during the edit stage before compose. Per-section actual durations are recorded on each narration asset above."
+  }
+}

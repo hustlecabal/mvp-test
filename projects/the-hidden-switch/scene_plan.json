@@ -4,16 +4,16 @@
     {
       "id": "scene_001",
       "type": "broll",
-      "description": "A person pushing an old sedan uphill on an empty road, straining, low afternoon light, wide shot. Motif plant: motif_hidden_engine_001 — do not reveal the engine running yet.",
+      "description": "A car broken down on the shoulder of an empty road, hood open, a person looking down at the engine bay, frustrated, low afternoon light, wide shot. Motif plant: motif_hidden_engine_001 — the engine is visible but not running; do not reveal it starting yet. Reframed from the original 'pushing a car uphill' concept, which free stock libraries don't cover — this keeps the same withholding idea (an engine that isn't running yet) with footage that actually exists.",
       "start_seconds": 0,
       "end_seconds": 20,
       "script_section_id": "phase_1_warm_entry",
       "narrative_role": "establish_context",
       "shot_intent": "Plant the recurring visual motif without explaining it — mirrors the narration's own withholding.",
       "hero_moment": true,
-      "texture_keywords": ["straining", "overcast", "quiet"],
+      "texture_keywords": ["frustrated", "overcast", "quiet"],
       "required_assets": [
-        { "type": "video", "description": "motif_hidden_engine_001 (plant): person pushing a stalled/broken-down car uphill on an empty road.", "source": "source" }
+        { "type": "video", "description": "motif_hidden_engine_001 (plant): car broken down on a roadside, hood open, person looking at the engine, frustrated.", "source": "source" }
       ]
     },
     {
@@ -358,7 +358,8 @@
     }
   ],
   "metadata": {
-    "pipeline": "documentary-montage",
+    "pipeline": "animated-explainer",
+    "pipeline_change_note": "Switched from documentary-montage after reading its executive-producer.md, which explicitly excludes narrated-explainer content and caps at 30-180s — this project is a 933s narrated essay. animated-explainer has the right stage structure (script/scene_plan/assets with tts_selector supporting preferred_provider) but its own asset-director tool list is generation-first (image_selector/video_selector); direct_clip_search (real Pexels/stock retrieval) is used instead for every broll asset, per explicit user instruction to use only free stock, not generated visuals — a deliberate, logged deviation from that pipeline's default toolkit, not a silent one. The slots[]/music_plan/end_tag_plan/era_mix fields below are carried over from the documentary-montage draft and are EvoLink's own retrieval-hint convention now, not that pipeline's schema requirement.",
     "shape": "three-act",
     "tone": "dreamlike",
     "tone_rationale": "EvoLink's creative call, not user-specified: 'dreamlike' was picked over the other four fixed registers (elegiac/urgent/reverent/wry) because its definition — repeated motifs, non-linear, reflective — is the only one that fits a memory-driven personal-growth monologue built around one recurring visual motif planted and paid off three times. None of the five registers was designed for this content type; flag for override if it reads wrong once footage is in.",
@@ -393,7 +394,7 @@
     },
     "target_platform": "youtube",
     "slots": [
-      { "id": "scene_001", "description": "a person pushing a stalled sedan uphill on an empty road, straining, wide shot, overcast light", "hero": true, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["man pushing broken down car", "pushing stalled car uphill", "car pushed on road"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" },
+      { "id": "scene_001", "description": "a car broken down on the roadside, hood open, person looking at the engine, frustrated, wide shot, overcast light", "hero": true, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["car broken down roadside hood open", "car trouble roadside engine", "man looking at car engine frustrated"], "min_duration": 12, "target_hold_seconds": 20, "era_hint": "modern" },
       { "id": "scene_002", "description": "an alarm clock buzzing on a nightstand at dawn, hand reaching to silence it, dim bedroom", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["alarm clock dawn bedroom", "hand silencing alarm clock", "waking up early morning"], "min_duration": 6, "target_hold_seconds": 10, "era_hint": "modern" },
       { "id": "scene_003", "description": "a rumpled blanket under grey morning light close up, and a handwritten to-do list on a cluttered desk", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["rumpled blanket morning light", "messy unmade bed close up", "to-do list notepad desk"], "min_duration": 8, "target_hold_seconds": 15, "era_hint": "modern" },
       { "id": "scene_004", "description": "tired hands rubbing eyes at a kitchen table, muted colors, medium close-up", "hero": false, "preferred_sources": ["pexels", "pixabay_video"], "queries": ["tired eyes hands face morning", "exhausted person kitchen table"], "min_duration": 7, "target_hold_seconds": 13, "era_hint": "modern" },
