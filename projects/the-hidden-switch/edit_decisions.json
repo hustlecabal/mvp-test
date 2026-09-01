@@ -1,0 +1,295 @@
+{
+  "version": "1.0",
+  "cuts": [
+    {
+      "id": "cut_scene_001",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_001_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 25.182,
+      "layer": "primary",
+      "reason": "Plant the recurring visual motif without explaining it \u2014 mirrors the narration's own withholding."
+    },
+    {
+      "id": "cut_scene_002",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_3580077.mp4",
+      "in_seconds": 0,
+      "out_seconds": 10.279,
+      "layer": "primary",
+      "reason": "Open the 'stuck' beat on the most literal image of the daily attempt to start."
+    },
+    {
+      "id": "cut_scene_003",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7131640.mp4",
+      "in_seconds": 0,
+      "out_seconds": 15.418,
+      "layer": "primary",
+      "reason": "Make the resistance physically legible \u2014 a felt weight, not an abstract complaint."
+    },
+    {
+      "id": "cut_scene_004",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_004_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 13.362,
+      "layer": "primary",
+      "reason": "Give the misdiagnosis ('I thought I was lazy') a real, unglamorous image instead of a graphic treatment."
+    },
+    {
+      "id": "cut_scene_005",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_14603998.mp4",
+      "in_seconds": 0,
+      "out_seconds": 12.334,
+      "layer": "primary",
+      "reason": "Carry the two-fuel concept as a real, concrete image instead of an illustrated diagram."
+    },
+    {
+      "id": "cut_scene_006",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_29576549.mp4",
+      "in_seconds": 0,
+      "out_seconds": 13.362,
+      "layer": "primary",
+      "reason": "Central visual metaphor of the extrinsic-motivation explanation."
+    },
+    {
+      "id": "cut_scene_007a",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_5466769.mp4",
+      "in_seconds": 0,
+      "out_seconds": 2.57,
+      "layer": "primary",
+      "reason": "Concrete referent for 'money' \u2014 one of four quick cuts illustrating extrinsic motivation examples."
+    },
+    {
+      "id": "cut_scene_007b",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_7581375.mp4",
+      "in_seconds": 0,
+      "out_seconds": 2.57,
+      "layer": "primary",
+      "reason": "Concrete referent for 'praise'."
+    },
+    {
+      "id": "cut_scene_007c",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_32925746.mp4",
+      "in_seconds": 0,
+      "out_seconds": 2.57,
+      "layer": "primary",
+      "reason": "Concrete referent for 'status'."
+    },
+    {
+      "id": "cut_scene_007d",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_10577436.mp4",
+      "in_seconds": 0,
+      "out_seconds": 2.57,
+      "layer": "primary",
+      "reason": "Concrete referent for 'avoiding getting yelled at' \u2014 closes the four-item list on the most negative example, matching the narration's own ordering."
+    },
+    {
+      "id": "cut_scene_008",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_6098174.mp4",
+      "in_seconds": 0,
+      "out_seconds": 15.418,
+      "layer": "primary",
+      "reason": "Two-shot contrast mapped onto 'wanting the thing' vs. 'getting the thing' \u2014 same room if the source clip/corpus can supply both moments."
+    },
+    {
+      "id": "cut_scene_009",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_009_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 27.752,
+      "layer": "primary",
+      "reason": "Show the treadmill pattern right before the turn, so the eventual switch reads as breaking a cycle, not winning one more round."
+    },
+    {
+      "id": "cut_scene_010",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_010_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 26.227,
+      "layer": "primary",
+      "reason": "Illustrate intrinsic engagement as a felt image before the narration names it."
+    },
+    {
+      "id": "cut_scene_011",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_17810190.mp4",
+      "in_seconds": 0,
+      "out_seconds": 13.113,
+      "layer": "primary",
+      "reason": "The motif's central turn \u2014 the car under its own power for the first time."
+    },
+    {
+      "id": "cut_scene_013",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_013_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 21.161,
+      "layer": "primary",
+      "reason": "Give the frustration a real, contained image before the mentor conversation defuses it."
+    },
+    {
+      "id": "cut_scene_014",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_014_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 43.91,
+      "layer": "primary",
+      "reason": "This is the literal payoff of the hook's 'someone told me' line \u2014 give it room and warmth, not a quick cutaway."
+    },
+    {
+      "id": "cut_scene_015",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_015_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 31.443,
+      "layer": "primary",
+      "reason": "Concrete image for 'you have to feel like you're choosing it.'"
+    },
+    {
+      "id": "cut_scene_016",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_016_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 31.443,
+      "layer": "primary",
+      "reason": "Concrete image for tracking your own improvement, for no one but yourself."
+    },
+    {
+      "id": "cut_scene_017",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_017_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 31.443,
+      "layer": "primary",
+      "reason": "Concrete image for work connecting to something beyond the task itself \u2014 closes the three-part framework."
+    },
+    {
+      "id": "cut_scene_018",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_018_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 43.977,
+      "layer": "primary",
+      "reason": "Show the 'lost track of hours' claim as a felt image rather than narrated abstractly."
+    },
+    {
+      "id": "cut_scene_019",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_019_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 43.977,
+      "layer": "primary",
+      "reason": "Payoff of scene_018 \u2014 the surprise of realizing how much time passed."
+    },
+    {
+      "id": "cut_scene_020",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_020_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 36.754,
+      "layer": "primary",
+      "reason": "Concrete referent for the objection: 'my job is genuinely boring.'"
+    },
+    {
+      "id": "cut_scene_021",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_021_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 36.754,
+      "layer": "primary",
+      "reason": "Illustrate 'that might mean the actual answer is changing roles' without narrating it literally on screen."
+    },
+    {
+      "id": "cut_scene_022",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_022_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 23.225,
+      "layer": "primary",
+      "reason": "Visualize 'pick one task this week' as a concrete, small action."
+    },
+    {
+      "id": "cut_scene_023",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_023_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 25.336,
+      "layer": "primary",
+      "reason": "Visualize 'go find the person on the other end of the work and actually talk to them.'"
+    },
+    {
+      "id": "cut_scene_024",
+      "source": "projects/the-hidden-switch/assets/video/looped/scene_024_looped.mp4",
+      "in_seconds": 0,
+      "out_seconds": 36.882,
+      "layer": "primary",
+      "reason": "Give the closing thesis a felt sense of the whole journey without literally restating every beat in narration."
+    },
+    {
+      "id": "cut_scene_025",
+      "source": "projects/the-hidden-switch/assets/video/raw/clips/pexels_13211307.mp4",
+      "in_seconds": 0,
+      "out_seconds": 15.807,
+      "layer": "primary",
+      "reason": "Closing image the end-tag overlay will sit on top of \u2014 needs a visually uncluttered final few seconds for the text to read."
+    }
+  ],
+  "audio": {
+    "narration": {
+      "segments": [
+        {
+          "asset_id": "narration_phase_1_warm_entry",
+          "start_seconds": 0.0
+        },
+        {
+          "asset_id": "narration_phase_2_honest_struggle",
+          "start_seconds": 25.182
+        },
+        {
+          "asset_id": "narration_phase_3_reveal",
+          "start_seconds": 143.386
+        },
+        {
+          "asset_id": "narration_phase_4_discovery",
+          "start_seconds": 182.726
+        },
+        {
+          "asset_id": "narration_phase_5_framework",
+          "start_seconds": 247.797
+        },
+        {
+          "asset_id": "narration_phase_6_application",
+          "start_seconds": 342.125
+        },
+        {
+          "asset_id": "narration_phase_7_nuance",
+          "start_seconds": 430.079
+        },
+        {
+          "asset_id": "narration_phase_8_invitation",
+          "start_seconds": 503.588
+        },
+        {
+          "asset_id": "narration_phase_9_resolution",
+          "start_seconds": 552.15
+        }
+      ]
+    }
+  },
+  "subtitles": {
+    "enabled": false
+  },
+  "renderer_family": "documentary-montage",
+  "render_runtime": "ffmpeg",
+  "composition_mode": "templated",
+  "metadata": {
+    "total_duration_seconds": 604.838,
+    "retiming_note": "Every scene's on-screen duration was rescaled within its phase to match that phase's REAL fish_audio_tts narration duration, not the original word-count estimate.",
+    "looped_clips": [
+      "scene_001",
+      "scene_004",
+      "scene_009",
+      "scene_010",
+      "scene_013",
+      "scene_014",
+      "scene_015",
+      "scene_016",
+      "scene_017",
+      "scene_018",
+      "scene_019",
+      "scene_020",
+      "scene_021",
+      "scene_022",
+      "scene_023",
+      "scene_024"
+    ],
+    "loop_note": "16 of 27 clips were shorter than their required screen time and were looped via ffmpeg (-stream_loop) to fill the exact duration rather than freezing or cutting early.",
+    "warnings": [],
+    "render_runtime_rationale": "ffmpeg chosen over remotion/hyperframes: no animation, no generated images, no motion graphics per explicit user instruction.",
+    "no_proposal_packet": "No proposal_packet artifact exists for this project \u2014 render_runtime here is EvoLink's direct choice, not a locked proposal-stage decision."
+  }
+}
