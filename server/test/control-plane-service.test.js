@@ -502,7 +502,47 @@ test('every PRODUCTION_PREREQUISITE_CODES entry is a real, closed, documented li
     'NO_GATE_RESULT',
     'GATE_RESULT_STALE',
     'GATE_NOT_ACCEPTED',
+    'NO_STRATEGY',
+    'NO_IDEA_SELECTED',
+    'NO_PACKAGE_SELECTED',
+    'NO_STORY_STRUCTURE',
   ]);
+});
+
+// ===========================================================================
+// PHASE 1 EDITORIAL SPINE, Part 9 — requireEditorialSpine is opt-in and
+// additive: every scenario above (A-N), none of which pass
+// requireEditorialSpine, must be completely unaffected by this option
+// existing at all. These tests prove the option itself actually works, on
+// top of a real H-scenario baseline (Blueprint APPROVED + Gate ACCEPTed).
+// ===========================================================================
+
+test('requireEditorialSpine: false (default/omitted) behaves identically to before this option existed', () => {
+  const project = newProject();
+  const recSet = buildRecommendationSet(project.id);
+  const blueprint = buildDraftBlueprint(project.id, recSet);
+  creativeBlueprintService.reviewCreativeBlueprint(project.id, blueprint.id, { decision: 'APPROVE', reviewedBy: 'tester' });
+  linkStoryboard(project.id, blueprint.id);
+  const evaluated = preProductionGateService.evaluatePreProductionGate(project.id, blueprint.id);
+  preProductionGateService.decideGateResult(project.id, evaluated.gateResult.id, { decision: 'ACCEPT', decidedBy: 'tester' });
+
+  assert.equal(controlPlane.validateProductionPrerequisites(project.id).ok, true);
+  assert.equal(controlPlane.validateProductionPrerequisites(project.id, {}).ok, true);
+  assert.equal(controlPlane.validateProductionPrerequisites(project.id, { requireEditorialSpine: false }).ok, true);
+});
+
+test('requireEditorialSpine: true rejects an otherwise-ready project with NO_STRATEGY when the Blueprint has no strategyId', () => {
+  const project = newProject();
+  const recSet = buildRecommendationSet(project.id);
+  const blueprint = buildDraftBlueprint(project.id, recSet);
+  creativeBlueprintService.reviewCreativeBlueprint(project.id, blueprint.id, { decision: 'APPROVE', reviewedBy: 'tester' });
+  linkStoryboard(project.id, blueprint.id);
+  const evaluated = preProductionGateService.evaluatePreProductionGate(project.id, blueprint.id);
+  preProductionGateService.decideGateResult(project.id, evaluated.gateResult.id, { decision: 'ACCEPT', decidedBy: 'tester' });
+
+  assert.equal(controlPlane.validateProductionPrerequisites(project.id, { requireEditorialSpine: true }).ok, false);
+  assert.equal(controlPlane.validateProductionPrerequisites(project.id, { requireEditorialSpine: true }).code, 'NO_STRATEGY');
+  assert.equal(controlPlane.canEnterProduction(project.id, { requireEditorialSpine: true }), false);
 });
 
 test('PROJECT_NOT_FOUND is returned for a nonexistent project, never a crash', () => {

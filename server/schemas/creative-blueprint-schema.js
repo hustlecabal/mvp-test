@@ -297,6 +297,9 @@ function createCreativeBlueprintReview(overrides = {}) {
 // ---------------------------------------------------------------------------
 function createCreativeBlueprint(overrides = {}) {
   const {
+    strategyId,
+    ideaId,
+    packageId,
     recommendationDecisions,
     creativeDecisions,
     constraints,
@@ -323,6 +326,16 @@ function createCreativeBlueprint(overrides = {}) {
     creativeBriefId: null, // Part 2 — reference only, never a duplicated copy
     referenceSetId: null,
     recommendationSetId: null,
+
+    // PHASE 1 EDITORIAL SPINE — reference-only links (never a duplicated
+    // copy of their content) to the EditorialStrategy/Idea/Package this
+    // Blueprint was generated from, when it was generated via the
+    // editorial spine (services/editorial-spine-service.js) rather than
+    // the pre-existing human-authored path. All three stay null for a
+    // Blueprint NOT built this way — never required, never invented.
+    strategyId: strategyId !== undefined ? strategyId : null,
+    ideaId: ideaId !== undefined ? ideaId : null,
+    packageId: packageId !== undefined ? packageId : null,
 
     // IDENTITY
     title: '',

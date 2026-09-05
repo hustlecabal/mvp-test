@@ -80,7 +80,7 @@ async function generateCreativeBlueprint(projectId, options = {}) {
   const project = projectStore.getProject(projectId);
   if (!project) return { ok: false, code: 'PROJECT_NOT_FOUND', reason: `no project found with id "${projectId}"` };
 
-  const { referenceSetId, recommendationSetId, humanVoiceProfileId, topic, format, targetDuration, candidateCount = 3, provider, requestedBy } = options;
+  const { referenceSetId, recommendationSetId, humanVoiceProfileId, topic, format, targetDuration, candidateCount = 3, provider, requestedBy, strategyId, selectedIdea, selectedPackage } = options;
 
   const recommendationSet = recommendationSetId
     ? recommendationStore.getRecommendationSet(projectId, recommendationSetId)
@@ -156,15 +156,31 @@ async function generateCreativeBlueprint(projectId, options = {}) {
 
   const additionalDiagnostics = evaluationResultsToDiagnostics(directionResults);
 
+  // PHASE 1 EDITORIAL SPINE — Strategy -> Idea -> Package -> Angle ->
+  // Blueprint. Angle generation/evaluation/selection above (Stages 1-4) is
+  // UNCHANGED and always runs — a Package never replaces the angle work,
+  // it only becomes the AUTHORITATIVE source for the Blueprint's own
+  // identity fields once one exists (phase brief, Part 4: "the Blueprint
+  // should no longer invent a title independently when a selected package
+  // already exists"). Ordering rationale: the angle stage still supplies
+  // narrativeStrategy/pacingStrategy/visualStrategy/emotionalArc/
+  // visualSpecification/narrationText — none of which Packaging generates
+  // — so discarding Stage 1-4 entirely would lose real, already-working
+  // production-direction synthesis for no benefit; overriding only the
+  // title/corePromise/hookStrategy fields a Package actually replaces is
+  // the smaller, additive change.
   const blueprint = creativeBlueprintService.buildCreativeBlueprintDraft(projectId, {
     referenceSetId: recommendationSet.referenceSetId,
     recommendationSetId: recommendationSet.id,
-    title: best.candidate.concept,
+    strategyId: strategyId || null,
+    ideaId: selectedIdea ? selectedIdea.ideaId : null,
+    packageId: selectedPackage ? selectedPackage.packageId : null,
+    title: selectedPackage ? selectedPackage.title : best.candidate.concept,
     concept: best.candidate.concept,
-    corePromise: best.candidate.corePromise,
+    corePromise: selectedPackage ? selectedPackage.promise : best.candidate.corePromise,
     format: format || null,
     targetDuration: typeof targetDuration === 'number' ? targetDuration : null,
-    hookStrategy: best.candidate.hookStrategy,
+    hookStrategy: selectedPackage && selectedPackage.curiosityMechanism ? selectedPackage.curiosityMechanism : best.candidate.hookStrategy,
     narrativeStrategy: directionResult.narrativeStrategy,
     pacingStrategy: directionResult.pacingStrategy,
     visualStrategy: directionResult.visualDirection,

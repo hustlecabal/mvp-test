@@ -153,13 +153,14 @@ function upsertBeatProgress(job, beatId, patch) {
 //   options.outputDir — REQUIRED, exactly like render-service.js's own
 //     discipline: never defaulted or persisted by this file to a location
 //     under server/data.
-//   options.treatments / options.narrationSegments / options.visualBible —
-//     the SAME explicit context beat-graph-derivation-service.js's own
-//     deriveBeatGraph() already accepts, passed straight through
-//     unmodified. options.narrativeRoles — an additive { [beatId]:
-//     one of narration-director-service.js's NARRATIVE_ROLES } map, used
-//     only to pick a delivery-style baseline per narrated beat; 'OTHER' when
-//     omitted for a beat.
+//   options.treatments / options.narrationSegments / options.visualBible /
+//     options.visualObjectives / options.edges — the SAME explicit context
+//     beat-graph-derivation-service.js's own deriveBeatGraph() already
+//     accepts, passed straight through unmodified. options.narrativeRoles —
+//     an additive { [beatId]: one of narration-director-service.js's
+//     NARRATIVE_ROLES } map, used both to set beat.narrativeRole (via
+//     deriveBeatGraph, PHASE 1 EDITORIAL SPINE) and to pick a delivery-style
+//     baseline per narrated beat below; 'OTHER' when omitted for a beat.
 // ---------------------------------------------------------------------------
 // Shared by startProduction()/startProductionAsync(): does every fast,
 // synchronous step — idempotency lookup, the approval boundary, and job
@@ -217,6 +218,17 @@ function getOrCreateProductionJob(projectId, options = {}) {
       narrationSegments: options.narrationSegments || {},
       narrativeRoles: options.narrativeRoles || {},
       visualBible: options.visualBible || null,
+      // PHASE 1 EDITORIAL SPINE, Part 6/7 — the SAME two new, additive
+      // context keys beat-graph-derivation-service.js's deriveBeatGraph()
+      // now accepts (context.visualObjectives/context.edges), forwarded
+      // through exactly like treatments/narrationSegments/narrativeRoles
+      // already are. Without this, a real Story Structure's narrativeRole/
+      // visualObjective/BeatEdge decisions (services/story-structure-
+      // service.js's buildBeatGraphContext()) would dead-end here — this
+      // orchestrator is the one place a real production run's options
+      // actually reach BeatGraph derivation.
+      visualObjectives: options.visualObjectives || {},
+      edges: options.edges || [],
     },
     // Additive, NOT part of deriveBeatGraph()'s own context shape (see
     // that file's header — it only accepts treatments/narrationSegments/

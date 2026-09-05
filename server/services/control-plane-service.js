@@ -45,6 +45,16 @@ const creativeStore = require('./creative-store');
 const creativeBlueprintStore = require('./creative-blueprint-store');
 const preProductionGateStore = require('./pre-production-gate-store');
 const preProductionGateService = require('./pre-production-gate-service');
+// PHASE 1 EDITORIAL SPINE, Part 9 — read-only lookups only, exactly like
+// every other store this file already imports. Only ever consulted when a
+// caller opts into `{ requireEditorialSpine: true }` (see
+// validateProductionPrerequisites below) — every existing caller that
+// omits this option gets EXACTLY the same behavior as before this phase,
+// unchanged.
+const editorialStrategyStore = require('./editorial-strategy-store');
+const ideaStore = require('./idea-store');
+const packageStore = require('./package-store');
+const storyStructureStore = require('./story-structure-store');
 
 // Every structured rejection/success code this file can produce. Mirrors
 // the "closed, documented code list" convention every schema file in this
@@ -59,6 +69,16 @@ const PRODUCTION_PREREQUISITE_CODES = [
   'NO_GATE_RESULT',
   'GATE_RESULT_STALE',
   'GATE_NOT_ACCEPTED',
+  // PHASE 1 EDITORIAL SPINE, Part 9 — only reachable when a caller passes
+  // { requireEditorialSpine: true }. Structural readiness only (per the
+  // phase brief's explicit instruction: "Do NOT yet implement a
+  // sophisticated AI quality judge") — these codes check that a Strategy/
+  // Idea/Package/StoryStructure EXIST and are linked/selected, never that
+  // their content is good.
+  'NO_STRATEGY',
+  'NO_IDEA_SELECTED',
+  'NO_PACKAGE_SELECTED',
+  'NO_STORY_STRUCTURE',
 ];
 
 // A gate result authorizes production only when a human has explicitly
@@ -77,9 +97,21 @@ const AUTHORIZING_HUMAN_DECISIONS = ['ACCEPT', 'OVERRIDE'];
 // lookups against existing stores plus one existing service function
 // (isGateResultStale) — never a provider call, never a mutation.
 //
+// PHASE 1 EDITORIAL SPINE, Part 9 — options.requireEditorialSpine (default
+// false) additionally requires a Strategy/selected Idea/selected Package/
+// StoryStructure to exist and be linked, via the SAME function rather than
+// a second, parallel gate (the phase brief's explicit instruction: "Do not
+// create a second gate"). Defaulting to false means every existing caller
+// of this function — production-orchestrator-service.js, generation-
+// service.js, keyframe-generation-service.js, video-generation-service.js,
+// and every existing test — is completely unaffected; this is additive,
+// opt-in strictness for a caller (e.g. the editorial-spine integration
+// test) that specifically wants proof the full spine is wired, not a new
+// universal requirement.
+//
 // Returns { ok:true, code:null, reason:null, blueprint, gateResult } or
 // { ok:false, code, reason }.
-function validateProductionPrerequisites(projectId) {
+function validateProductionPrerequisites(projectId, { requireEditorialSpine = false } = {}) {
   const project = projectStore.getProject(projectId);
   if (!project) {
     return { ok: false, code: 'PROJECT_NOT_FOUND', reason: `No project found with id "${projectId}".` };
@@ -148,14 +180,32 @@ function validateProductionPrerequisites(projectId) {
     };
   }
 
+  if (requireEditorialSpine) {
+    if (!blueprint.strategyId || !editorialStrategyStore.getStrategy(projectId, blueprint.strategyId)) {
+      return { ok: false, code: 'NO_STRATEGY', reason: `CreativeBlueprint "${blueprint.id}" has no linked, resolvable EditorialStrategy (strategyId). The editorial spine requires a Strategy generated before the Idea/Package/Blueprint chain.` };
+    }
+    const ideaLookup = blueprint.ideaId ? ideaStore.findIdeaCandidate(projectId, blueprint.ideaId) : null;
+    if (!blueprint.ideaId || !ideaLookup || ideaLookup.ideaSet.selectedIdeaId !== blueprint.ideaId) {
+      return { ok: false, code: 'NO_IDEA_SELECTED', reason: `CreativeBlueprint "${blueprint.id}" has no linked idea that is the SELECTED candidate of its own IdeaSet.` };
+    }
+    const packageLookup = blueprint.packageId ? packageStore.findPackageCandidate(projectId, blueprint.packageId) : null;
+    if (!blueprint.packageId || !packageLookup || packageLookup.packageSet.selectedPackageId !== blueprint.packageId) {
+      return { ok: false, code: 'NO_PACKAGE_SELECTED', reason: `CreativeBlueprint "${blueprint.id}" has no linked package that is the SELECTED candidate of its own PackageSet.` };
+    }
+    const storyStructure = storyStructureStore.getLatestStoryStructureForBlueprint(projectId, blueprint.id);
+    if (!storyStructure) {
+      return { ok: false, code: 'NO_STORY_STRUCTURE', reason: `no StoryStructure has been derived for CreativeBlueprint "${blueprint.id}" yet.` };
+    }
+  }
+
   return { ok: true, code: null, reason: null, blueprint, gateResult };
 }
 
 // Boolean convenience wrapper — same underlying check, for callers that
 // only need a yes/no (e.g. a future read-only "is this project ready"
 // dashboard query) rather than the structured diagnostic.
-function canEnterProduction(projectId) {
-  return validateProductionPrerequisites(projectId).ok;
+function canEnterProduction(projectId, options) {
+  return validateProductionPrerequisites(projectId, options).ok;
 }
 
 module.exports = {

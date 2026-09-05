@@ -143,6 +143,22 @@ const MATERIAL_ROLES = ['PRIMARY', 'OVERLAY', 'BACKGROUND', 'INSERT'];
 // moves a beat through this enum automatically.
 const BEAT_STATUSES = ['PLANNED', 'RESOLVING', 'RESOLVED', 'APPROVED', 'PLACED', 'STALE'];
 
+// PHASE 1 EDITORIAL SPINE, Part 6 — beat.narrativeRole's VALUE SPACE is
+// services/narration-director-service.js's own NARRATIVE_ROLES
+// (HOOK/EXPLANATION/REVEAL/CONCLUSION/TRANSITION/OTHER) — documented here,
+// not schema-enforced, mirroring this exact file's own established
+// convention for `visualTreatment` (no schema file in this codebase ever
+// requires another schema OR a service file; enum enforcement lives at the
+// service boundary — see beat-graph-derivation-service.js, which validates
+// against narration-director-service.js's real export before ever setting
+// this field).
+//
+// PHASE 1 EDITORIAL SPINE, Part 7 — answers "what should the viewer SEE
+// here, and in what register" (literal footage vs. an explanatory graphic
+// vs. a metaphor) — distinct from visualTreatment (STILL_IMAGE/BROLL_CLIP/
+// etc., which answers "what mechanical form does it take").
+const VISUAL_MODES = ['LITERAL', 'ILLUSTRATIVE', 'EXPLANATORY', 'METAPHORICAL', 'EVIDENCE', 'EMOTIONAL'];
+
 // ---------------------------------------------------------------------------
 // A material component's generation intent — only meaningful when its
 // parent material's materialSource is 'GENERATED_NEW'. Mirrors
@@ -255,6 +271,25 @@ function createVisualBeat(overrides = {}) {
                         // Material Resolution Engine, never a treatment
                         // choice itself
 
+    // PHASE 1 EDITORIAL SPINE, Part 6 — this beat's role in the overall
+    // narrative arc. Value space is narration-director-service.js's own
+    // NARRATIVE_ROLES (see comment above) — null means "not assigned by an
+    // upstream Story Structure," never a fabricated default.
+    narrativeRole: null,
+
+    // PHASE 1 EDITORIAL SPINE, Part 7 — the answer to "what should the
+    // viewer SEE here, and why" as its own structured decision, upstream
+    // of and separate from `visualIntent`'s own (often mechanically
+    // derived) text. `visualMode` is one of VISUAL_MODES; `visualPriority`
+    // is a free-text note on how much this beat's visual choice matters
+    // relative to its neighbors (never a numeric score — no evaluation
+    // pretends visual importance is measurable); `visualChangeRequired`
+    // flags whether this beat MUST look visually different from the beat
+    // before it (a pattern-interrupt requirement, not a retention claim).
+    visualMode: null,
+    visualPriority: null,
+    visualChangeRequired: null,
+
     // --- treatment (see the two-axis comment above) ---
     visualTreatment: null, // one of VISUAL_TREATMENTS — the beat's OVERALL
                              // treatment; 'HYBRID' once materials.length > 1
@@ -326,6 +361,7 @@ function createVisualBeat(overrides = {}) {
 module.exports = {
   VISUAL_TREATMENTS,
   MATERIAL_SOURCES,
+  VISUAL_MODES,
   MOTION_LEVELS,
   COST_PRIORITIES,
   QUALITY_PRIORITIES,

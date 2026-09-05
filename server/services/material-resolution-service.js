@@ -333,10 +333,20 @@ function resolveVisualBeat(projectId, beat) {
       visualTreatment: beat.visualTreatment,
       selectedAssetId: winner.asset.assetId,
       confidence,
+      // PHASE 1 EDITORIAL SPINE, Part 8 — purely informational: surfaces the
+      // beat's own editorial visualIntent (if an upstream Story Structure
+      // set one) alongside the mechanical scoring reason above. This is
+      // ANNOTATION ONLY — it changes no score, no candidate ordering, no
+      // gate, and no field in `breakdown`/`total` above. Material
+      // Resolution's own scoring authority (scoreCandidate/compareCandidates)
+      // is untouched; this is the "provide better structured editorial
+      // intent to the existing resolver" the phase brief asks for, not a
+      // second resolution engine.
       reason:
         `existing ${winner.asset.type} asset ${winner.asset.assetId} satisfies "${beat.visualTreatment}"` +
         (winner.canonical ? ' (its keyframe\'s canonical selection)' : '') +
-        (winner.asset.approvalStatus === 'APPROVED' ? ', approved' : ', unreviewed (NONE)'),
+        (winner.asset.approvalStatus === 'APPROVED' ? ', approved' : ', unreviewed (NONE)') +
+        (beat.visualIntent ? ` — editorial visual intent: "${beat.visualIntent}"` : ''),
     },
     candidates: candidates.map((c) => ({
       assetId: c.asset.assetId,

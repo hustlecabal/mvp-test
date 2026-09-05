@@ -51,8 +51,9 @@
 // already-validated StoryboardShot.recommendationIds[] — a pure
 // provenance carry-through, never a new inference.
 
-const { VISUAL_TREATMENTS, createVisualBeat, createIdentityRequirements, createNarrationSegment } = require('../schemas/visual-beat-schema');
-const { createBeatGraph } = require('../schemas/beat-graph-schema');
+const { VISUAL_TREATMENTS, VISUAL_MODES, createVisualBeat, createIdentityRequirements, createNarrationSegment } = require('../schemas/visual-beat-schema');
+const { BEAT_EDGE_KINDS, createBeatEdge, createBeatGraph } = require('../schemas/beat-graph-schema');
+const { NARRATIVE_ROLES } = require('./narration-director-service');
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -140,6 +141,19 @@ function diagnostic(code, shotId, message) {
 //     treatments: { [shotId]: one of VISUAL_TREATMENTS },        // explicit only, never inferred
 //     narrationSegments: { [shotId]: createNarrationSegment() shape }, // explicit only, never inferred
 //     visualBible: a real schemas/creative-schema.js createVisualBible() object, // optional, read-only
+//
+//     // PHASE 1 EDITORIAL SPINE, Part 6/7 — the SAME "explicit, structured,
+//     // never inferred from free text" discipline as treatments/
+//     // narrationSegments above, extended to the three new pieces of
+//     // editorial intent an upstream Story Structure can now supply
+//     // (services/story-structure-service.js's buildBeatGraphContext()).
+//     // This does NOT weaken the file's own anti-inference rule — it is
+//     // the proper upstream structured input the header above already
+//     // calls for, so this derivation is never asked to guess narrative
+//     // meaning out of a shot's own prose.
+//     narrativeRoles: { [shotId]: one of NARRATIVE_ROLES },       // explicit only, never inferred
+//     visualObjectives: { [shotId]: { visualObjective, visualMode: one of VISUAL_MODES, visualPriority, visualChangeRequired } }, // explicit only, never inferred
+//     edges: [{ fromShotId, toShotId, kind: one of BEAT_EDGE_KINDS, note }], // explicit only, never inferred — both shotIds must resolve to a beat this derivation actually produced, or the edge is dropped with a diagnostic
 //   }
 function deriveBeatGraph(storyboard, context = {}) {
   const createdAt = new Date().toISOString();
@@ -179,6 +193,29 @@ function deriveBeatGraph(storyboard, context = {}) {
   const visualBible = isPlainObject(context.visualBible) ? context.visualBible : null;
   if (context.visualBible !== undefined && !visualBible) {
     diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.visualBible must be a plain object — ignored, identity references left unchecked'));
+  }
+
+  // PHASE 1 EDITORIAL SPINE, Part 6/7 — same validate-then-ignore-if-
+  // malformed discipline as treatments/narrationSegments above.
+  let narrativeRoles = context.narrativeRoles;
+  if (narrativeRoles !== undefined && !isPlainObject(narrativeRoles)) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.narrativeRoles must be a plain object keyed by shotId — ignored'));
+    narrativeRoles = {};
+  } else {
+    narrativeRoles = narrativeRoles || {};
+  }
+
+  let visualObjectives = context.visualObjectives;
+  if (visualObjectives !== undefined && !isPlainObject(visualObjectives)) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.visualObjectives must be a plain object keyed by shotId — ignored'));
+    visualObjectives = {};
+  } else {
+    visualObjectives = visualObjectives || {};
+  }
+
+  const rawEdges = Array.isArray(context.edges) ? context.edges : [];
+  if (context.edges !== undefined && !Array.isArray(context.edges)) {
+    diagnostics.push(diagnostic('INVALID_CONTEXT', null, 'context.edges must be an array — ignored'));
   }
 
   const sceneIds = new Set(storyboard.scenes.filter((s) => s && s.sceneId).map((s) => s.sceneId));
@@ -265,10 +302,55 @@ function deriveBeatGraph(storyboard, context = {}) {
     }
 
     // --- creative-intent warning (Part 8) — non-fatal ---
-    const visualIntent = firstNonEmpty(shot.visualDescription, shot.subject, shot.action);
+    const mechanicalVisualIntent = firstNonEmpty(shot.visualDescription, shot.subject, shot.action);
     const narrativePurpose = firstNonEmpty(shot.purpose, shot.narrativeBeat);
     if (!nonEmptyString(shot.purpose) && !nonEmptyString(shot.narrativeBeat) && !nonEmptyString(shot.visualDescription)) {
       diagnostics.push(diagnostic('MISSING_VISUAL_INTENT', shot.shotId, `shot "${shot.shotId}" has no purpose, narrativeBeat, or visualDescription`));
+    }
+
+    // --- explicit narrativeRole override only (Part 6) — never inferred,
+    // never fuzzy-classified from shot.purpose/narrativeBeat text. Same
+    // precedence style as visualTreatment above: an invalid value is a
+    // rejected beat (a caller-supplied editorial decision that doesn't
+    // resolve to a real role is a real authoring error, not something to
+    // silently drop to null), a missing one simply stays null. ---
+    let narrativeRole = null;
+    if (Object.prototype.hasOwnProperty.call(narrativeRoles, shot.shotId)) {
+      const role = narrativeRoles[shot.shotId];
+      if (!NARRATIVE_ROLES.includes(role)) {
+        diagnostics.push(diagnostic('INVALID_NARRATIVE_ROLE', shot.shotId, `narrativeRoles["${shot.shotId}"] value "${role}" is not one of ${NARRATIVE_ROLES.join(', ')}`));
+        rejectedBeatCount += 1;
+        continue;
+      }
+      narrativeRole = role;
+    }
+
+    // --- explicit visual objective override only (Part 7) — an explicit
+    // visualObjective TEXT wins over the mechanical firstNonEmpty fallback
+    // (same "explicit override wins" precedence as visualTreatment/
+    // narrativeRole above); visualMode/visualPriority/visualChangeRequired
+    // have no mechanical fallback at all — they stay null unless this
+    // upstream, structured input supplies them. ---
+    let visualIntent = mechanicalVisualIntent;
+    let visualMode = null;
+    let visualPriority = null;
+    let visualChangeRequired = null;
+    if (Object.prototype.hasOwnProperty.call(visualObjectives, shot.shotId)) {
+      const vo = visualObjectives[shot.shotId];
+      if (!isPlainObject(vo)) {
+        diagnostics.push(diagnostic('INVALID_VISUAL_OBJECTIVE', shot.shotId, `visualObjectives["${shot.shotId}"] must be a plain object`));
+        rejectedBeatCount += 1;
+        continue;
+      }
+      if (vo.visualMode !== undefined && vo.visualMode !== null && !VISUAL_MODES.includes(vo.visualMode)) {
+        diagnostics.push(diagnostic('INVALID_VISUAL_OBJECTIVE', shot.shotId, `visualObjectives["${shot.shotId}"].visualMode "${vo.visualMode}" is not one of ${VISUAL_MODES.join(', ')}`));
+        rejectedBeatCount += 1;
+        continue;
+      }
+      if (nonEmptyString(vo.visualObjective)) visualIntent = vo.visualObjective;
+      visualMode = vo.visualMode !== undefined ? vo.visualMode : null;
+      visualPriority = vo.visualPriority !== undefined ? vo.visualPriority : null;
+      visualChangeRequired = vo.visualChangeRequired !== undefined ? vo.visualChangeRequired : null;
     }
 
     const beat = createVisualBeat({
@@ -281,6 +363,10 @@ function deriveBeatGraph(storyboard, context = {}) {
       duration,
       narrativePurpose,
       visualIntent,
+      narrativeRole, // null unless explicitly supplied via context.narrativeRoles — never inferred
+      visualMode, // null unless explicitly supplied via context.visualObjectives — never inferred
+      visualPriority,
+      visualChangeRequired,
       visualTreatment, // null unless explicitly supplied — never inferred
       // INT-2.5-P0 — copied through verbatim from the source shot's own
       // already-validated (P0-4A) recommendationIds[]. Never re-resolved,
@@ -311,7 +397,34 @@ function deriveBeatGraph(storyboard, context = {}) {
   const derivedBeatCount = beats.length;
   const status = totalShots === 0 ? 'DERIVED' : derivedBeatCount === totalShots ? 'DERIVED' : derivedBeatCount === 0 ? 'FAILED' : 'PARTIAL';
 
-  const beatGraph = createBeatGraph({ projectId: storyboard.projectId, beats, edges: [] });
+  // PHASE 1 EDITORIAL SPINE, Part 6 — populates real BeatEdge relationships
+  // FROM EXPLICIT, ALREADY-DECIDED STRUCTURED INPUT ONLY (context.edges),
+  // never inferred from beat content — the same discipline every other
+  // field in this file already follows. Beat identity is beat.id ===
+  // shot.shotId (see file header), so an edge's fromShotId/toShotId are
+  // validated against the shotIds this derivation actually produced a beat
+  // for — a dangling reference (a rejected shot, or a typo) is dropped with
+  // a diagnostic, never silently invented or half-applied.
+  const producedBeatIds = new Set(beats.map((b) => b.id));
+  const edges = [];
+  for (const rawEdge of rawEdges) {
+    if (!isPlainObject(rawEdge)) {
+      diagnostics.push(diagnostic('INVALID_BEAT_EDGE', null, 'each context.edges entry must be a plain object — dropped'));
+      continue;
+    }
+    const { fromShotId, toShotId, kind, note } = rawEdge;
+    if (!BEAT_EDGE_KINDS.includes(kind)) {
+      diagnostics.push(diagnostic('INVALID_BEAT_EDGE', fromShotId || null, `edge kind "${kind}" is not one of ${BEAT_EDGE_KINDS.join(', ')} — dropped`));
+      continue;
+    }
+    if (!producedBeatIds.has(fromShotId) || !producedBeatIds.has(toShotId)) {
+      diagnostics.push(diagnostic('DANGLING_BEAT_EDGE', fromShotId || null, `edge references fromShotId "${fromShotId}" / toShotId "${toShotId}", and at least one does not resolve to a beat this derivation produced — dropped`));
+      continue;
+    }
+    edges.push(createBeatEdge({ fromBeatId: fromShotId, toBeatId: toShotId, kind, note: note || null }));
+  }
+
+  const beatGraph = createBeatGraph({ projectId: storyboard.projectId, beats, edges });
 
   return {
     beatGraph,

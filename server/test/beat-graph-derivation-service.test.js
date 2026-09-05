@@ -396,7 +396,14 @@ test('28. the source Storyboard object is never mutated by derivation', () => {
 test('29. no persistence — services/beat-graph-derivation-service.js requires no fs/store module', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'services', 'beat-graph-derivation-service.js'), 'utf8');
   const requires = [...text.matchAll(/require\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((m) => m[1]);
-  assert.deepEqual(requires.sort(), ['../schemas/beat-graph-schema', '../schemas/visual-beat-schema'].sort());
+  // PHASE 1 EDITORIAL SPINE, Part 6 — './narration-director-service' was
+  // added to reuse its NARRATIVE_ROLES enum verbatim (never a fs/network/
+  // store module itself — narration-director-service.js's own header
+  // documents it as PURE and DETERMINISTIC, requiring only
+  // '../schemas/narration-schema'), so this invariant still holds in
+  // spirit: no persistence, no network, no provider — just one more
+  // shared, pure constant.
+  assert.deepEqual(requires.sort(), ['../schemas/beat-graph-schema', '../schemas/visual-beat-schema', './narration-director-service'].sort());
 });
 
 // --- 30. no external/network calls -------------------------------------------------------------------
@@ -495,4 +502,98 @@ test('35. a malformed context.treatments/narrationSegments/visualBible is report
   assert.equal(result.status, 'DERIVED');
   assert.ok(result.diagnostics.some((d) => d.code === 'INVALID_CONTEXT'));
   assert.equal(result.beatGraph.beats[0].visualTreatment, null);
+});
+
+// ===========================================================================
+// PHASE 1 EDITORIAL SPINE, Part 6/7 — narrativeRole / visualObjectives /
+// edges are the SAME "explicit, structured, never inferred" context
+// extension as treatments/narrationSegments above.
+// ===========================================================================
+
+test('36. context.narrativeRoles sets beat.narrativeRole explicitly, and a beat with no entry stays null', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shotA = createStoryboardShot({ sceneId: scene.sceneId, order: 1, duration: 4 });
+  const shotB = createStoryboardShot({ sceneId: scene.sceneId, order: 2, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shotA, shotB] }), { narrativeRoles: { [shotA.shotId]: 'HOOK' } });
+  assert.equal(result.status, 'DERIVED');
+  const beatA = result.beatGraph.beats.find((b) => b.id === shotA.shotId);
+  const beatB = result.beatGraph.beats.find((b) => b.id === shotB.shotId);
+  assert.equal(beatA.narrativeRole, 'HOOK');
+  assert.equal(beatB.narrativeRole, null);
+});
+
+test('37. an invalid context.narrativeRoles value rejects that one beat with INVALID_NARRATIVE_ROLE', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shot = createStoryboardShot({ sceneId: scene.sceneId, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shot] }), { narrativeRoles: { [shot.shotId]: 'NOT_A_REAL_ROLE' } });
+  assert.equal(result.status, 'FAILED');
+  assert.ok(result.diagnostics.some((d) => d.code === 'INVALID_NARRATIVE_ROLE'));
+});
+
+test('38. context.visualObjectives overrides visualIntent and sets visualMode/visualPriority/visualChangeRequired', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shot = createStoryboardShot({ sceneId: scene.sceneId, duration: 4, visualDescription: 'the mechanical fallback text' });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shot] }), {
+    visualObjectives: { [shot.shotId]: { visualObjective: 'a deliberate editorial visual concept', visualMode: 'METAPHORICAL', visualPriority: 'primary', visualChangeRequired: true } },
+  });
+  assert.equal(result.status, 'DERIVED');
+  const beat = result.beatGraph.beats[0];
+  assert.equal(beat.visualIntent, 'a deliberate editorial visual concept');
+  assert.equal(beat.visualMode, 'METAPHORICAL');
+  assert.equal(beat.visualPriority, 'primary');
+  assert.equal(beat.visualChangeRequired, true);
+});
+
+test('39. an invalid context.visualObjectives.visualMode rejects that beat', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shot = createStoryboardShot({ sceneId: scene.sceneId, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shot] }), { visualObjectives: { [shot.shotId]: { visualMode: 'NOT_A_REAL_MODE' } } });
+  assert.equal(result.status, 'FAILED');
+  assert.ok(result.diagnostics.some((d) => d.code === 'INVALID_VISUAL_OBJECTIVE'));
+});
+
+test('40. context.edges populates real BeatEdge relationships between beats this derivation actually produced', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shotA = createStoryboardShot({ sceneId: scene.sceneId, order: 1, duration: 4 });
+  const shotB = createStoryboardShot({ sceneId: scene.sceneId, order: 2, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shotA, shotB] }), {
+    edges: [{ fromShotId: shotA.shotId, toShotId: shotB.shotId, kind: 'TRANSITIONS_TO', note: 'sequential' }],
+  });
+  assert.equal(result.beatGraph.edges.length, 1);
+  assert.equal(result.beatGraph.edges[0].fromBeatId, shotA.shotId);
+  assert.equal(result.beatGraph.edges[0].toBeatId, shotB.shotId);
+  assert.equal(result.beatGraph.edges[0].kind, 'TRANSITIONS_TO');
+});
+
+test('41. a dangling context.edges entry (references a shotId with no produced beat) is dropped with a diagnostic, never invented', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shot = createStoryboardShot({ sceneId: scene.sceneId, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shot] }), {
+    edges: [{ fromShotId: shot.shotId, toShotId: 'does-not-exist', kind: 'DEPENDS_ON' }],
+  });
+  assert.equal(result.beatGraph.edges.length, 0);
+  assert.ok(result.diagnostics.some((d) => d.code === 'DANGLING_BEAT_EDGE'));
+});
+
+test('42. an edge with an invalid kind is dropped with a diagnostic', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shotA = createStoryboardShot({ sceneId: scene.sceneId, order: 1, duration: 4 });
+  const shotB = createStoryboardShot({ sceneId: scene.sceneId, order: 2, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shotA, shotB] }), {
+    edges: [{ fromShotId: shotA.shotId, toShotId: shotB.shotId, kind: 'NOT_A_REAL_KIND' }],
+  });
+  assert.equal(result.beatGraph.edges.length, 0);
+  assert.ok(result.diagnostics.some((d) => d.code === 'INVALID_BEAT_EDGE'));
+});
+
+test('43. no editorial-spine context supplied at all -> narrativeRole/visualMode/visualPriority/visualChangeRequired stay null and edges stay empty (fully backward compatible)', () => {
+  const scene = createStoryboardScene({ title: 'S1' });
+  const shot = createStoryboardShot({ sceneId: scene.sceneId, duration: 4 });
+  const result = deriveBeatGraph(board({ scenes: [scene], shots: [shot] }));
+  const beat = result.beatGraph.beats[0];
+  assert.equal(beat.narrativeRole, null);
+  assert.equal(beat.visualMode, null);
+  assert.equal(beat.visualPriority, null);
+  assert.equal(beat.visualChangeRequired, null);
+  assert.deepEqual(result.beatGraph.edges, []);
 });

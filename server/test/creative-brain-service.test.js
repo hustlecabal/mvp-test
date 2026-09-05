@@ -536,3 +536,49 @@ test('33. GOLDEN CREATIVE TEST — ONE call takes a real RecommendationSet + top
   assert.ok(refetched);
   assert.equal(refetched.recommendationSetId, recSet.id);
 });
+
+// ===========================================================================
+// PHASE 1 EDITORIAL SPINE, Part 4 — Blueprint integration: Strategy -> Idea
+// -> Package -> Angle -> Blueprint. Angle generation (Stages 1-4 above) is
+// unchanged and still runs; a selected Package becomes AUTHORITATIVE for
+// title/corePromise/hookStrategy only when one is supplied. strategyId/
+// ideaId/packageId are pure provenance links.
+// ===========================================================================
+
+test('18. with no strategyId/selectedIdea/selectedPackage supplied, Blueprint identity fields come from the angle exactly as before this phase (fully backward compatible)', async () => {
+  const project = newProject();
+  const recSet = addRecommendationSet(project.id);
+  await creativeBrainService.generateCreativeBlueprint(project.id, { recommendationSetId: recSet.id, topic: 'career change', provider: createFakeCreativeBrainProvider() });
+  approveCreativeBrain(project.id, recSet.id);
+  const result = await creativeBrainService.generateCreativeBlueprint(project.id, { recommendationSetId: recSet.id, topic: 'career change', provider: createFakeCreativeBrainProvider() });
+  assert.equal(result.ok, true);
+  assert.equal(result.blueprint.title, result.blueprint.concept);
+  assert.equal(result.blueprint.strategyId, null);
+  assert.equal(result.blueprint.ideaId, null);
+  assert.equal(result.blueprint.packageId, null);
+});
+
+test('19. a selectedPackage becomes authoritative for title/corePromise/hookStrategy, and strategyId/ideaId/packageId are persisted as provenance links', async () => {
+  const project = newProject();
+  const recSet = addRecommendationSet(project.id);
+  const selectedIdea = { ideaId: 'idea-123', topic: 'career change', premise: 'the real reason people change careers late' };
+  const selectedPackage = { packageId: 'package-456', title: 'Why Career Change Actually Happens', promise: 'the real reason people change careers late', curiosityMechanism: 'opens on a contradiction between stated and real reasons' };
+  await creativeBrainService.generateCreativeBlueprint(project.id, {
+    recommendationSetId: recSet.id, topic: selectedIdea.topic, strategyId: 'strategy-789', selectedIdea, selectedPackage, provider: createFakeCreativeBrainProvider(),
+  });
+  approveCreativeBrain(project.id, recSet.id);
+  const result = await creativeBrainService.generateCreativeBlueprint(project.id, {
+    recommendationSetId: recSet.id, topic: selectedIdea.topic, strategyId: 'strategy-789', selectedIdea, selectedPackage, provider: createFakeCreativeBrainProvider(),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.blueprint.title, 'Why Career Change Actually Happens');
+  assert.equal(result.blueprint.corePromise, 'the real reason people change careers late');
+  assert.equal(result.blueprint.hookStrategy, 'opens on a contradiction between stated and real reasons');
+  assert.equal(result.blueprint.strategyId, 'strategy-789');
+  assert.equal(result.blueprint.ideaId, 'idea-123');
+  assert.equal(result.blueprint.packageId, 'package-456');
+  // Angle generation/evaluation still ran — candidates/evaluationResults
+  // are still real and present, never skipped.
+  assert.equal(result.blueprint.candidates.length, 3);
+  assert.ok(result.blueprint.narrativeStrategy && result.blueprint.narrativeStrategy.length > 0);
+});
