@@ -54,8 +54,30 @@ const path = require('path');
 const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
 const { createAudioEvent, createTranscript, createWordTimestamp } = require('../schemas/audio-schema');
-const defaultVoiceProvider = require('./voice/espeak-voice-provider');
+const espeakVoiceProvider = require('./voice/espeak-voice-provider');
+const ai33VoiceProvider = require('./voice/ai33-voice-provider');
 const defaultAlignmentProvider = require('./voice/whisper-alignment-provider');
+
+// AI33 TTS INTEGRATION — provider enable/disable control, mirroring the
+// EXACT credential-presence-gates-availability pattern services/media-
+// acquisition-service.js's own listAvailableProviders() already
+// established (a provider is only "available" when its real credential is
+// configured; nothing here weakens or duplicates that pattern, it is
+// applied to voice generation for the first time). This is the ONE seam
+// that makes AI33 reachable through a real production run WITHOUT adding
+// any new parameter to production-orchestrator-service.js (which calls
+// generateNarratedAudioEvent() with no voiceProvider override at all,
+// confirmed by inspection before this milestone's implementation) —
+// resolved fresh on every call (not memoized at module load) so a test or
+// caller that sets/clears the env vars mid-process is respected. When
+// AI33 is not configured, behavior is 100% unchanged from before this
+// milestone: espeak-voice-provider.js remains the default.
+function resolveDefaultVoiceProvider() {
+  if (process.env.EVOLINK_AI33_API_KEY && process.env.EVOLINK_AI33_VOICE_ID) {
+    return ai33VoiceProvider;
+  }
+  return espeakVoiceProvider;
+}
 
 // ---------------------------------------------------------------------------
 // Part 12 — deterministic script/audio consistency check. Compares the
@@ -113,7 +135,7 @@ function fail(code, message, extra = {}) {
 //   espeak-ng/faster-whisper adapters — override only for controlled
 //   failure-path testing (services/voice/*-provider-interface.js document
 //   the exact contract any replacement must satisfy).
-function generateNarratedAudioEvent({ projectId, narrationDirection, voiceProvider = defaultVoiceProvider, alignmentProvider = defaultAlignmentProvider } = {}) {
+function generateNarratedAudioEvent({ projectId, narrationDirection, voiceProvider = resolveDefaultVoiceProvider(), alignmentProvider = defaultAlignmentProvider } = {}) {
   if (!projectId) {
     return fail('INVALID_NARRATION_DIRECTION', 'a projectId is required');
   }
@@ -166,7 +188,26 @@ function generateNarratedAudioEvent({ projectId, narrationDirection, voiceProvid
   }
   fs.rmSync(tempWavPath, { force: true });
 
-  const asset = timelineStore.addAsset(projectId, { assetId, type: 'audio', provider: 'local' });
+  // AI33 TTS INTEGRATION — additive, optional provenance handoff. A voice
+  // provider MAY attach a `providerMetadata` field alongside the
+  // interface's own declared VoiceGenerationResult shape (see
+  // services/voice/ai33-voice-provider.js's own header for why the
+  // interface's declared shape itself stays provider-neutral). When
+  // present, it is recorded onto the real Asset using THAT schema's own
+  // existing provider/model/generationId/url fields (schemas/production-
+  // schema.js's createAsset()) — never a new asset model, never a new
+  // provenance system. espeak-voice-provider.js never sets this field, so
+  // every existing call to this function keeps recording `provider:
+  // 'local'` exactly as before this change.
+  const providerMetadata = voiceResult.providerMetadata;
+  const asset = timelineStore.addAsset(projectId, {
+    assetId,
+    type: 'audio',
+    provider: providerMetadata ? providerMetadata.provider : 'local',
+    model: providerMetadata ? providerMetadata.voiceId : null,
+    generationId: providerMetadata ? providerMetadata.taskId : null,
+    url: providerMetadata ? providerMetadata.remoteAudioUrl : null,
+  });
   if (!asset) {
     return fail('VOICE_GENERATION_FAILED', `project "${projectId}" does not exist — asset could not be recorded`);
   }
@@ -218,6 +259,10 @@ function generateNarratedAudioEvent({ projectId, narrationDirection, voiceProvid
       meanConfidence: alignmentResult.words.reduce((sum, w) => sum + (typeof w.confidence === 'number' ? w.confidence : 0), 0) / alignmentResult.words.length,
       similarity: consistency.similarity,
     },
+    // Additive, optional — present only when the voice provider attached
+    // one (see the providerMetadata comment above). undefined for every
+    // existing (espeak) caller, exactly as before this change.
+    providerMetadata,
   };
 }
 
