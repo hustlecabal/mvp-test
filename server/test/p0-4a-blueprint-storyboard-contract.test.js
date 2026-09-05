@@ -220,7 +220,13 @@ test('7b. adding a new shot to a storyboard preserves an existing shot\'s own re
 });
 
 // 8. no unrelated fields were changed
-test('8. every pre-existing StoryboardShot field is untouched — exact field-set comparison against the pre-P0-4A shape plus exactly the 2 new fields', () => {
+// Updated for the Creative Production Contract milestone (Section 7 — SHOT
+// EXPANSION), which additively extended StoryboardShot/Storyboard further.
+// This test's job stays the same — prove nothing pre-existing was touched
+// — so it now lists the P0-4A-era shape as its own frozen baseline plus
+// BOTH rounds of additive fields, rather than re-litigating P0-4A's own
+// already-settled 2-field diff.
+test('8. every pre-existing StoryboardShot field is untouched — exact field-set comparison against the pre-P0-4A shape plus exactly the 2 P0-4A fields plus the Creative Production Contract additive fields', () => {
   const shot = schema.createStoryboardShot();
   const preExistingFields = [
     'shotId', 'sceneId', 'order', 'duration', 'purpose', 'narrativeBeat', 'visualDescription', 'subject',
@@ -228,14 +234,19 @@ test('8. every pre-existing StoryboardShot field is untouched — exact field-se
     'continuityRequirements', 'characterReferences', 'locationReferences', 'propReferences', 'referenceAssets',
     'promptDraft', 'status',
   ];
-  const newFields = ['recommendationIds', 'visualTreatment'];
-  assert.deepEqual(Object.keys(shot).sort(), [...preExistingFields, ...newFields].sort());
+  const p0_4aFields = ['recommendationIds', 'visualTreatment'];
+  const creativeProductionContractFields = [
+    'narrativeBeatIds', 'characterStates', 'blocking', 'atmosphere', 'emotionalIntent',
+    'transitionIn', 'transitionOut', 'continuityRequirementsResolved', 'generationUnitIds',
+    'stale', 'staleReason',
+  ];
+  assert.deepEqual(Object.keys(shot).sort(), [...preExistingFields, ...p0_4aFields, ...creativeProductionContractFields].sort());
 });
 
-test('8b. every pre-existing Storyboard field is untouched — exact field-set comparison plus exactly 1 new field (blueprintId)', () => {
+test('8b. every pre-existing Storyboard field is untouched — exact field-set comparison plus exactly 1 P0-4A field (blueprintId) plus the Creative Production Contract additive field (sequenceIds)', () => {
   const storyboard = schema.createStoryboard();
   const preExistingFields = ['id', 'projectId', 'scenes', 'shots', 'version', 'updatedAt', 'updatedBy', 'changeNote', 'history'];
-  assert.deepEqual(Object.keys(storyboard).sort(), [...preExistingFields, 'blueprintId'].sort());
+  assert.deepEqual(Object.keys(storyboard).sort(), [...preExistingFields, 'blueprintId', 'sequenceIds'].sort());
 });
 
 // ---------------------------------------------------------------------------
