@@ -14,10 +14,11 @@
 // decideGateResult) exactly as a human operator would — it does not
 // bypass them, weaken them, or introduce a second approval mechanism.
 //
-// This file does NOT generate the Idea or the Package itself — call
-// idea-engine-service.js / packaging-engine-service.js first (they are
-// independent, directly testable/callable on their own) and pass the
-// resulting selected Idea/Package in.
+// This file does NOT generate the Idea, the Package, or (STORY
+// ARCHITECTURE ENGINE) the StoryArgument itself — call idea-engine-
+// service.js / packaging-engine-service.js / story-architecture-
+// service.js first (each is independent, directly testable/callable on
+// its own) and pass the resulting selected records in.
 
 const creativeBrainService = require('./creative-brain-service');
 const creativeBlueprintService = require('./creative-blueprint-service');
@@ -72,13 +73,27 @@ async function buildApprovedBlueprint(projectId, { strategyId, selectedIdea, sel
   return { ok: true, blueprint: approved.blueprint, gateResult: decided.gateResult };
 }
 
-// Derives + persists a StoryStructure for an APPROVED Blueprint, authors it
-// into a real Storyboard, and returns the exact context object
-// production-orchestrator-service.js's startProduction() already accepts
-// via options.narrativeRoles/visualObjectives/edges (see beat-graph-
-// derivation-service.js's own extended context shape, Phase 1 Part 6/7).
-function buildStoryStructureAndStoryboard(projectId, blueprint, { beatCount, treatments = {}, treatmentByRole = {}, durations = {}, durationByRole = {}, sceneTitle } = {}) {
-  const derived = storyStructureService.deriveStoryStructure(blueprint, { beatCount });
+// Derives (or, STORY ARCHITECTURE ENGINE, converts an already-selected
+// StoryArgument into) + persists a StoryStructure for an APPROVED
+// Blueprint, authors it into a real Storyboard, and returns the exact
+// context object production-orchestrator-service.js's startProduction()
+// already accepts via options.narrativeRoles/visualObjectives/edges (see
+// beat-graph-derivation-service.js's own extended context shape, Phase 1
+// Part 6/7) — PLUS, when a storyArgument was supplied, real
+// narrationSegments/materialOptions built directly from that argument's
+// own beat claims (story-structure-service.js's buildNarrationSegments/
+// buildMaterialOptions), so a caller no longer has to hand-author
+// per-beat narration text (this phase's own explicit success criterion).
+//
+//   options.storyArgument — a real, already-selected schemas/story-
+//     argument-schema.js createStoryArgument() object (services/story-
+//     architecture-service.js's own output). When supplied, this is the
+//     PREFERRED, content-grounded path (buildStoryStructureFromArgument).
+//     When omitted, this function falls back to the ORIGINAL Phase 1
+//     positional-template path (deriveStoryStructure) — fully backward
+//     compatible with every existing caller/test.
+function buildStoryStructureAndStoryboard(projectId, blueprint, { beatCount, storyArgument, treatments = {}, treatmentByRole = {}, durations = {}, durationByRole = {}, sceneTitle } = {}) {
+  const derived = storyArgument ? storyStructureService.buildStoryStructureFromArgument(storyArgument) : storyStructureService.deriveStoryStructure(blueprint, { beatCount });
   if (!derived.ok) return { ok: false, code: derived.code, reason: derived.reason };
 
   const saved = storyStructureStore.addStoryStructure(projectId, derived.storyStructure);
@@ -88,8 +103,10 @@ function buildStoryStructureAndStoryboard(projectId, blueprint, { beatCount, tre
   if (!authored.ok) return { ok: false, code: 'AUTHOR_STORYBOARD_FAILED', reason: authored.reason };
 
   const beatGraphContext = storyStructureService.buildBeatGraphContext(saved.storyStructure, authored.beatKeyToShotId);
+  const narrationSegments = storyStructureService.buildNarrationSegments(saved.storyStructure, authored.beatKeyToShotId);
+  const materialOptions = storyStructureService.buildMaterialOptions(saved.storyStructure, authored.beatKeyToShotId);
 
-  return { ok: true, storyStructure: saved.storyStructure, storyboard: authored.storyboard, beatKeyToShotId: authored.beatKeyToShotId, beatGraphContext };
+  return { ok: true, storyStructure: saved.storyStructure, storyboard: authored.storyboard, beatKeyToShotId: authored.beatKeyToShotId, beatGraphContext, narrationSegments, materialOptions };
 }
 
 module.exports = { buildApprovedBlueprint, buildStoryStructureAndStoryboard };

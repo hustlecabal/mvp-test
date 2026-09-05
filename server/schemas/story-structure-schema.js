@@ -58,13 +58,51 @@ function createVisualObjective(overrides = {}) {
 // One planned beat's editorial intent. narrativeRole's value space matches
 // services/narration-director-service.js's own NARRATIVE_ROLES —
 // documented, not required, same reasoning as above.
+//
+// STORY ARCHITECTURE ENGINE — additive fields (claim/whyItExists/resolves/
+// creates/paysOffBeatKeys/beatFunction), extending this SAME beat-plan
+// shape rather than inventing a parallel "StoryArgumentBeat" structure
+// (avoiding duplicate state/a parallel pipeline, per that phase's explicit
+// instruction). Every StoryStructure in this codebase — whether produced
+// by the old positional deriveStoryStructure() or the new content-
+// grounded services/story-architecture-service.js — is built from this
+// one beat-plan factory.
 function createStoryBeatPlan(overrides = {}) {
-  const { visualObjective, ...rest } = overrides;
+  const { visualObjective, resolves, creates, paysOffBeatKeys, ...rest } = overrides;
   const base = {
     beatKey: crypto.randomUUID(),
     order: null,
     purpose: '', // what this beat is FOR, in the story's own terms
-    narrativeRole: null, // one of narration-director-service.js's NARRATIVE_ROLES
+    narrativeRole: null, // one of narration-director-service.js's NARRATIVE_ROLES — the COARSE role used for narration delivery tone (HOOK/EXPLANATION/REVEAL/CONCLUSION/TRANSITION/OTHER)
+
+    // STORY ARCHITECTURE ENGINE — a RICHER, shape-specific label than
+    // narrativeRole (e.g. 'MECHANISM', 'COUNTEREVIDENCE', 'CONSEQUENCE') —
+    // documented, not enforced (same "value space documented, enforcement
+    // at the service boundary" convention as narrativeRole/visualTreatment
+    // above). Exists because narrativeRole's closed vocabulary is
+    // deliberately coarse (it only needs to pick a narration delivery
+    // profile) and must never be widened just to describe a story SHAPE's
+    // own step names — beatFunction is the one place a story shape's own
+    // vocabulary lives, never forcing a new narrativeRole value into
+    // existence for it.
+    beatFunction: null,
+
+    // STORY ARCHITECTURE ENGINE — the actual, topic-grounded content
+    // claim this beat makes. THE load-bearing field this phase adds: a
+    // substantive beat with no claim (or a claim identical/near-identical
+    // to another beat's) is a structural defect a real Story Architecture
+    // evaluator must catch (see services/story-architecture/
+    // distinctness-checker.js) — never left to visualObjective/purpose
+    // alone to carry the content.
+    claim: null,
+
+    // STORY ARCHITECTURE ENGINE — WHY this beat exists in the argument
+    // (its editorial job), distinct from `purpose` (which predates this
+    // phase and is often a generic instruction like "Escalate: step 1 of
+    // the argument") — whyItExists explains the beat's REASON relative to
+    // the surrounding argument, e.g. "introduces the mechanism the hook's
+    // question depends on."
+    whyItExists: null,
 
     // Attention-mechanics flags (Part 5/6) — structural design choices,
     // never measured outcomes. A beat may be more than one of these at
@@ -77,6 +115,26 @@ function createStoryBeatPlan(overrides = {}) {
 
     transition: null, // same field name/shape as shot.transition
     unresolvedQuestion: null, // the open loop this beat leaves, if any — null means "resolves cleanly, opens nothing"
+
+    // STORY ARCHITECTURE ENGINE — structured open-loop tracking (rather
+    // than prose alone): `creates` holds the questionId(s) a StoryArgument
+    // question record (schemas/story-argument-schema.js's
+    // createStoryQuestion) this beat introduces; `resolves` holds the
+    // questionId(s) this beat answers. `unresolvedQuestion` above stays as
+    // the free-text, human-readable restatement of whichever question this
+    // beat leaves open — the two are never a second source of truth for
+    // each other; `creates`/`resolves` are the structured, id-based
+    // relationship a BeatEdge can actually be built from.
+    resolves: Array.isArray(resolves) ? [...resolves] : [],
+    creates: Array.isArray(creates) ? [...creates] : [],
+
+    // STORY ARCHITECTURE ENGINE — structured reveal/payoff linkage: the
+    // beatKey(s) of the EARLIER beat(s) whose setup this beat pays off.
+    // Never inferred from prose — an evaluator (revealLinkage/
+    // payoffLinkage dimensions) checks this is non-empty for a REVEAL/
+    // PAYOFF-flagged beat and that every referenced beatKey resolves to a
+    // real, earlier beat in the same StoryStructure.
+    paysOffBeatKeys: Array.isArray(paysOffBeatKeys) ? [...paysOffBeatKeys] : [],
 
     visualObjective: visualObjective !== undefined ? (visualObjective === null ? null : createVisualObjective(visualObjective)) : createVisualObjective(),
   };

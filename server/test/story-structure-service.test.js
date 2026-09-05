@@ -22,6 +22,8 @@ const storyStructureStore = require('../services/story-structure-store');
 const storyStructureService = require('../services/story-structure-service');
 const { deriveBeatGraph } = require('../services/beat-graph-derivation-service');
 const { createCreativeBlueprint } = require('../schemas/creative-blueprint-schema');
+const { createStoryArgument } = require('../schemas/story-argument-schema');
+const { createDeterministicStoryArchitectureProvider } = require('../services/story-architecture/deterministic-story-architecture-provider');
 
 function newProject() {
   return projectStore.createProject({ title: 'story structure test', topic: 'x' });
@@ -179,4 +181,107 @@ test('8. buildBeatGraphContext + deriveBeatGraph together produce beats carrying
   const dependsOnEdge = derivation.beatGraph.edges.find((e) => e.kind === 'DEPENDS_ON');
   assert.ok(dependsOnEdge);
   assert.equal(dependsOnEdge.fromBeatId, hookShotId);
+});
+
+// ===========================================================================
+// STORY ARCHITECTURE ENGINE — buildStoryStructureFromArgument(),
+// buildNarrationSegments(), buildMaterialOptions(): the Blueprint ->
+// StoryArgument -> StoryStructure path, replacing the positional-template
+// path above when a real StoryArgument exists.
+// ===========================================================================
+
+const storyArchitectureProvider = createDeterministicStoryArchitectureProvider();
+
+async function fakeStoryArgument(projectId, blueprintId, overrides = {}) {
+  const generated = await storyArchitectureProvider.generateStoryArgument({
+    idea: { ideaId: 'idea-1', topic: 'why more choice makes decisions harder instead of easier', premise: 'the paralysis comes from a specific comparison cost' },
+    package: {
+      packageId: 'pkg-1',
+      title: 'The Mechanism Behind Choice Overload',
+      promise: 'the paralysis comes from a specific comparison cost',
+      curiosityMechanism: 'the real driver is a single, nameable comparison habit',
+      stakes: 'the viewer keeps making the same mistake without knowing why',
+    },
+    blueprint: { narrativeStrategy: 'build from the everyday moment toward the comparison-cost mechanism' },
+    strategy: { positioning: 'the number of options is the problem', audienceNeed: 'why more choice makes decisions harder' },
+    ...overrides,
+  });
+  return createStoryArgument({ ...generated.storyArgument, projectId, blueprintId });
+}
+
+test('9. buildStoryStructureFromArgument fails for a missing/empty StoryArgument', () => {
+  assert.equal(storyStructureService.buildStoryStructureFromArgument(null).ok, false);
+  assert.equal(storyStructureService.buildStoryStructureFromArgument({ beats: [] }).ok, false);
+});
+
+test('10. buildStoryStructureFromArgument wraps the argument\'s own beats verbatim (no second beat shape) and sets corePromise from the argument\'s payoff', async () => {
+  const project = newProject();
+  const blueprint = fakeBlueprint(project.id);
+  const storyArgument = await fakeStoryArgument(project.id, blueprint.id);
+
+  const result = storyStructureService.buildStoryStructureFromArgument(storyArgument);
+  assert.equal(result.ok, true);
+  assert.equal(result.storyStructure.beats.length, 6);
+  assert.equal(result.storyStructure.beats[0].claim, storyArgument.beats[0].claim);
+  assert.equal(result.storyStructure.corePromise, storyArgument.payoff);
+});
+
+test('11. buildStoryStructureFromArgument derives DEPENDS_ON edges from resolves/creates AND paysOffBeatKeys, never TRANSITIONS_TO', async () => {
+  const project = newProject();
+  const blueprint = fakeBlueprint(project.id);
+  const storyArgument = await fakeStoryArgument(project.id, blueprint.id);
+
+  const result = storyStructureService.buildStoryStructureFromArgument(storyArgument);
+  assert.ok(result.storyStructure.edges.length > 0, 'at least one edge must be derived from resolves/creates/paysOffBeatKeys');
+  assert.ok(result.storyStructure.edges.every((e) => e.kind === 'DEPENDS_ON'), 'only DEPENDS_ON is ever used here');
+
+  const revealBeat = storyArgument.beats.find((b) => b.isReveal);
+  const hookBeat = storyArgument.beats.find((b) => b.beatFunction === 'HOOK');
+  assert.ok(result.storyStructure.edges.some((e) => e.fromBeatKey === hookBeat.beatKey && e.toBeatKey === revealBeat.beatKey), 'the reveal must depend on the beat that created the question it resolves');
+});
+
+test('12. the full bridge: buildStoryStructureFromArgument -> authorStoryboardFromStoryStructure -> buildBeatGraphContext -> deriveBeatGraph carries distinct claims/edges all the way to a real BeatGraph', async () => {
+  const project = newProject();
+  const blueprint = fakeBlueprint(project.id);
+  const storyArgument = await fakeStoryArgument(project.id, blueprint.id);
+
+  const derived = storyStructureService.buildStoryStructureFromArgument(storyArgument);
+  const saved = storyStructureStore.addStoryStructure(project.id, derived.storyStructure).storyStructure;
+
+  const treatmentByRole = { HOOK: 'KINETIC_TYPOGRAPHY', CONCLUSION: 'KINETIC_TYPOGRAPHY', EXPLANATION: 'STILL_IMAGE', REVEAL: 'BROLL_CLIP' };
+  const authored = storyStructureService.authorStoryboardFromStoryStructure(project.id, saved, { treatmentByRole });
+  assert.equal(authored.ok, true);
+
+  const beatGraphContext = storyStructureService.buildBeatGraphContext(saved, authored.beatKeyToShotId);
+  const derivation = deriveBeatGraph(authored.storyboard, beatGraphContext);
+  assert.equal(derivation.status, 'DERIVED');
+
+  const claims = saved.beats.map((b) => b.claim);
+  const visualIntents = derivation.beatGraph.beats.map((b) => b.visualIntent);
+  assert.equal(new Set(visualIntents).size, visualIntents.length, 'every beat\'s visualIntent reaching the real BeatGraph must remain distinct');
+  for (const claim of claims) assert.ok(visualIntents.some((vi) => vi.includes(claim)), `claim "${claim}" must be traceable into some beat's visualIntent on the real BeatGraph`);
+});
+
+test('13. buildNarrationSegments/buildMaterialOptions are built DIRECTLY from beat claims, keyed by real shotId — no human/demo hand-authoring required', async () => {
+  const project = newProject();
+  const blueprint = fakeBlueprint(project.id);
+  const storyArgument = await fakeStoryArgument(project.id, blueprint.id);
+
+  const derived = storyStructureService.buildStoryStructureFromArgument(storyArgument);
+  const saved = storyStructureStore.addStoryStructure(project.id, derived.storyStructure).storyStructure;
+  const authored = storyStructureService.authorStoryboardFromStoryStructure(project.id, saved, { treatmentByRole: { HOOK: 'KINETIC_TYPOGRAPHY', EXPLANATION: 'STILL_IMAGE', REVEAL: 'BROLL_CLIP', CONCLUSION: 'KINETIC_TYPOGRAPHY' } });
+
+  const narrationSegments = storyStructureService.buildNarrationSegments(saved, authored.beatKeyToShotId);
+  const materialOptions = storyStructureService.buildMaterialOptions(saved, authored.beatKeyToShotId);
+
+  assert.equal(Object.keys(narrationSegments).length, 6);
+  assert.equal(Object.keys(materialOptions).length, 6);
+  for (const beat of saved.beats) {
+    const shotId = authored.beatKeyToShotId[beat.beatKey];
+    assert.equal(narrationSegments[shotId].text, beat.claim);
+    assert.equal(narrationSegments[shotId].scriptRefId, beat.beatKey);
+    assert.equal(materialOptions[shotId].text, beat.claim);
+  }
+  const allTexts = Object.values(narrationSegments).map((s) => s.text);
+  assert.equal(new Set(allTexts).size, 6, 'every generated narration segment must be textually distinct — the whole point of this phase');
 });
