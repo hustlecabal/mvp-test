@@ -105,15 +105,20 @@ function main() {
   log(`  blueprintId = ${blueprintId}`);
   log(`  gateResultId = ${gateResultId}`);
 
-  log('Building storyboard: 1 scene, 6 shots, ~48s total, no AI_VIDEO/HYBRID/GENERATED_NEW anywhere...');
+  log('Building storyboard: 1 scene, 6 shots, no AI_VIDEO/HYBRID/GENERATED_NEW anywhere...');
   const scene = creativeStore.addStoryboardScene(project.id, { title: 'Scene 1', order: 1 });
 
-  const shot1 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 1, duration: 6, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'title card' });
+  // Note: for shots with a narrationSegment (below), the storyboard
+  // `duration` here is only a nominal placeholder — the orchestrator's
+  // narration-timing-service.js *replaces* it with the real, measured
+  // espeak-ng audio duration (Tier 1 timing). Only the two narration-free
+  // KINETIC_TYPOGRAPHY shots (1 and 6) actually keep this literal value.
+  const shot1 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 1, duration: 8, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'title card' });
   const shot2 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 2, duration: 8, visualTreatment: 'STILL_IMAGE', purpose: 'hook' });
   const shot3 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 3, duration: 10, visualTreatment: 'BROLL_CLIP', purpose: 'step one' });
-  const shot4 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 4, duration: 10, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'step two' });
+  const shot4 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 4, duration: 12, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'step two' });
   const shot5 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 5, duration: 8, visualTreatment: 'BROLL_CLIP', purpose: 'step three' });
-  const shot6 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 6, duration: 6, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'closing card' });
+  const shot6 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 6, duration: 8, visualTreatment: 'KINETIC_TYPOGRAPHY', purpose: 'closing card' });
   log(`  shots: ${[shot1, shot2, shot3, shot4, shot5, shot6].map((s) => `${s.shotId.slice(0, 8)}(${s.visualTreatment})`).join(', ')}`);
 
   log('Pre-storing local assets: 1 PNG for STILL_IMAGE, 1 MP4 for BROLL_CLIP (each reused across multiple beats)...');
@@ -126,9 +131,18 @@ function main() {
   const result = productionOrchestrator.startProduction(project.id, {
     outputDir,
     narrationSegments: {
-      [shot2.shotId]: { scriptRefId: 'demo-script-2', text: "It's never the code. It's never the idea. It's the gap between 'I built it' and 'anyone saw it.'" },
-      [shot3.shotId]: { scriptRefId: 'demo-script-3', text: 'Step one: stop building features. Pick one person, deliver to them, watch what happens.' },
-      [shot5.shotId]: { scriptRefId: 'demo-script-5', text: 'Step three: ship the smallest version loud, not the biggest version quiet.' },
+      [shot2.shotId]: {
+        scriptRefId: 'demo-script-2',
+        text: "It's never the code. It's never the idea. It's the gap between 'I built it' and 'anyone saw it.' Most side projects don't die from a bad line of code — they die quietly, in a folder nobody opens twice, because the person who built them never let a stranger see the thing before it felt finished.",
+      },
+      [shot3.shotId]: {
+        scriptRefId: 'demo-script-3',
+        text: 'Step one: stop building features nobody asked for. Pick one real person, hand them the roughest version that works, and watch what they actually do with it — not what they say they will do.',
+      },
+      [shot5.shotId]: {
+        scriptRefId: 'demo-script-5',
+        text: 'Step three: ship the smallest version loud, not the biggest version quiet. A tiny thing ten people actually use beats a huge thing zero people have ever seen.',
+      },
     },
     narrativeRoles: {
       [shot2.shotId]: 'HOOK',
