@@ -25,36 +25,45 @@
 // correct for Pexels/Pixabay (see the Phase 3 provider-architecture
 // audit's own findings).
 //
-// NO REAL PROVIDER EXISTS YET (per this stage's own explicit instruction:
-// do not invent one to make the phase look more complete). The only
-// registered provider is the deterministic test fixture. Adding a real
-// provider later means adding one new module under services/music/ and
-// one new entry in MUSIC_PROVIDER_MODULES below — never touching
-// anything else in this file, the same "single dispatch table" objective
-// media-acquisition-service.js's own header already established.
+// PHASE 3C — one real provider now exists: services/music/ai33-music-
+// provider.js. It genuinely reuses this codebase's existing, verified
+// AI33 credential/base-URL infrastructure, but its real, live behavior
+// today is a structured UNAVAILABLE — the real AI33 Pro API has no
+// confirmed Music generation endpoint at any tested path (see that
+// file's own header for the exact discovery evidence). This is an
+// honest reflection of the real API's current capability, never a
+// fabricated contract. Adding a second real provider later means adding
+// one new module under services/music/ and one new entry in
+// MUSIC_PROVIDER_MODULES below — never touching anything else in this
+// file, the same "single dispatch table" objective media-acquisition-
+// service.js's own header already established.
 
 const crypto = require('crypto');
 const fs = require('fs');
 const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
 const fixtureMusicProvider = require('./music/fixture-music-provider');
+const ai33MusicProvider = require('./music/ai33-music-provider');
 const { createMusicAcquisitionResult, createMusicAcquisitionDiagnostic } = require('../schemas/music-acquisition-schema');
 const { createAudioEvent } = require('../schemas/audio-schema');
 
 const MUSIC_PROVIDER_MODULES = {
   fixture: fixtureMusicProvider,
+  ai33: ai33MusicProvider,
 };
 
 // Real providers only — 'fixture' is deliberately excluded (it never
 // requires a credential and must never appear as "available" to a real
-// production run; see fixture-music-provider.js's own header). Today this
-// is always [] — no real provider is registered yet. Kept for the same
-// reason services/media-acquisition-service.js's own
-// listAvailableProviders() exists: the hook a future orchestrator step
-// will consult, unchanged in shape when a real provider is eventually
-// added.
+// production run; see fixture-music-provider.js's own header). "ai33"
+// IS included: it has a real credential-gated adapter, exactly the same
+// "available means credentialed, not necessarily functionally complete"
+// meaning services/media-acquisition-service.js's own
+// listAvailableProviders() already establishes for the visual providers
+// — a credentialed-but-currently-UNAVAILABLE provider is reported the
+// same way a credentialed-but-broken one would be; acquireMusic()'s own
+// search() call still surfaces the real, honest UNAVAILABLE diagnostic.
 function listAvailableMusicProviders() {
-  const REAL_PROVIDERS = []; // none yet — see file header
+  const REAL_PROVIDERS = ['ai33'];
   return REAL_PROVIDERS.filter((name) => {
     const providerModule = MUSIC_PROVIDER_MODULES[name];
     return providerModule && providerModule.credential();

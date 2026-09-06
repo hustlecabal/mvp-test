@@ -231,6 +231,16 @@ test('F. listAvailableMusicProviders never includes the fixture test provider', 
   assert.equal(musicAcquisitionService.listAvailableMusicProviders().includes('fixture'), false);
 });
 
-test('F2. listAvailableMusicProviders is honest that no real provider exists yet', () => {
-  assert.deepEqual(musicAcquisitionService.listAvailableMusicProviders(), []);
+test('F2. listAvailableMusicProviders reports "ai33" if and only if EVOLINK_AI33_API_KEY is actually configured — never hardcoded true/false', () => {
+  const original = process.env.EVOLINK_AI33_API_KEY;
+  try {
+    delete process.env.EVOLINK_AI33_API_KEY;
+    assert.deepEqual(musicAcquisitionService.listAvailableMusicProviders(), []);
+
+    process.env.EVOLINK_AI33_API_KEY = 'test-key';
+    assert.deepEqual(musicAcquisitionService.listAvailableMusicProviders(), ['ai33']);
+  } finally {
+    if (original === undefined) delete process.env.EVOLINK_AI33_API_KEY;
+    else process.env.EVOLINK_AI33_API_KEY = original;
+  }
 });

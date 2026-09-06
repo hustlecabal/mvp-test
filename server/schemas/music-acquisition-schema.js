@@ -48,9 +48,12 @@ function withDefaults(base, overrides = {}) {
 // module under services/music/, is the ONLY change needed to add a real
 // provider — services/music-acquisition-service.js's own dispatch table
 // is the single place that reads this list (see that file's header).
-// Only the deterministic test fixture exists today — per this stage's own
-// instruction, no real Music provider is invented just to fill this list.
-const MUSIC_PROVIDERS = ['fixture'];
+// PHASE 3C — 'ai33' is a real, credentialed adapter (services/music/ai33-
+// music-provider.js); its real, live behavior today is UNAVAILABLE — no
+// AI33 Pro Music generation endpoint is confirmed to exist yet (see that
+// file's own header for the exact discovery evidence). Never fabricated
+// to look more complete than it is.
+const MUSIC_PROVIDERS = ['fixture', 'ai33'];
 
 // Mirrors schemas/media-acquisition-schema.js's own ACQUISITION_STATUSES
 // vocabulary exactly — the same five terminal outcomes apply unchanged to
