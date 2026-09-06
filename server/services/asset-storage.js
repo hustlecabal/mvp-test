@@ -288,11 +288,14 @@ function storeUploadedImage(buffer, assetId, { maxBytes = DEFAULT_MAX_UPLOAD_BYT
 
 // ---------------------------------------------------------------------------
 // Stage 26.9B — audio. Same reasoning as the image case above (sniff the
-// buffer's own magic bytes, never trust a caller-claimed format). Only WAV
-// is recognized: it is the one format services/voice/espeak-voice-
-// provider.js's real generation path actually produces (espeak-ng's `-w`
-// flag) — no format is ever added speculatively (matching this file's own
-// existing image-signature discipline). This is NOT a second storage
+// buffer's own magic bytes, never trust a caller-claimed format). WAV is
+// recognized because services/voice/espeak-voice-provider.js's real
+// generation path actually produces it (espeak-ng's `-w` flag). MP3 is
+// recognized (AI33 TTS milestone) because services/voice/ai33-voice-
+// provider.js's real generation path genuinely produces it — confirmed
+// against a real downloaded AI33 file, not added speculatively (matching
+// this file's own existing image-signature discipline: a format is only
+// ever added once a real producer needs it). This is NOT a second storage
 // system: same ASSETS_DIR, same relativeFilename()/resolveStoredPath()
 // convention, same crash-safe .upload-then-rename write, same
 // storeUploadedImage() shape — Stage 26.9B, Part 5's explicit "reuse the
@@ -305,6 +308,16 @@ const AUDIO_SIGNATURES = [
     ext: '.wav',
     contentType: 'audio/wav',
     check: (b) => b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WAVE',
+  },
+  {
+    ext: '.mp3',
+    contentType: 'audio/mpeg',
+    // Two real, distinct MP3 encodings: an ID3v2-tagged file (verified
+    // against a real AI33 response — every real AI33 file observed starts
+    // "ID3") and a bare MPEG frame with no ID3 tag (the 11-bit frame sync
+    // 0xFFE0-0xFFFF, the standard fallback every MP3 sniffer checks for a
+    // file some other encoder didn't tag).
+    check: (b) => (b.length >= 3 && b.toString('ascii', 0, 3) === 'ID3') || (b.length >= 2 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0),
   },
 ];
 
@@ -335,7 +348,7 @@ function storeUploadedAudio(buffer, assetId, { maxBytes = DEFAULT_MAX_BYTES } = 
 
   const format = sniffAudioFormat(buffer);
   if (!format) {
-    throw new AssetStorageError('unsupported_format', 'Uploaded file is not a recognized audio format (WAV).');
+    throw new AssetStorageError('unsupported_format', 'Uploaded file is not a recognized audio format (WAV or MP3).');
   }
 
   const relativePath = relativeFilename(assetId, format.ext);

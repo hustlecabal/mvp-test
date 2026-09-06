@@ -29,10 +29,10 @@ function completedNarrationDirection(text = 'More options should make choosing e
   return directNarration({ scriptRefId: 'script-1', text, beats: [{ beatId: 'beat-1', narrativeRole: 'HOOK' }] });
 }
 
-function fakeSpawnWorkerSucceeding({ taskId = 'task-123', durationSeconds = 2, transcriptUrl = null, transcriptText = null } = {}) {
+function fakeSpawnWorkerSucceeding({ taskId = 'task-123', durationSeconds = 2, srtUrl = null, wordTimestamps = null } = {}) {
   return (requestPayload) => {
     writeRealSilentAudio(requestPayload.outputPath, durationSeconds);
-    return { ok: true, taskId, remoteAudioUrl: 'https://ai33.example/audio/result.mp3', transcriptUrl, transcriptText, voiceId: requestPayload.voiceId };
+    return { ok: true, taskId, remoteAudioUrl: 'https://ai33.example/audio/result.mp3', srtUrl, wordTimestamps, voiceId: requestPayload.voiceId };
   };
 }
 
@@ -118,11 +118,16 @@ test('6. a successful task submission/completion surfaces the real task_id in pr
   assert.equal(result.providerMetadata.operation, 'text-to-speech');
 });
 
-// 7. polling/completion handling — exercised at the worker level directly (pure functions, no process spawn, no network)
-test('7. the worker\'s pollTask() treats "done" as completion and "pending"/"processing" as intermediate states', async () => {
+// 7. polling/completion handling — exercised at the worker level directly (pure functions, no process spawn, no network).
+// Response shape verified against the real, live API (see ai33-tts-worker.js's own header).
+test('7. the worker\'s pollTask() treats "done" as completion and "doing"/"pending"/"processing" as intermediate states', async () => {
   const { pollTask } = require('../scripts/ai33-tts-worker.js');
   let call = 0;
-  const responses = [{ status: 'pending' }, { status: 'processing' }, { status: 'done', audio_url: 'https://example/audio.mp3' }];
+  const responses = [
+    { success: true, data: { status: 'pending' } },
+    { success: true, data: { status: 'doing' } },
+    { success: true, data: { status: 'done', metadata: { audio_url: 'https://example/audio.mp3' } } },
+  ];
   global.fetch = async () => ({ ok: true, text: async () => JSON.stringify(responses[Math.min(call++, responses.length - 1)]) });
   const result = await pollTask({ taskUrlTemplate: 'https://example/{task_id}', apiKey: 'k', taskId: 't1', pollIntervalMs: 1, timeoutMs: 5000 });
   assert.equal(result.ok, true);
@@ -131,13 +136,12 @@ test('7. the worker\'s pollTask() treats "done" as completion and "pending"/"pro
 });
 
 // 8. failed task handling
-test('8. a task that reports status "failed" is surfaced as AI33_TASK_FAILED, never retried as if it were pending', async () => {
+test('8. a task reporting an unrecognized/failure status is surfaced as AI33_TASK_FAILED, never retried as if it were pending', async () => {
   const { pollTask } = require('../scripts/ai33-tts-worker.js');
-  global.fetch = async () => ({ ok: true, text: async () => JSON.stringify({ status: 'failed', error: 'synthesis engine error' }) });
+  global.fetch = async () => ({ ok: true, text: async () => JSON.stringify({ success: true, data: { status: 'failed' } }) });
   const result = await pollTask({ taskUrlTemplate: 'https://example/{task_id}', apiKey: 'k', taskId: 't1', pollIntervalMs: 1, timeoutMs: 5000 });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'AI33_TASK_FAILED');
-  assert.match(result.message, /synthesis engine error/);
 });
 
 test('8b. a whole-provider failure (worker reports ok:false) never fabricates a COMPLETED result', () => {
@@ -152,7 +156,7 @@ test('8b. a whole-provider failure (worker reports ok:false) never fabricates a 
 test('9. the worker\'s pollTask() gives up after its bounded timeout — never polls indefinitely', async () => {
   const { pollTask } = require('../scripts/ai33-tts-worker.js');
   let calls = 0;
-  global.fetch = async () => { calls += 1; return { ok: true, text: async () => JSON.stringify({ status: 'processing' }) }; };
+  global.fetch = async () => { calls += 1; return { ok: true, text: async () => JSON.stringify({ success: true, data: { status: 'doing' } }) }; };
   const result = await pollTask({ taskUrlTemplate: 'https://example/{task_id}', apiKey: 'k', taskId: 't1', pollIntervalMs: 5, timeoutMs: 30 });
   assert.equal(result.ok, false);
   assert.equal(result.code, 'AI33_TASK_TIMEOUT');
@@ -176,11 +180,12 @@ test('13. the real, ffprobe-measured duration of the downloaded audio is returne
 });
 
 // 12. transcript/SRT preservation (provider level — full pipeline preservation is tested in test/ai33-voice-generation-integration.test.js)
-test('12. AI33\'s own returned transcript URL/text, when present, is preserved in providerMetadata — never discarded, never force-fit into word timing', () => {
-  const provider = createAi33VoiceProvider({ apiKey: 'k', voiceId: 'v', spawnWorker: fakeSpawnWorkerSucceeding({ transcriptUrl: 'https://ai33.example/transcript.srt', transcriptText: 'More options should make choosing easier.' }) });
+test('12. AI33\'s own returned SRT URL and real word-level timestamps, when present, are preserved in providerMetadata — never discarded, never force-fit into the existing Whisper alignment step', () => {
+  const wordTimestamps = [{ word: 'More', start: 0.0, end: 0.3 }, { word: 'options', start: 0.3, end: 0.7 }];
+  const provider = createAi33VoiceProvider({ apiKey: 'k', voiceId: 'v', spawnWorker: fakeSpawnWorkerSucceeding({ srtUrl: 'https://ai33.example/transcript.srt', wordTimestamps }) });
   const result = provider.generateVoice({ narrationDirection: completedNarrationDirection(), outputPath: tempOutputPath() });
-  assert.equal(result.providerMetadata.transcriptUrl, 'https://ai33.example/transcript.srt');
-  assert.equal(result.providerMetadata.transcriptText, 'More options should make choosing easier.');
+  assert.equal(result.providerMetadata.srtUrl, 'https://ai33.example/transcript.srt');
+  assert.deepEqual(result.providerMetadata.wordTimestamps, wordTimestamps);
 });
 
 // 14. missing API key behaviour

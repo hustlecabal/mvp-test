@@ -26,7 +26,7 @@ function newProject() {
   return projectStore.createProject({ title: 'AI33 integration test', topic: 'the paradox of choice' });
 }
 
-function fakeAi33VoiceProvider({ taskId = 'task-abc', voiceId = 'elevenlabs_test', remoteAudioUrl = 'https://ai33.example/audio/x.mp3', transcriptUrl = null, transcriptText = null, duration = 2.4 } = {}) {
+function fakeAi33VoiceProvider({ taskId = 'task-abc', voiceId = 'elevenlabs_test', remoteAudioUrl = 'https://ai33.example/audio/x.mp3', srtUrl = null, wordTimestamps = null, duration = 2.4 } = {}) {
   return {
     generateVoice: ({ outputPath }) => {
       fs.writeFileSync(outputPath, Buffer.from('RIFF0000WAVEfmt fake'));
@@ -35,7 +35,7 @@ function fakeAi33VoiceProvider({ taskId = 'task-abc', voiceId = 'elevenlabs_test
         audioPath: outputPath,
         duration,
         diagnostics: [],
-        providerMetadata: { provider: 'ai33', operation: 'text-to-speech', voiceId, speed: 1, pronunciationDictionaryId: null, taskId, remoteAudioUrl, transcriptUrl, transcriptText },
+        providerMetadata: { provider: 'ai33', operation: 'text-to-speech', voiceId, speed: 1, pronunciationDictionaryId: null, taskId, remoteAudioUrl, srtUrl, wordTimestamps },
       };
     },
   };
@@ -93,21 +93,22 @@ test('11. scriptRefId flows unchanged from the NarrationDirection through to the
 });
 
 // 12. transcript/SRT preservation (full pipeline level)
-test('12. AI33\'s own transcript/SRT metadata is preserved on the generateNarratedAudioEvent result, alongside (never instead of) the real Whisper-measured word timings on the AudioEvent', () => {
+test('12. AI33\'s own SRT URL and real word-level timestamps are preserved on the generateNarratedAudioEvent result, alongside (never instead of) the real Whisper-measured word timings on the AudioEvent', () => {
   const project = newProject();
   const text = 'Every option you reject still costs you something.';
   const nd = directNarration({ scriptRefId: 'beat-04-02b', text, beats: [{ beatId: 'beat-04-02b', narrativeRole: 'EXPLANATION' }] });
+  const ai33WordTimestamps = [{ word: 'Every', start: 0.0, end: 0.3 }];
   const result = generateNarratedAudioEvent({
     projectId: project.id,
     narrationDirection: nd,
-    voiceProvider: fakeAi33VoiceProvider({ transcriptUrl: 'https://ai33.example/t/987.srt', transcriptText: text }),
+    voiceProvider: fakeAi33VoiceProvider({ srtUrl: 'https://ai33.example/t/987.srt', wordTimestamps: ai33WordTimestamps }),
     alignmentProvider: fakeAlignmentProvider(text),
   });
 
   assert.equal(result.status, 'COMPLETED', JSON.stringify(result.diagnostics));
   // AI33's own transcript metadata — preserved, available to the caller/report:
-  assert.equal(result.providerMetadata.transcriptUrl, 'https://ai33.example/t/987.srt');
-  assert.equal(result.providerMetadata.transcriptText, text);
+  assert.equal(result.providerMetadata.srtUrl, 'https://ai33.example/t/987.srt');
+  assert.deepEqual(result.providerMetadata.wordTimestamps, ai33WordTimestamps);
   // The REAL, per-word timing on the AudioEvent still comes from the existing alignment seam, never fabricated:
   assert.ok(result.audioEvent.transcript.words.length > 0);
   assert.equal(result.audioEvent.transcript.words[0].word, 'Every');

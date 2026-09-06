@@ -52,9 +52,10 @@ const { execFileSync } = require('child_process');
 const { createVoiceGenerationResult, createVoiceDiagnostic } = require('./voice-provider-interface');
 
 const DEFAULT_BASE_URL = process.env.EVOLINK_AI33_BASE_URL || 'https://api.ai33.pro';
-// See ai33-tts-worker.js's own header for why this exact template is a
-// documented ASSUMPTION, not a confirmed AI33 endpoint.
-const DEFAULT_TASK_URL_TEMPLATE = process.env.EVOLINK_AI33_TASK_URL_TEMPLATE || `${DEFAULT_BASE_URL}/v3/tasks/{task_id}`;
+// VERIFIED against the real, live API — see ai33-tts-worker.js's own
+// header for how this was confirmed (an initial guess at /v3/tasks/
+// returned a real 404; /v3/task/ — singular — is the real endpoint).
+const DEFAULT_TASK_URL_TEMPLATE = process.env.EVOLINK_AI33_TASK_URL_TEMPLATE || `${DEFAULT_BASE_URL}/v3/task/{task_id}`;
 const DEFAULT_POLL_INTERVAL_MS = Number(process.env.EVOLINK_AI33_POLL_INTERVAL_MS) || 3000;
 const DEFAULT_TIMEOUT_MS = Number(process.env.EVOLINK_AI33_TIMEOUT_MS) || 120000;
 const WORKER_PATH = path.join(__dirname, '..', '..', 'scripts', 'ai33-tts-worker.js');
@@ -206,8 +207,8 @@ function createAi33VoiceProvider({
       pronunciationDictionaryId,
       taskId: workerResult.taskId,
       remoteAudioUrl: workerResult.remoteAudioUrl,
-      transcriptUrl: workerResult.transcriptUrl || null,
-      transcriptText: workerResult.transcriptText || null,
+      srtUrl: workerResult.srtUrl || null,
+      wordTimestamps: workerResult.wordTimestamps || null, // real, provider-native word-level alignment when with_transcript was requested — see ai33-tts-worker.js's fetchWordTimestamps()
     };
     return result;
   }

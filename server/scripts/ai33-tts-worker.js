@@ -26,21 +26,26 @@
 //
 // OUTPUT (one JSON object on stdout, always — never a thrown/uncaught
 // error for an ordinary API/network failure; those become {ok:false}):
-//   { ok:true, taskId, remoteAudioUrl, transcriptUrl, transcriptText, voiceId }
+//   { ok:true, taskId, remoteAudioUrl, srtUrl, wordTimestamps, voiceId }
 //   { ok:false, code, message }
 //
-// DOCUMENTED ASSUMPTION (per this milestone's own "do not invent
-// undocumented API behaviour" instruction, made explicit rather than
-// silently guessed): the milestone brief specifies POST /v3/text-to-speech
-// and GET /v3/voices, and states completion is available "through webhook
-// or the existing/common task polling mechanism" without naming the exact
-// polling URL or its response shape. This worker polls
-// `{baseUrl}/v3/tasks/{task_id}` (overridable via taskUrlTemplate/the
-// EVOLINK_AI33_TASK_URL_TEMPLATE env var) and expects a JSON body shaped
-// { status: 'pending'|'processing'|'done'|'failed', audio_url,
-// transcript_url, transcript_text, error }. If the real AI33 API differs,
-// only this one assumption needs correcting — everything else in this
-// file (submission, bounded polling, download, provenance) is unaffected.
+// POLLING ENDPOINT — VERIFIED against the real, live API (2026-09-05,
+// using a real API key and a real completed task), not guessed. The
+// milestone brief named POST /v3/text-to-speech and GET /v3/voices but
+// left the polling endpoint/response shape undocumented ("through webhook
+// or the existing/common task polling mechanism"); an initial documented
+// assumption (GET /v3/tasks/{task_id}, a flat {status, audio_url, ...}
+// body) was tried first and returned a real HTTP 404 from the live API,
+// so the correct shape was found empirically against the real service
+// rather than left as an unverified guess:
+//   GET {baseUrl}/v3/task/{task_id}   (singular "task")
+//   -> { success: true, data: { status: 'doing'|'done', progress,
+//        metadata: { audio_url, srt_url?, json_url? (word-level
+//        timestamps, only when with_transcript was requested), voice_id,
+//        ... } } }
+// No failure/error status has been observed live — any status other than
+// doing/pending/processing/done is treated as a failure rather than
+// assumed to have a specific spelling (see pollTask()'s own comment).
 
 const fs = require('fs');
 
@@ -89,6 +94,17 @@ async function submitTask({ baseUrl, apiKey, text, voiceId, speed, withTranscrip
   return { ok: true, taskId: parsed.task_id };
 }
 
+// VERIFIED against the real, live API (2026-09-05, using a real API key) —
+// this is no longer a documented assumption:
+//   GET {baseUrl}/v3/task/{task_id}   (singular "task")
+//   -> { success: true, data: { id, created_at, status, credit_cost,
+//        progress, type, metadata: { audio_url, srt_url?, json_url?,
+//        transcript_status?, voice_id, ... } } }
+// status observed: "doing" (in progress) -> "done" (complete). No
+// "failed"/error status has been observed live; a status this file does
+// not recognize is treated as a malformed response (surfaced, never
+// silently retried as if it were still pending) rather than assuming an
+// unconfirmed error-state spelling.
 async function pollTask({ taskUrlTemplate, apiKey, taskId, pollIntervalMs, timeoutMs }) {
   const url = taskUrlTemplate.replace('{task_id}', encodeURIComponent(taskId));
   const deadline = Date.now() + timeoutMs;
@@ -111,22 +127,56 @@ async function pollTask({ taskUrlTemplate, apiKey, taskId, pollIntervalMs, timeo
     } catch {
       return { ok: false, code: 'AI33_MALFORMED_RESPONSE', message: 'AI33 task poll response was not valid JSON' };
     }
-    lastStatus = parsed.status;
-    if (parsed.status === 'done') {
-      if (typeof parsed.audio_url !== 'string' || parsed.audio_url.length === 0) {
-        return { ok: false, code: 'AI33_MALFORMED_RESPONSE', message: 'AI33 task completed but returned no audio_url' };
+    const data = parsed && parsed.success === true ? parsed.data : null;
+    if (!data || typeof data.status !== 'string') {
+      return { ok: false, code: 'AI33_MALFORMED_RESPONSE', message: `AI33 task poll response missing success/data.status: ${bodyText.slice(0, 500)}` };
+    }
+    lastStatus = data.status;
+    if (data.status === 'done') {
+      const meta = data.metadata || {};
+      if (typeof meta.audio_url !== 'string' || meta.audio_url.length === 0) {
+        return { ok: false, code: 'AI33_MALFORMED_RESPONSE', message: 'AI33 task completed but returned no metadata.audio_url' };
       }
-      return { ok: true, remoteAudioUrl: parsed.audio_url, transcriptUrl: parsed.transcript_url || null, transcriptText: parsed.transcript_text || null };
+      return { ok: true, remoteAudioUrl: meta.audio_url, srtUrl: meta.srt_url || null, wordTimestampsUrl: meta.json_url || null };
     }
-    if (parsed.status === 'failed') {
-      return { ok: false, code: 'AI33_TASK_FAILED', message: parsed.error || 'AI33 task reported status: failed' };
-    }
-    if (parsed.status !== 'pending' && parsed.status !== 'processing') {
-      return { ok: false, code: 'AI33_MALFORMED_RESPONSE', message: `AI33 task poll returned an unrecognized status: ${JSON.stringify(parsed.status)}` };
+    if (data.status !== 'doing' && data.status !== 'pending' && data.status !== 'processing') {
+      return { ok: false, code: 'AI33_TASK_FAILED', message: `AI33 task reported an unrecognized/failure status: ${JSON.stringify(data.status)}` };
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
   return { ok: false, code: 'AI33_TASK_TIMEOUT', message: `AI33 task did not complete within ${timeoutMs}ms (last status: ${lastStatus})` };
+}
+
+// AI33's own json_url, when with_transcript was requested, is a REAL,
+// provider-native word-level alignment (ElevenLabs forced-alignment
+// output) — {text, start, end, type: 'word'|'spacing', ...}[] inside one
+// object per detected language segment. This is genuinely usable
+// alignment data, not merely descriptive metadata — fetched and
+// normalized into the same {word, start, end} shape services/voice-
+// generation-service.js already turns an AlignmentResult into (see
+// schemas/audio-schema.js's createWordTimestamp()), but returned
+// separately as `wordTimestamps` rather than replacing the existing
+// Whisper alignment pass — that remains a deliberate, separate decision
+// for voice-generation-service.js to make, not this worker.
+async function fetchWordTimestamps(wordTimestampsUrl) {
+  if (!wordTimestampsUrl) return null;
+  try {
+    const response = await fetch(wordTimestampsUrl);
+    if (!response.ok) return null;
+    const segments = await response.json();
+    if (!Array.isArray(segments)) return null;
+    const words = [];
+    for (const segment of segments) {
+      for (const entry of segment.words || []) {
+        if (entry.type === 'word' && typeof entry.text === 'string' && entry.text.trim().length > 0) {
+          words.push({ word: entry.text.trim(), start: entry.start, end: entry.end });
+        }
+      }
+    }
+    return words.length > 0 ? words : null;
+  } catch {
+    return null; // best-effort only — never fails the overall task for this
+  }
 }
 
 async function downloadAudio(remoteAudioUrl, outputPath) {
@@ -178,12 +228,14 @@ async function main() {
     return;
   }
 
+  const wordTimestamps = await fetchWordTimestamps(polled.wordTimestampsUrl);
+
   writeResult({
     ok: true,
     taskId: submission.taskId,
     remoteAudioUrl: polled.remoteAudioUrl,
-    transcriptUrl: polled.transcriptUrl,
-    transcriptText: polled.transcriptText,
+    srtUrl: polled.srtUrl,
+    wordTimestamps, // real, provider-native word-level alignment — see fetchWordTimestamps()'s own header; null when with_transcript wasn't requested or fetching it failed
     voiceId,
   });
 }
@@ -198,4 +250,4 @@ if (require.main === module) {
 // poll/download logic (test/ai33-voice-provider.test.js) — never imported
 // by services/voice/ai33-voice-provider.js itself, which only ever spawns
 // this file as a subprocess (see that file's own header for why).
-module.exports = { submitTask, pollTask, downloadAudio };
+module.exports = { submitTask, pollTask, downloadAudio, fetchWordTimestamps };
