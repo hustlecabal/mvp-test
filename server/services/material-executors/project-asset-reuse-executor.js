@@ -23,6 +23,27 @@ const { createExecutionResult, createDiagnostic } = require('../../schemas/mater
 
 const OBJECT_FIT_VALUES = ['COVER', 'CONTAIN', 'FILL'];
 
+// PRODUCTION RELIABILITY LAYER, Phase 2 — duplicated from services/
+// timeline-compiler-service.js's own classifyTimingValue (same "duplicate a
+// small stable classifier across files" convention that file and services/
+// narration-timing-service.js already established). ABSENT (no explicit
+// options.startTime AND no beat.startTime — the ordinary case for a
+// non-narrated beat, since only narrated beats currently ever receive a
+// beat.startTime via applyNarrationTiming()) is legitimate and MUST NOT
+// fail this executor: the compiler is this pipeline's one authoritative
+// owner of final temporal placement, and its own 3-tier precedence already
+// falls through to a deterministic sequential-cursor inference exactly for
+// this case — the same fallback every other executor (KINETIC_TYPOGRAPHY,
+// MOTION_GRAPHIC, WHITEBOARD, STILL_IMAGE_MOTION, GENERATED_NEW,
+// STOCK_MEDIA) already relies on by never populating renderSpec.startTime
+// at all. Only a genuinely INVALID value (present but negative/NaN/non-
+// number) is a real defect and still fails here, unchanged.
+function classifyTimingValue(value) {
+  if (value === null || value === undefined) return 'ABSENT';
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value) || value < 0) return 'INVALID';
+  return 'VALID';
+}
+
 function fail(beat, materialId, code, message, sourceAssetIds = []) {
   return createExecutionResult({
     beatId: beat ? beat.id : null,
@@ -61,11 +82,19 @@ function execute({ projectId, beat, selectedMaterial, options = {} } = {}) {
     return fail(beat, materialId, 'ASSET_NOT_USABLE', `asset "${assetId}" storage status is "${storageStatus}", not STORED`, [assetId]);
   }
 
-  const startTime = options.startTime !== undefined ? options.startTime : beat && beat.startTime;
-  const duration = options.duration !== undefined ? options.duration : beat && beat.duration;
-  if (typeof startTime !== 'number' || Number.isNaN(startTime) || startTime < 0) {
-    return fail(beat, materialId, 'INVALID_START_TIME', `startTime must be a non-negative number, got ${JSON.stringify(startTime)}`, [assetId]);
+  const rawStartTime = options.startTime !== undefined ? options.startTime : beat && beat.startTime;
+  const startTimeClass = classifyTimingValue(rawStartTime);
+  if (startTimeClass === 'INVALID') {
+    return fail(beat, materialId, 'INVALID_START_TIME', `startTime must be a non-negative number, got ${JSON.stringify(rawStartTime)}`, [assetId]);
   }
+  // ABSENT (no explicit override, no already-timed beat) is left as null on
+  // the renderSpec below — never fabricated, never a failure. timeline-
+  // compiler-service.js's own Tier 3 sequential-cursor inference assigns
+  // the real placement later, exactly as it already does for every other
+  // executor's timing-agnostic renderSpec.
+  const startTime = startTimeClass === 'VALID' ? rawStartTime : null;
+
+  const duration = options.duration !== undefined ? options.duration : beat && beat.duration;
   if (typeof duration !== 'number' || Number.isNaN(duration) || duration <= 0) {
     return fail(beat, materialId, 'INVALID_DURATION', `duration must be a positive number, got ${JSON.stringify(duration)}`, [assetId]);
   }

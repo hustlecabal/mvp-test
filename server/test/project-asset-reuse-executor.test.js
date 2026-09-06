@@ -119,6 +119,17 @@ test('B6. invalid timing (negative startTime, zero/negative duration) fails stru
   assert.equal(zeroDuration.diagnostics[0].code, 'INVALID_DURATION');
 });
 
+test('B9. PRODUCTION RELIABILITY LAYER Phase 2 — a beat with no explicit startTime option and no beat.startTime (the real non-narrated-beat case) COMPLETES with renderSpec.startTime null, never INVALID_START_TIME', () => {
+  const { project, asset } = buildProjectWithAsset();
+  const b = beat({ startTime: null, duration: 5 }); // exactly the shape a non-narrated beat has after BeatGraph derivation
+
+  const result = executor.execute({ projectId: project.id, beat: b, selectedMaterial: candidate(asset.assetId), options: { duration: 4 } });
+
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.renderSpec.startTime, null);
+  assert.equal(result.renderSpec.duration, 4);
+});
+
 test('B7. a missing selectedAssetId fails with MISSING_ASSET_ID rather than throwing', () => {
   const project = projectStore.createProject({ title: 'x', topic: 'y' });
   const b = beat();

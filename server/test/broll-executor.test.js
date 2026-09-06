@@ -236,6 +236,17 @@ test('BR13. invalid timing (negative startTime, zero/negative duration) fails st
   assert.equal(zeroDuration.diagnostics[0].code, 'INVALID_DURATION');
 });
 
+test('BR13B. PRODUCTION RELIABILITY LAYER Phase 2 — a beat with no explicit startTime option and no beat.startTime (the real non-narrated-beat case) COMPLETES with renderSpec.startTime null, never INVALID_START_TIME', () => {
+  const { project, asset, segment } = setup();
+  const b = beat({ startTime: null, duration: 5 }); // exactly the shape a non-narrated beat has after BeatGraph derivation
+
+  const result = executor.execute({ projectId: project.id, beat: b, selectedMaterial: candidate(segment, asset.assetId), options: { duration: 4 } });
+
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.renderSpec.startTime, null);
+  assert.equal(result.renderSpec.duration, 4);
+});
+
 // --- BR14 — invalid playbackRate -------------------------------------------------------------------
 
 test('BR14. a zero or negative playbackRate fails with INVALID_PLAYBACK_RATE', () => {

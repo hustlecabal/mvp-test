@@ -29,6 +29,23 @@ const timelineStore = require('../timeline-store');
 const brollLibraryService = require('../broll-library-service');
 const { createExecutionResult, createDiagnostic } = require('../../schemas/material-execution-schema');
 
+// PRODUCTION RELIABILITY LAYER, Phase 2 — duplicated from services/
+// timeline-compiler-service.js's own classifyTimingValue (same "duplicate a
+// small stable classifier across files" convention that file and services/
+// narration-timing-service.js already established, and now also
+// project-asset-reuse-executor.js). ABSENT (no explicit options.startTime
+// AND no beat.startTime — the ordinary case for a non-narrated beat) is
+// legitimate and MUST NOT fail this executor: the compiler is this
+// pipeline's one authoritative owner of final temporal placement, and its
+// own 3-tier precedence already falls through to deterministic sequential-
+// cursor inference exactly for this case. Only a genuinely INVALID value
+// (present but negative/NaN/non-number) is a real defect and still fails.
+function classifyTimingValue(value) {
+  if (value === null || value === undefined) return 'ABSENT';
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value) || value < 0) return 'INVALID';
+  return 'VALID';
+}
+
 const FIT_VALUES = ['COVER', 'CONTAIN', 'FILL'];
 // Deterministic default: MUTE. B-roll is overlay/cutaway footage — its own
 // captured audio is not, by default, the beat's intended soundtrack
@@ -110,11 +127,16 @@ function execute({ projectId, beat, selectedMaterial, options = {} } = {}) {
 
   // --- Timing (same "explicit option, fall back to beat" convention as
   // project-asset-reuse-executor.js) ---
-  const startTime = options.startTime !== undefined ? options.startTime : beat && beat.startTime;
-  const duration = options.duration !== undefined ? options.duration : beat && beat.duration;
-  if (typeof startTime !== 'number' || Number.isNaN(startTime) || startTime < 0) {
-    return fail(beat, materialId, 'INVALID_START_TIME', `startTime must be a non-negative number, got ${JSON.stringify(startTime)}`, [assetId]);
+  const rawStartTime = options.startTime !== undefined ? options.startTime : beat && beat.startTime;
+  const startTimeClass = classifyTimingValue(rawStartTime);
+  if (startTimeClass === 'INVALID') {
+    return fail(beat, materialId, 'INVALID_START_TIME', `startTime must be a non-negative number, got ${JSON.stringify(rawStartTime)}`, [assetId]);
   }
+  // ABSENT is left as null on the renderSpec below — see the header
+  // comment on classifyTimingValue above for why this is legitimate.
+  const startTime = startTimeClass === 'VALID' ? rawStartTime : null;
+
+  const duration = options.duration !== undefined ? options.duration : beat && beat.duration;
   if (typeof duration !== 'number' || Number.isNaN(duration) || duration <= 0) {
     return fail(beat, materialId, 'INVALID_DURATION', `duration must be a positive number, got ${JSON.stringify(duration)}`, [assetId]);
   }

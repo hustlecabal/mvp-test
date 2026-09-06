@@ -15,12 +15,18 @@
 //
 // EXACT STAGE SEQUENCE (unchanged from test/video-assembly-pipeline.test.js's
 // own GOLDEN VIDEO proof — that test IS this file's design spec, executed
-// by hand):
+// by hand). CORRECTED during PRODUCTION RELIABILITY LAYER Phase 2's timing
+// root-cause trace — this comment previously listed narration AFTER
+// rendering, which the real code below never did:
 //
-//   Storyboard -> deriveBeatGraph() -> resolveBeatGraph() -> executeMaterial()
-//   (per beat) -> render (HyperFrames, per beat) -> directNarration() +
+//   Storyboard -> deriveBeatGraph() -> directNarration() +
 //   generateNarratedAudioEvent() (per narrated beat) -> applyNarrationTiming()
-//   -> compileTimeline() -> assembleTimeline() -> automatic QC -> DONE.
+//   -> resolveBeatGraph() -> executeMaterial() (per beat) -> render
+//   (HyperFrames, per beat) -> compileTimeline() -> assembleTimeline() ->
+//   automatic QC -> DONE. Narration timing is applied onto the BeatGraph
+//   BEFORE material resolution/execution specifically so a beat whose
+//   executor bakes in an absolute placement (see the NARRATION block's own
+//   comment below) sees real, measured timing when one exists.
 //
 // APPROVAL BOUNDARY (Part 6): a production run may only ever START from a
 // project whose Storyboard is linked to an APPROVED CreativeBlueprint with
@@ -367,7 +373,29 @@ function resumeProduction(productionJobId) {
   const audioEvents = [];
   let narrationCursor = 0;
   for (const beat of job.beatGraph.beats) {
-    if (!beat.narrationSegment || typeof beat.narrationSegment.text !== 'string' || beat.narrationSegment.text.trim().length === 0) continue;
+    if (!beat.narrationSegment || typeof beat.narrationSegment.text !== 'string' || beat.narrationSegment.text.trim().length === 0) {
+      // PRODUCTION RELIABILITY LAYER, Phase 2 — a non-narrated beat still
+      // occupies real visual time on the eventual timeline (that is
+      // exactly the invariant this phase established: every executable
+      // visual beat gets a deterministic temporal position independent of
+      // narration — see timeline-compiler-service.js's own Tier 3
+      // sequential-cursor inference, which this cursor must stay
+      // consistent with). Before this fix, a silent beat was skipped with
+      // no effect on narrationCursor at all, so the NEXT narrated beat's
+      // default target start time ignored every silent beat's duration —
+      // scheduling that beat's real audio to start too early and
+      // overlapping the silent beat(s) once the compiler placed them,
+      // which then excluded BOTH via PRIMARY_OVERLAP_FORBIDDEN. beat.
+      // duration is always Storyboard-shot-owned (beat-graph-derivation-
+      // service.js), independent of narration, so it is always available
+      // here even though beat.startTime itself is still null at this
+      // point in the pipeline (narration timing is applied after this loop).
+      if (typeof beat.duration === 'number' && beat.duration > 0) {
+        const beatBase = typeof beat.startTime === 'number' ? beat.startTime : narrationCursor;
+        narrationCursor = Math.max(narrationCursor, beatBase + beat.duration);
+      }
+      continue;
+    }
 
     const existingProgress = findBeatProgress(job, beat.id);
     if (existingProgress && existingProgress.audioEvent) {

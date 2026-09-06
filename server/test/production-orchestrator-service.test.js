@@ -104,6 +104,31 @@ function buildGoldenProject() {
   return { project, blueprintId, gateResultId, scene, shot1, shot2, shot3 };
 }
 
+// PRODUCTION RELIABILITY LAYER, Phase 2 — builds a 4-shot project mixing
+// narrated and non-narrated beats in the exact order Phase 2's regression
+// matrix requires: Narrated A -> non-narrated B -> non-narrated B2
+// (consecutive non-narrated) -> Narrated C. Shots 1/3 (STILL_IMAGE) and
+// shots 2/4 (AI_VIDEO) each reuse the SAME real, pre-stored asset —
+// PROJECT_ASSET_REUSE has no exclusivity constraint (see
+// material-resolution-service.js), so this needs only the 2 assets
+// buildGoldenProject() itself already relies on, keeping this real and
+// provider-call-free.
+function buildMixedTimingProject() {
+  const project = projectStore.createProject({ title: 'EVOLINK P0-TIMING MIXED NARRATION PROOF', topic: 'timing invariant proof' });
+  const { blueprintId, gateResultId } = satisfyProductionPrerequisites(project.id);
+
+  const scene = creativeStore.addStoryboardScene(project.id, { title: 'Scene 1', order: 1 });
+  const shotA = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 1, duration: 4, visualTreatment: 'STILL_IMAGE', purpose: 'hook' }); // narrated
+  const shotB = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 2, duration: 5, visualTreatment: 'AI_VIDEO', purpose: 'context' }); // non-narrated
+  const shotB2 = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 3, duration: 3, visualTreatment: 'STILL_IMAGE', purpose: 'context-2' }); // non-narrated, consecutive with B
+  const shotC = creativeStore.addStoryboardShot(project.id, { sceneId: scene.sceneId, order: 4, duration: 4, visualTreatment: 'AI_VIDEO', purpose: 'conclusion' }); // narrated
+
+  makeStoredImageAsset(project.id);
+  makeStoredVideoAsset(project.id, { durationSeconds: 6 });
+
+  return { project, blueprintId, gateResultId, scene, shotA, shotB, shotB2, shotC };
+}
+
 test('GOLDEN PRODUCTION TEST — one entry point drives Blueprint -> ... -> one real playable MP4', () => {
   const { project, shot1, shot2, shot3 } = buildGoldenProject();
   const outputDir = outDir();
@@ -176,60 +201,131 @@ test('GOLDEN PRODUCTION TEST — one entry point drives Blueprint -> ... -> one 
   fs.copyFileSync(artifactPath, path.join(PROOF_DIR, `golden-production-${job.productionJobId}.mp4`));
 });
 
-test('PRODUCTION RELIABILITY LAYER — a REAL, unforced silent beat drop (no narrativeRole supplied for a non-narrated AI_VIDEO beat) is caught as COMPLETE + PARTIAL_CONTENT, never indistinguishable from full success', () => {
-  // This is not a synthetic/injected scenario — it is a genuine, pre-
-  // existing silent-degradation path this test discovered by omitting
-  // `narrativeRoles`/narration for shot2 (AI_VIDEO, PROJECT_ASSET_REUSE):
-  // with no narrationSegment.text, applyNarrationTiming() never assigns
-  // beat.startTime for that beat; project-asset-reuse-executor.js's
-  // ASSET_PLACEMENT renderSpec then requires a real startTime and fails
-  // MATERIAL_EXECUTION with INVALID_START_TIME; timeline-compiler-
-  // service.js then excludes that beat entirely with EXECUTION_FAILED.
-  // Every stage does the individually-correct thing (diagnose, exclude,
-  // continue) and the run still reaches status COMPLETE — exactly the
-  // systemic pattern this stage's audit set out to catch, caught here on
-  // a real orchestrator run with zero test-side tampering.
-  const { project, shot1, shot3 } = buildGoldenProject();
+test('PRODUCTION RELIABILITY LAYER Phase 2 (E) — the exact real bug from Phase 1 (no narrativeRole supplied for a non-narrated AI_VIDEO/PROJECT_ASSET_REUSE beat) now reaches FULL_CONTENT, not merely the absence of an error', () => {
+  // This is the SAME scenario a Phase 1 test proved was a real, unforced
+  // silent drop (shot2, AI_VIDEO, PROJECT_ASSET_REUSE, no narration/
+  // narrativeRole -> null beat.startTime -> project-asset-reuse-
+  // executor.js used to fail INVALID_START_TIME -> timeline-compiler-
+  // service.js excluded the beat with EXECUTION_FAILED -> job still
+  // reached COMPLETE with a beat missing). Phase 2 fixed the executor
+  // (ABSENT startTime is no longer a failure — it is left null on the
+  // renderSpec so timeline-compiler-service.js's own pre-existing Tier 3
+  // sequential-cursor inference places it, exactly like every other
+  // executor's timing-agnostic renderSpec already relies on). This test
+  // proves the GOOD outcome from this stage's own success criterion: the
+  // beat now survives execution and the timeline, not "Phase 1's safety
+  // net caught its absence."
+  const { project, shot1, shot2, shot3 } = buildGoldenProject();
   const outputDir = outDir();
 
   const result = productionOrchestrator.startProduction(project.id, {
     outputDir,
     narrationSegments: {
-      [shot1.shotId]: { scriptRefId: 'drop-script-1', text: 'Every great video starts with a single clear idea.' },
+      [shot1.shotId]: { scriptRefId: 'fix-script-1', text: 'Every great video starts with a single clear idea.' },
     },
-    // Deliberately no narrativeRoles/narration for shot2 (AI_VIDEO) and no
-    // explicit startTime for it anywhere — the exact real-world gap that
-    // triggers the silent drop described above.
+    // Still deliberately no narrativeRoles/narration for shot2 (AI_VIDEO)
+    // and no explicit startTime for it anywhere — the exact real-world gap
+    // that used to trigger the silent drop.
     materialOptions: { [shot3.shotId]: { text: 'THE END' } },
   });
   assert.equal(result.ok, true, JSON.stringify(result.job && result.job.diagnostics, null, 2));
   const { job } = result;
 
-  // The pipeline itself still reports a clean terminal COMPLETE — proving
-  // this is a genuinely SILENT drop, not something status already exposed.
   assert.equal(job.status, 'COMPLETE');
   assert.equal(job.escalations.length, 0);
 
-  // The new signal is what makes the drop visible.
-  assert.equal(job.contentCompleteness.overall, 'PARTIAL_CONTENT');
-  assert.equal(job.contentCompleteness.missingBeatIds.length, 1);
-  const droppedBeatId = job.contentCompleteness.missingBeatIds[0];
-  assert.ok(job.diagnostics.some((d) => d.beatId === droppedBeatId && d.code === 'EXECUTION_FAILED'));
+  // No trace of the old failure mode anywhere in diagnostics.
+  assert.ok(!job.diagnostics.some((d) => d.code === 'INVALID_START_TIME'), JSON.stringify(job.diagnostics, null, 2));
+  assert.ok(!job.diagnostics.some((d) => d.code === 'EXECUTION_FAILED'), JSON.stringify(job.diagnostics, null, 2));
 
+  // (G) The fixed scenario produces FULL_CONTENT, not just "no error."
+  assert.equal(job.contentCompleteness.overall, 'FULL_CONTENT');
+  assert.deepEqual(job.contentCompleteness.missingBeatIds, []);
+  assert.equal(job.contentCompleteness.expectedBeatCount, 3);
+  assert.equal(job.contentCompleteness.assembledBeatCount, 3);
+
+  // The previously-dropped beat (shot2) is now genuinely present in
+  // assembly provenance — the real proof it reached the final MP4, not
+  // just that some diagnostic is absent.
+  const provenanceBeatIds = job.assemblyResult.provenance.shots.map((s) => s.beatId);
+  assert.ok(provenanceBeatIds.includes(shot2.shotId), JSON.stringify(provenanceBeatIds));
+
+  // (H) Creative QA does not report missing beat coverage.
   const { summarizeCreativeQAReport } = require('../services/creative-qa-service');
   const qaSummary = summarizeCreativeQAReport(job.creativeQa);
-  assert.equal(qaSummary.passed, false);
-  assert.equal(qaSummary.severity, 'FAIL');
-  assert.ok(qaSummary.affectedBeatIds.includes(droppedBeatId));
+  assert.equal(qaSummary.passed, true);
+  assert.equal(qaSummary.severity, 'PASS');
+  assert.deepEqual(qaSummary.affectedBeatIds, []);
 
   const { diagnoseProductionJob } = require('../services/production-diagnosis-service');
   const diagnosis = diagnoseProductionJob(job);
-  // The critical assertion this whole stage exists for: status stays
-  // COMPLETE (the pipeline genuinely ran to a non-failed terminal state),
-  // but the diagnosis correctly reports PARTIAL_SUCCESS, never SUCCESS.
-  assert.equal(diagnosis.classification, 'PARTIAL_SUCCESS');
-  assert.equal(diagnosis.isContentComplete, false);
-  assert.ok(diagnosis.affectedBeatIds.includes(droppedBeatId));
+  assert.equal(diagnosis.classification, 'SUCCESS');
+  assert.equal(diagnosis.isContentComplete, true);
+});
+
+test('PRODUCTION RELIABILITY LAYER Phase 2 (A/B/C/D/F) — narrated A, then two CONSECUTIVE non-narrated beats (B, B2), then narrated C: all four survive assembly, in correct temporal order, with deterministic non-overlapping placement for the non-narrated pair', () => {
+  const { project, shotA, shotB, shotB2, shotC } = buildMixedTimingProject();
+  const outputDir = outDir();
+
+  const result = productionOrchestrator.startProduction(project.id, {
+    outputDir,
+    narrationSegments: {
+      [shotA.shotId]: { scriptRefId: 'mixed-script-a', text: 'This is beat A, and it is narrated from the very start.' },
+      [shotC.shotId]: { scriptRefId: 'mixed-script-c', text: 'This is beat C, narrated again after two silent beats.' },
+    },
+    narrativeRoles: { [shotA.shotId]: 'HOOK', [shotC.shotId]: 'CONCLUSION' },
+    // shotB and shotB2 are deliberately left with no narration/narrativeRole
+    // at all — the exact non-narrated-visual-beat case this phase fixes.
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.job && result.job.diagnostics, null, 2));
+  const { job } = result;
+
+  assert.equal(job.status, 'COMPLETE');
+  assert.equal(job.escalations.length, 0);
+  assert.ok(!job.diagnostics.some((d) => d.code === 'INVALID_START_TIME' || d.code === 'EXECUTION_FAILED'), JSON.stringify(job.diagnostics, null, 2));
+
+  // (A) narrated beats keep real, measured timing — beat A starts at 0
+  // (the narration cursor's own starting point), unaffected by this fix.
+  const beatA = job.beatGraph.beats.find((b) => b.id === shotA.shotId);
+  const beatC = job.beatGraph.beats.find((b) => b.id === shotC.shotId);
+  assert.equal(typeof beatA.startTime, 'number');
+  assert.equal(typeof beatC.startTime, 'number');
+
+  // (B/D) the non-narrated beats (B, B2) each got a real, distinct,
+  // non-overlapping compiled startTime — never null, never collided.
+  const compiledByBeatId = new Map(job.timelineCompilation.shots.map((s) => [s.beatId, s]));
+  const shotBCompiled = compiledByBeatId.get(shotB.shotId);
+  const shotB2Compiled = compiledByBeatId.get(shotB2.shotId);
+  assert.ok(shotBCompiled, 'non-narrated beat B must have a compiled Shot');
+  assert.ok(shotB2Compiled, 'non-narrated beat B2 must have a compiled Shot');
+  assert.equal(typeof shotBCompiled.startTime, 'number');
+  assert.equal(typeof shotB2Compiled.startTime, 'number');
+  assert.notEqual(shotBCompiled.startTime, shotB2Compiled.startTime);
+
+  // (C) correct temporal order end-to-end: A -> B -> B2 -> C, no overlaps.
+  const compiledA = compiledByBeatId.get(shotA.shotId);
+  const compiledC = compiledByBeatId.get(shotC.shotId);
+  assert.ok(compiledA.startTime <= shotBCompiled.startTime);
+  assert.ok(shotBCompiled.startTime + shotBCompiled.duration <= shotB2Compiled.startTime + 1e-9);
+  assert.ok(shotB2Compiled.startTime + shotB2Compiled.duration <= compiledC.startTime + 1e-9);
+
+  // (G) every beat reached the FINAL assembly, not just the compiled timeline.
+  assert.equal(job.contentCompleteness.overall, 'FULL_CONTENT');
+  const provenanceBeatIds = job.assemblyResult.provenance.shots.map((s) => s.beatId);
+  for (const id of [shotA.shotId, shotB.shotId, shotB2.shotId, shotC.shotId]) {
+    assert.ok(provenanceBeatIds.includes(id), `beat "${id}" missing from assembly provenance: ${JSON.stringify(provenanceBeatIds)}`);
+  }
+
+  // (H) Creative QA agrees — no beat coverage failure.
+  const { summarizeCreativeQAReport } = require('../services/creative-qa-service');
+  const qaSummary = summarizeCreativeQAReport(job.creativeQa);
+  assert.equal(qaSummary.passed, true);
+  assert.equal(qaSummary.severity, 'PASS');
+
+  // Sanity: final MP4 duration is sensible (at least as long as the last
+  // beat's own end time) and beat ordering survived to the real artifact.
+  const probed = ffprobeFull(job.assemblyResult.artifact.path);
+  assert.ok(Number(probed.format.duration) >= compiledC.startTime + compiledC.duration - 0.5);
 });
 
 test('APPROVAL BOUNDARY — a project with no linked, approved Blueprint is BLOCKED before any production work', () => {
