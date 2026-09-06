@@ -550,10 +550,19 @@ function resumeProduction(productionJobId) {
   // --- TIMELINE COMPILATION (Part 14) — cheap/pure, always recomputed.
   // Narration (and its timing application onto job.beatGraph) already ran
   // earlier, before material resolution/execution — see that block's own
-  // header for why. ---
+  // header for why. PHASE 3A: the same real, already-resolved NARRATION
+  // AudioEvents that block accumulated (audioEvents, above) are now ALSO
+  // registered with the compiler, alongside job.audioInputs (today always
+  // empty — the job-level home for future, non-beat-scoped MUSIC/AMBIENCE
+  // inputs; see schemas/production-job-schema.js's own header comment).
+  // This does NOT change what assembleTimeline() below receives — it
+  // still reads the SAME local `audioEvents` variable directly, exactly
+  // as before Phase 3A — so no audio is duplicated in the final mix; this
+  // call additionally makes the compiler aware of the same, already-
+  // decided timing, per this stage's own "one temporal authority" rule. ---
   job = persist(job, { status: 'COMPILING_TIMELINE' });
   const executions = [...executionByBeatId.values()];
-  const timelineCompilation = compileTimeline(job.beatGraph, beatGraphResolution.resolutions, executions, { projectId });
+  const timelineCompilation = compileTimeline(job.beatGraph, beatGraphResolution.resolutions, executions, [...audioEvents, ...(job.audioInputs || [])], { projectId });
   job = persist(job, {
     timelineCompilation,
     diagnostics: [...job.diagnostics, ...timelineCompilation.diagnostics.map((d) => diag('TIMELINE_COMPILATION', d.code, d.message, d.beatId))],

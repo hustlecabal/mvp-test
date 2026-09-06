@@ -78,6 +78,18 @@ function createCompiledTransition(overrides = {}) {
   return withDefaults(base, overrides);
 }
 
+// PHASE 3A — `audio` entries are NOT a new schema, exactly the same
+// discipline this file's own header already established for `shots`
+// (ordinary schemas/production-schema.js Shot records, never a second
+// competing shape). An `audio` entry is an ordinary schemas/audio-
+// schema.js AudioEvent, already fully-formed (real or synthetic
+// audioEventId/type/sourceAssetId carried through verbatim) by the time
+// services/timeline-compiler-service.js places it here — this file never
+// reconstructs or re-wraps it, the same way it never reconstructs a Shot.
+// Placement (the only thing THIS stage adds) means startTime/duration are
+// the compiler's own final, resolved values, replacing whatever was
+// ABSENT on the input — never the compiler inventing a second timing
+// authority (see timeline-compiler-service.js's own header for why).
 function createTimelineCompilationResult(overrides = {}) {
   const base = {
     id: crypto.randomUUID(),
@@ -85,6 +97,7 @@ function createTimelineCompilationResult(overrides = {}) {
     status: null, // one of TIMELINE_COMPILATION_STATUSES
     shots: [], // production-schema.js Shot records, see file header
     transitions: [], // createCompiledTransition() entries
+    audio: [], // schemas/audio-schema.js AudioEvent records, placed (startTime/duration resolved) by the compiler — see this function's own comment
     diagnostics: [], // createCompilationDiagnostic() entries
     createdAt: new Date().toISOString(),
   };

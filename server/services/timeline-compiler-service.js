@@ -26,6 +26,7 @@
 
 const productionSchema = require('../schemas/production-schema');
 const { MATERIAL_ROLES } = require('../schemas/visual-beat-schema');
+const { AUDIO_EVENT_TYPES } = require('../schemas/audio-schema');
 const { createCompilationDiagnostic, createCompiledTransition, createTimelineCompilationResult } = require('../schemas/timeline-compilation-schema');
 
 // ---------------------------------------------------------------------------
@@ -131,12 +132,23 @@ function findPrimaryOverlaps(primaryShots) {
 //                 execution-service.js's executeMaterial() output).
 //                 Matched internally to a resolution by
 //                 (execution.beatId, execution.materialId).
+//   audioInputs — PHASE 3A, additive, optional (defaults to []). An ARRAY
+//                 of already-resolved schemas/audio-schema.js AudioEvent
+//                 records (today: the NARRATION events services/
+//                 production-orchestrator-service.js's own narration
+//                 cursor already produced upstream of this call — this
+//                 function REGISTERS their already-decided timing, it
+//                 never recomputes it; see this file's own audio-placement
+//                 section below for beat/scene/whole-timeline derivation
+//                 of anything ABSENT). Every existing caller that omits
+//                 this parameter gets audio: [] in the result, byte-
+//                 identical to this function's pre-Phase-3A behavior.
 //   context     — { projectId } optional, informational only (stamped onto
 //                 the result for a later persistence step's convenience;
 //                 never read by any validation/timing/ordering decision in
 //                 this function).
 // ---------------------------------------------------------------------------
-function compileTimeline(beatGraph, resolutions, executions, context = {}) {
+function compileTimeline(beatGraph, resolutions, executions, audioInputs = [], context = {}) {
   const diagnostics = [];
 
   if (!beatGraph || !Array.isArray(beatGraph.beats)) {
@@ -346,6 +358,132 @@ function compileTimeline(beatGraph, resolutions, executions, context = {}) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // PHASE 3A — AUDIO PLACEMENT. Reuses the SAME authority this function
+  // already established for visual shots above — an audioInputs[] entry's
+  // own explicit startTime/duration wins when present (Tier 1, identical
+  // discipline to shot timing's own explicit-override tier); when ABSENT,
+  // placement is derived from finalShots — the SAME already-finalized
+  // compiled shots above, never a new sequential cursor:
+  //   - beatId set  -> that beat's own compiled Shot (PRIMARY preferred,
+  //                    else the first) supplies the reference window —
+  //                    the beat-attached-SFX case.
+  //   - sceneId set (no beatId) -> every compiled Shot sharing that
+  //                    sceneId supplies a [min start, max end) window —
+  //                    the scene-spanning AMBIENCE case.
+  //   - neither set -> the WHOLE compiled timeline's own [0, max end)
+  //                    window — the video-spanning MUSIC case.
+  // NARRATION events arrive here with real, already-measured duration and
+  // an already-decided target startTime (services/production-orchestrator-
+  // service.js's own narration cursor, upstream of this call) — both
+  // VALID, so this loop only ever REGISTERS their timing, never
+  // recomputes it. Every entry is carried through verbatim (spread) with
+  // only startTime/duration finalized — the same "renderSpec copied
+  // verbatim, never reinterpreted" discipline shots already follow above.
+  // ---------------------------------------------------------------------
+  const compiledAudio = [];
+  for (const audioEvent of Array.isArray(audioInputs) ? audioInputs : []) {
+    if (!audioEvent || typeof audioEvent !== 'object') {
+      diagnostics.push(createCompilationDiagnostic({ code: 'INVALID_AUDIO_EVENT', message: 'an audioInputs[] entry must be a plain AudioEvent object' }));
+      continue;
+    }
+    if (!AUDIO_EVENT_TYPES.includes(audioEvent.type)) {
+      diagnostics.push(
+        createCompilationDiagnostic({
+          code: 'INVALID_AUDIO_TYPE',
+          beatId: audioEvent.beatId || null,
+          message: `AudioEvent "${audioEvent.audioEventId || '(no id)'}" has type "${audioEvent.type}", not one of ${AUDIO_EVENT_TYPES.join(', ')}`,
+        })
+      );
+      continue;
+    }
+
+    const startClass = classifyTimingValue(audioEvent.startTime);
+    if (startClass === 'INVALID') {
+      diagnostics.push(
+        createCompilationDiagnostic({ code: 'NEGATIVE_AUDIO_START_TIME', beatId: audioEvent.beatId || null, message: `AudioEvent "${audioEvent.audioEventId}" startTime is invalid: ${JSON.stringify(audioEvent.startTime)}` })
+      );
+      continue;
+    }
+    const durationClass = classifyTimingValue(audioEvent.duration);
+    if (durationClass === 'INVALID') {
+      diagnostics.push(
+        createCompilationDiagnostic({ code: 'INVALID_AUDIO_DURATION', beatId: audioEvent.beatId || null, message: `AudioEvent "${audioEvent.audioEventId}" duration is invalid: ${JSON.stringify(audioEvent.duration)}` })
+      );
+      continue;
+    }
+
+    const needsReference = startClass !== 'VALID' || durationClass !== 'VALID';
+    let referenceStart = null;
+    let referenceEnd = null;
+
+    if (needsReference) {
+      let derivationDiagnostic = null;
+      if (audioEvent.beatId) {
+        const beatShots = finalShots.filter((s) => s.beatId === audioEvent.beatId);
+        const referenceShot = beatShots.find((s) => s.layer === 'PRIMARY') || beatShots[0] || null;
+        if (!referenceShot) {
+          derivationDiagnostic = createCompilationDiagnostic({
+            code: 'AUDIO_BEAT_NOT_COMPILED',
+            beatId: audioEvent.beatId,
+            message: `AudioEvent "${audioEvent.audioEventId}" references beatId "${audioEvent.beatId}", which has no compiled Shot to derive timing from`,
+          });
+        } else {
+          referenceStart = referenceShot.startTime;
+          referenceEnd = referenceShot.startTime + referenceShot.duration;
+        }
+      } else if (audioEvent.sceneId) {
+        const sceneShots = finalShots.filter((s) => s.sceneId === audioEvent.sceneId);
+        if (sceneShots.length === 0) {
+          derivationDiagnostic = createCompilationDiagnostic({
+            code: 'AUDIO_SCENE_NOT_COMPILED',
+            beatId: null,
+            message: `AudioEvent "${audioEvent.audioEventId}" references sceneId "${audioEvent.sceneId}", which has no compiled Shot to derive timing from`,
+          });
+        } else {
+          referenceStart = Math.min(...sceneShots.map((s) => s.startTime));
+          referenceEnd = Math.max(...sceneShots.map((s) => s.startTime + s.duration));
+        }
+      } else if (finalShots.length === 0) {
+        derivationDiagnostic = createCompilationDiagnostic({
+          code: 'AUDIO_TIMELINE_EMPTY',
+          beatId: null,
+          message: `AudioEvent "${audioEvent.audioEventId}" has no explicit startTime/duration and no beatId/sceneId to derive it from, and the compiled timeline has no shots at all`,
+        });
+      } else {
+        referenceStart = 0;
+        referenceEnd = Math.max(...finalShots.map((s) => s.startTime + s.duration));
+      }
+
+      if (derivationDiagnostic) {
+        diagnostics.push(derivationDiagnostic);
+        continue;
+      }
+    }
+
+    const finalStartTime = startClass === 'VALID' ? audioEvent.startTime : referenceStart;
+    const finalDuration = durationClass === 'VALID' ? audioEvent.duration : referenceEnd - finalStartTime;
+
+    if (typeof finalDuration !== 'number' || !(finalDuration > 0)) {
+      diagnostics.push(
+        createCompilationDiagnostic({ code: 'INVALID_AUDIO_DURATION', beatId: audioEvent.beatId || null, message: `AudioEvent "${audioEvent.audioEventId}" resolved to a non-positive duration (${finalDuration})` })
+      );
+      continue;
+    }
+
+    if (needsReference) {
+      diagnostics.push(
+        createCompilationDiagnostic({
+          code: 'AUDIO_TIMING_INFERRED',
+          beatId: audioEvent.beatId || null,
+          message: `AudioEvent "${audioEvent.audioEventId}" (${audioEvent.type}) had no explicit startTime/duration — inferred [${finalStartTime}, ${finalStartTime + finalDuration}) from the compiled timeline`,
+        })
+      );
+    }
+
+    compiledAudio.push({ ...audioEvent, startTime: finalStartTime, duration: finalDuration });
+  }
+
   // --- transitions: BeatEdge(kind: TRANSITIONS_TO) -> the existing
   // TimelineIR transitions[] array's first-ever entry shape (see
   // schemas/timeline-compilation-schema.js's own header for why this is
@@ -380,6 +518,7 @@ function compileTimeline(beatGraph, resolutions, executions, context = {}) {
     status,
     shots: finalShots,
     transitions,
+    audio: compiledAudio,
     diagnostics,
   });
 }

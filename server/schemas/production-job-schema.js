@@ -137,6 +137,20 @@ function createProductionJob(overrides = {}) {
     derivationContext: null,
     materialOptions: null, // { [beatId]: options } — see production-orchestrator-service.js's own header for why this is separate from derivationContext
     beatGraph: null, // schemas/beat-graph-schema.js's createBeatGraph() output — re-derived once, then updated in place by narration-timing-service.js's applyNarrationTiming() once real audio timing exists
+    // PHASE 3A — the job-level home for resolved, NON-beat-scoped audio
+    // (MUSIC/AMBIENCE spanning a scene or the whole video). Deliberately
+    // NOT nested under beatProgress[]: beatProgress's own audioEvent field
+    // is a RESUMABILITY CHECKPOINT for one beat's own expensive, real
+    // NARRATION generation ("presence means do not re-narrate") — a
+    // different lifecycle from a scene/video-spanning event that was never
+    // "per-beat" to begin with. audioInputs is a flat array (mirrors
+    // beatGraph's own "flat array, no nesting" convention) of already-
+    // resolved schemas/audio-schema.js AudioEvent records, handed to
+    // services/timeline-compiler-service.js's compileTimeline() alongside
+    // the beatProgress-derived NARRATION events. Empty until a future
+    // phase (3B/3C) actually resolves a MUSIC/SFX/AMBIENCE candidate —
+    // this stage only establishes the home, never populates it.
+    audioInputs: [],
     beatProgress: Array.isArray(beatProgress) ? beatProgress.map((b) => createBeatProgress(b)) : [],
     escalations: Array.isArray(escalations) ? escalations.map((e) => createProductionEscalation(e)) : [],
     timelineCompilation: null, // TimelineCompilationResult (schemas/timeline-compilation-schema.js)

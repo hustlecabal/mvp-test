@@ -104,7 +104,7 @@ test('Stage 26.6 Part 2 — real pipeline proof: VisualBeat -> resolveMaterial()
     executions.push(execution);
   }
 
-  const result = compileTimeline(beatGraph, resolutions, executions, { projectId: project.id });
+  const result = compileTimeline(beatGraph, resolutions, executions, [], { projectId: project.id });
 
   assert.equal(result.status, 'COMPILED');
   assert.equal(result.shots.length, 5);
@@ -141,7 +141,7 @@ test('Stage 26.6 Part 2 — real pipeline proof: VisualBeat -> resolveMaterial()
   assert.equal(result.diagnostics.some((d) => d.code === 'TIMING_INFERRED'), false);
 
   // --- purity: repeating compileTimeline() with the SAME real inputs is fully deterministic ---
-  const again = compileTimeline(beatGraph, resolutions, executions, { projectId: project.id });
+  const again = compileTimeline(beatGraph, resolutions, executions, [], { projectId: project.id });
   const strip = (shots) => shots.map(({ shotId, ...rest }) => rest).sort((a, b) => String(a.beatId).localeCompare(String(b.beatId)));
   assert.deepEqual(strip(result.shots), strip(again.shots));
 
@@ -173,7 +173,7 @@ test('Stage 26.6 Part 2 — real pipeline proof: BROLL_CLIP, in its own isolated
   const { resolution, execution } = resolveAndExecute(project.id, brollBeat);
   assert.equal(resolution.selectedMaterial.materialSource, 'BROLL_LIBRARY');
 
-  const result = compileTimeline(beatGraph, [resolution], [execution], { projectId: project.id });
+  const result = compileTimeline(beatGraph, [resolution], [execution], [], { projectId: project.id });
 
   assert.equal(result.status, 'COMPILED');
   assert.equal(result.shots.length, 1);

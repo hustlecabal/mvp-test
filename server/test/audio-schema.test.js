@@ -177,7 +177,7 @@ test('19. createAudioEvent produces exactly the documented field set, nothing mo
   const e = createAudioEvent();
   assert.deepEqual(
     Object.keys(e).sort(),
-    ['audioEventId', 'type', 'status', 'startTime', 'duration', 'sourceAssetId', 'scriptRefId', 'transcript', 'voiceProfile', 'volume', 'fadeIn', 'fadeOut', 'duckingTarget', 'beatId', 'sceneId', 'createdAt'].sort()
+    ['audioEventId', 'type', 'status', 'startTime', 'duration', 'sourceAssetId', 'scriptRefId', 'transcript', 'voiceProfile', 'volume', 'fadeIn', 'fadeOut', 'duckingTarget', 'loop', 'beatId', 'sceneId', 'createdAt'].sort()
   );
 });
 

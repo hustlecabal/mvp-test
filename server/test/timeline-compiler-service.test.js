@@ -598,7 +598,7 @@ test('legacy keyframeAssetId/videoAssetId routing mirrors toTimelineShotFields e
 test('no provider/network/generation/credit calls — services/timeline-compiler-service.js requires only its own schema dependencies', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'services', 'timeline-compiler-service.js'), 'utf8');
   const requires = [...text.matchAll(/require\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((m) => m[1]);
-  assert.deepEqual(requires.sort(), ['../schemas/production-schema', '../schemas/visual-beat-schema', '../schemas/timeline-compilation-schema'].sort());
+  assert.deepEqual(requires.sort(), ['../schemas/production-schema', '../schemas/visual-beat-schema', '../schemas/audio-schema', '../schemas/timeline-compilation-schema'].sort());
   for (const pattern of [/\bfetch\(/, /axios/, /http\.request/, /https\.request/, /child_process/, /\beval\(/, /new Function\(/]) {
     assert.doesNotMatch(text, pattern);
   }

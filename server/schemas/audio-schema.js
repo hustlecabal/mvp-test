@@ -78,6 +78,44 @@
 // same field, so they can never be silently conflated in the first place.
 //
 // ---------------------------------------------------------------------------
+// PHASE 3A — SPAN REPRESENTATION FOR MUSIC/AMBIENCE (decision, not a new field)
+// ---------------------------------------------------------------------------
+// The Phase 3 audit asked how a MUSIC/AMBIENCE event should represent a
+// RANGE (spanning a scene, or the whole video) rather than a single beat,
+// and named three candidate fields: endBeatId, endSceneId, an explicit
+// endTime. NONE of these are added. This codebase has exactly one timing
+// vocabulary everywhere (VisualBeat, Shot, ExecutionResult, RenderResult,
+// AudioEvent itself) — startTime + duration, NEVER startTime + endTime.
+// Introducing an "end" field here would be a second timing vocabulary for
+// one event type alone.
+//
+// The existing fields already say everything a span needs:
+//   - `sceneId` set, `beatId` null, `duration` null (ABSENT, not invented)
+//     -> services/timeline-compiler-service.js infers duration as that
+//        scene's own compiled span (its last shot's end minus its first
+//        shot's start) — a scene is already a real, derivable boundary
+//        from the beats that reference it (see beat-graph-schema.js's own
+//        header: "beats grouped into scenes is just a filter+sort").
+//   - `sceneId` AND `beatId` both null, `duration` null -> inferred as the
+//     whole compiled timeline's own span (its last shot's end).
+// A multi-scene-but-not-whole-video span (e.g. "scenes 2 through 4 only")
+// has no real caller or use case yet anywhere in this codebase — adding a
+// field for it now would be exactly the speculative addition this stage's
+// own instructions warn against. If a real need appears, endSceneId is a
+// straightforward additive field for that future stage; it is not needed
+// to make audio a first-class part of the deterministic timeline today.
+//
+// `loop` — the one genuinely new field this stage adds. A future MUSIC/
+// AMBIENCE asset shorter than its resolved target duration needs a
+// caller-declared intent for what happens at the short end: loop, or stop
+// early. Defaulting to `false` is the deterministic, non-inventive choice
+// (silence/stop after the source ends, never assumed looping) — matching
+// this file's own "nothing here invents information" rule. No looping
+// LOGIC is implemented anywhere by this stage; exactly like `volume`/
+// `fadeIn`/`fadeOut`/`duckingTarget` before it, this is schema-only until
+// a real mixing engine (Phase 3D) reads it.
+//
+// ---------------------------------------------------------------------------
 // TIMING PRECEDENCE (documented here, NOT implemented — Part 13)
 // ---------------------------------------------------------------------------
 // A future audio-aware Timeline Compiler extension should resolve timing in
@@ -228,6 +266,10 @@ function createAudioEvent(overrides = {}) {
                            // should duck under at render time — only
                            // meaningful for MUSIC/AMBIENCE ducking under a
                            // NARRATION event; never resolved/applied here
+    loop: false, // PHASE 3A — whether a source shorter than the resolved
+                  // target duration should repeat rather than stop early.
+                  // Deterministic default (see file header): never assumed
+                  // true. Schema-only — no looping logic exists yet.
 
     // --- provenance (mirrors how Asset already carries both sceneId and
     // shotId even though a shot implies its scene) ---

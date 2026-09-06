@@ -212,7 +212,7 @@ test('GOLDEN VIDEO — the full real pipeline produces one real, playable MP4', 
   }
 
   // === Real Timeline Compilation — completely unmodified this stage ===
-  const timelineCompilation = compileTimeline(timingResult.beatGraph, [resolution1, resolution2, resolution3], [execution1, execution2, execution3], { projectId: project.id });
+  const timelineCompilation = compileTimeline(timingResult.beatGraph, [resolution1, resolution2, resolution3], [execution1, execution2, execution3], [], { projectId: project.id });
   assert.equal(timelineCompilation.status, 'COMPILED');
   assert.equal(timelineCompilation.shots.length, 3);
   assert.equal(timelineCompilation.diagnostics.filter((d) => d.code === 'TIMING_INFERRED').length, 0, 'every shot got real, non-inferred timing');
