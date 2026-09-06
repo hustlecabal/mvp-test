@@ -60,6 +60,8 @@ function createAssemblyArtifact(overrides = {}) {
     height: null,
     fps: null,
     duration: null, // seconds — the ACTUAL, ffprobe-measured output duration (Part 12), never the expected/target one
+    hasAudio: null, // PHASE 3D — whether the final container has an audio stream at all, from the SAME ffprobe pass Part 12 already runs on this artifact — never a second, separate probe
+    audioCodec: null, // PHASE 3D — the real, ffprobe-measured audio codec name (e.g. 'aac'), null when hasAudio is false
   };
   return withDefaults(base, overrides);
 }

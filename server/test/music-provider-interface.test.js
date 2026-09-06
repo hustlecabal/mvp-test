@@ -60,7 +60,10 @@ test('E. createMusicSearchDiagnostic / createMusicCandidate produce exactly thei
   const candidate = createMusicCandidate();
   assert.deepEqual(
     Object.keys(candidate).sort(),
-    ['providerAssetId', 'sourceUrl', 'downloadUrl', 'durationSeconds', 'format', 'attribution', 'licenseSummary'].sort()
+    // PHASE 3D — audioBuffer added: a candidate's two mutually-exclusive
+    // acquisition modes (a URL to fetch, or bytes already in hand) — see
+    // schemas/music-acquisition-schema.js's own header for why.
+    ['providerAssetId', 'sourceUrl', 'downloadUrl', 'audioBuffer', 'durationSeconds', 'format', 'attribution', 'licenseSummary'].sort()
   );
 });
 

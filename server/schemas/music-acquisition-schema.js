@@ -53,7 +53,13 @@ function withDefaults(base, overrides = {}) {
 // AI33 Pro Music generation endpoint is confirmed to exist yet (see that
 // file's own header for the exact discovery evidence). Never fabricated
 // to look more complete than it is.
-const MUSIC_PROVIDERS = ['fixture', 'ai33'];
+// PHASE 3D — 'elevenlabs' is EvoLink's first REAL, WORKING Music provider
+// (services/music/elevenlabs-music-provider.js), chosen after a dedicated
+// provider audit ruled out AI33 (no confirmed endpoint), Mubert (real API,
+// but commercial use requires a negotiated Enterprise contract, not
+// self-serve), and Stability/Beatoven/Loudly (real but not selected this
+// phase — see the Phase 3D provider audit for the full comparison).
+const MUSIC_PROVIDERS = ['fixture', 'ai33', 'elevenlabs'];
 
 // Mirrors schemas/media-acquisition-schema.js's own ACQUISITION_STATUSES
 // vocabulary exactly — the same five terminal outcomes apply unchanged to
@@ -89,11 +95,31 @@ function createMusicAcquisitionRequest(overrides = {}) {
 // every services/music/*-provider.js's search() method returns.
 // Provider-neutral: no provider-internal field name survives past the
 // provider adapter itself.
+//
+// PHASE 3D — `audioBuffer` (candidate acquisition mode #2). Every provider
+// through Phase 3C fit one shape: search() returns a URL, and
+// services/music-acquisition-service.js fetches it separately (exactly
+// media-acquisition-service.js's own corpus-search-then-download pattern).
+// A GENERATIVE provider whose real contract is a single call that returns
+// the finished audio bytes directly (services/music/elevenlabs-music-
+// provider.js's real POST /v1/music — see that file's own header) has no
+// second URL to fetch — inventing one (a localhost shim, a data: URL) would
+// be exactly the fake-configuration-surface mistake Phase 3C's own review
+// already rejected once for a different reason. `audioBuffer` is the
+// minimal, provider-neutral alternative: a candidate carries EITHER
+// `downloadUrl` (fetch it) OR `audioBuffer` (a Buffer of already-obtained
+// bytes — store it directly), never both. services/asset-storage.js
+// already has the generic, provider-agnostic capability this needs
+// (storeUploadedAudio() — added for human-uploaded audio, Stage 26.9B,
+// long before any generative Music provider existed) — this field is the
+// only change required to route a candidate's bytes there instead of
+// through downloadAsset().
 function createMusicCandidate(overrides = {}) {
   const base = {
     providerAssetId: null,
     sourceUrl: null, // the provider's own hosted page/asset URL (attribution target)
-    downloadUrl: null, // the actual bytes URL this server will fetch
+    downloadUrl: null, // mode #1 — a URL this server will fetch itself
+    audioBuffer: null, // mode #2 — a Buffer of already-obtained bytes, mutually exclusive with downloadUrl
     durationSeconds: null, // from the provider's own metadata, never guessed
     format: null, // e.g. 'wav', 'mp3' — from the provider's own metadata, never guessed
     attribution: null, // free text credit line, when the provider supplies one

@@ -37,6 +37,13 @@
 // MUSIC_PROVIDER_MODULES below — never touching anything else in this
 // file, the same "single dispatch table" objective media-acquisition-
 // service.js's own header already established.
+//
+// PHASE 3D — 'elevenlabs' (services/music/elevenlabs-music-provider.js) is
+// the first Music provider that actually WORKS end to end, selected via a
+// dedicated provider audit. Its real contract returns finished audio bytes
+// directly from one call rather than a separately-fetchable URL — see
+// schemas/music-acquisition-schema.js's own `audioBuffer` field comment
+// for how this file accommodates that without a URL shim.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -44,12 +51,14 @@ const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
 const fixtureMusicProvider = require('./music/fixture-music-provider');
 const ai33MusicProvider = require('./music/ai33-music-provider');
+const elevenlabsMusicProvider = require('./music/elevenlabs-music-provider');
 const { createMusicAcquisitionResult, createMusicAcquisitionDiagnostic } = require('../schemas/music-acquisition-schema');
 const { createAudioEvent } = require('../schemas/audio-schema');
 
 const MUSIC_PROVIDER_MODULES = {
   fixture: fixtureMusicProvider,
   ai33: ai33MusicProvider,
+  elevenlabs: elevenlabsMusicProvider,
 };
 
 // Real providers only — 'fixture' is deliberately excluded (it never
@@ -63,7 +72,7 @@ const MUSIC_PROVIDER_MODULES = {
 // same way a credentialed-but-broken one would be; acquireMusic()'s own
 // search() call still surfaces the real, honest UNAVAILABLE diagnostic.
 function listAvailableMusicProviders() {
-  const REAL_PROVIDERS = ['ai33'];
+  const REAL_PROVIDERS = ['ai33', 'elevenlabs'];
   return REAL_PROVIDERS.filter((name) => {
     const providerModule = MUSIC_PROVIDER_MODULES[name];
     return providerModule && providerModule.credential();
@@ -102,10 +111,15 @@ async function acquireMusic(request, { fetchImpl = fetch } = {}) {
     return fail(request, 'MISSING_CREDENTIAL', 'MISSING_CREDENTIAL', `provider "${request.provider}" has no credential configured in this environment`);
   }
 
-  // --- search ---
+  // --- search — fetchImpl passed through exactly like media-acquisition-
+  // service.js's own equivalent call (Phase 3D: elevenlabs-music-
+  // provider.js's search() actually performs a real network call and
+  // needs this for the same testability every real visual provider
+  // already has; ai33-music-provider.js's own search(request) signature
+  // simply ignores the extra argument, unaffected). ---
   let searchResult;
   try {
-    searchResult = await providerModule.search(request);
+    searchResult = await providerModule.search(request, { fetchImpl });
   } catch (error) {
     return fail(request, 'PROVIDER_FAILED', 'PROVIDER_SEARCH_THREW', `provider "${request.provider}" threw during search: ${error && error.message ? error.message : String(error)}`);
   }
@@ -121,17 +135,50 @@ async function acquireMusic(request, { fetchImpl = fetch } = {}) {
   // Deterministic selection — always the provider's own top-ranked
   // result, never randomized, never re-ranked by this file.
   const candidate = searchResult.candidates[0];
-  if (typeof candidate.downloadUrl !== 'string' || candidate.downloadUrl.length === 0) {
-    return fail(request, 'PROVIDER_FAILED', 'MALFORMED_CANDIDATE', `provider "${request.provider}" returned a candidate with no downloadUrl`);
+  const hasDownloadUrl = typeof candidate.downloadUrl === 'string' && candidate.downloadUrl.length > 0;
+  const hasAudioBuffer = Buffer.isBuffer(candidate.audioBuffer) && candidate.audioBuffer.length > 0;
+  if (!hasDownloadUrl && !hasAudioBuffer) {
+    return fail(request, 'PROVIDER_FAILED', 'MALFORMED_CANDIDATE', `provider "${request.provider}" returned a candidate with neither a downloadUrl nor audio bytes`);
   }
 
-  // --- download (existing, generic, format-agnostic asset-storage.js function — never a Music-specific storage path) ---
+  // --- obtain bytes: two mutually-exclusive, equally-generic paths (PHASE
+  // 3D). Mode #1 (downloadUrl) is the existing, unchanged path — this
+  // server fetches the bytes itself via the existing, format-agnostic
+  // asset-storage.js function. Mode #2 (audioBuffer) is for a GENERATIVE
+  // provider whose real contract already handed us the finished bytes
+  // (services/music/elevenlabs-music-provider.js) — there is no second URL
+  // to fetch, so this stores the buffer directly via asset-storage.js's own
+  // storeUploadedAudio(), the SAME generic, provider-agnostic, magic-byte-
+  // sniffing function already used for human-uploaded audio (Stage 26.9B) —
+  // never a new storage path invented for this provider. ---
   const assetId = crypto.randomUUID();
   let downloaded;
-  try {
-    downloaded = await assetStorage.downloadAsset(candidate.downloadUrl, assetId, { fetchImpl });
-  } catch (error) {
-    return fail(request, 'PROVIDER_FAILED', error.code || 'DOWNLOAD_FAILED', error.message || 'download failed');
+  if (hasDownloadUrl) {
+    try {
+      downloaded = await assetStorage.downloadAsset(candidate.downloadUrl, assetId, { fetchImpl });
+    } catch (error) {
+      return fail(request, 'PROVIDER_FAILED', error.code || 'DOWNLOAD_FAILED', error.message || 'download failed');
+    }
+  } else {
+    try {
+      const stored = assetStorage.storeUploadedAudio(candidate.audioBuffer, assetId);
+      downloaded = { ...stored, alreadyExisted: false };
+    } catch (error) {
+      if (error instanceof assetStorage.AssetStorageError && error.code === 'unsupported_format') {
+        return createMusicAcquisitionResult({
+          status: 'REJECTED_INVALID',
+          projectId: request.projectId,
+          beatId: request.beatId,
+          sceneId: request.sceneId,
+          provider: request.provider,
+          providerAssetId: candidate.providerAssetId,
+          sourceUrl: candidate.sourceUrl,
+          searchQuery: request.searchQuery,
+          diagnostics: [createMusicAcquisitionDiagnostic({ code: 'UNRECOGNIZED_AUDIO_FORMAT', message: 'provider-returned audio bytes are not a recognized audio format (WAV or MP3)' })],
+        });
+      }
+      return fail(request, 'PROVIDER_FAILED', error.code || 'STORE_FAILED', error.message || 'storing provider-returned audio bytes failed');
+    }
   }
 
   // --- validate: real signature check via the EXISTING asset-storage.js

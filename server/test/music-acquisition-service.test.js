@@ -224,6 +224,61 @@ test('E8. an empty/missing searchQuery is a structured PROVIDER_FAILED result be
 });
 
 // ===========================================================================
+// E9-E11. PHASE 3D — byte-backed candidates (audioBuffer), the mode a
+// generative provider with no separate URL uses (services/music/
+// elevenlabs-music-provider.js's real contract) — see schemas/music-
+// acquisition-schema.js's own header for why this mode exists.
+// ===========================================================================
+
+test('E9. a byte-backed candidate (audioBuffer, no downloadUrl) is stored, validated, and registered exactly like a URL-backed one — no URL shim required', async () => {
+  const project = makeProject();
+  const { createMusicSearchResult } = require('../services/music/music-provider-interface');
+  const wavBuffer = fixtureMusicProvider.buildFixtureWavBuffer();
+  await withTempProvider(
+    'fake-byte-backed',
+    {
+      credential: () => 'x',
+      search: async () => createMusicSearchResult({ status: 'COMPLETED', candidates: [{ providerAssetId: 'gen-1', downloadUrl: null, audioBuffer: wavBuffer, format: 'wav' }] }),
+    },
+    async () => {
+      const result = await musicAcquisitionService.acquireMusic(musicRequest(project.id, { provider: 'fake-byte-backed', sceneId: 'scene-9' }));
+      assert.equal(result.status, 'ACQUIRED');
+      assert.equal(result.providerAssetId, 'gen-1');
+      assert.match(result.checksum, /^sha256:[0-9a-f]{64}$/);
+
+      const asset = timelineStore.getAsset(project.id, result.assetId);
+      assert.ok(asset);
+      assert.equal(asset.type, 'audio');
+      assert.equal(asset.storage.status, 'STORED');
+      assert.equal(asset.storage.contentType, 'audio/wav');
+      assert.equal(asset.sceneId, 'scene-9');
+
+      const audioEvent = musicAcquisitionService.createMusicAudioEvent(result);
+      assert.equal(audioEvent.type, 'MUSIC');
+      assert.equal(audioEvent.sourceAssetId, result.assetId);
+    }
+  );
+});
+
+test('E10. a byte-backed candidate whose bytes are not real audio is REJECTED_INVALID before anything is written to disk, never silently registered', async () => {
+  const project = makeProject();
+  const { createMusicSearchResult } = require('../services/music/music-provider-interface');
+  await withTempProvider(
+    'fake-byte-backed-invalid',
+    {
+      credential: () => 'x',
+      search: async () => createMusicSearchResult({ status: 'COMPLETED', candidates: [{ providerAssetId: 'gen-2', downloadUrl: null, audioBuffer: Buffer.from('not audio at all'), format: null }] }),
+    },
+    async () => {
+      const result = await musicAcquisitionService.acquireMusic(musicRequest(project.id, { provider: 'fake-byte-backed-invalid' }));
+      assert.equal(result.status, 'REJECTED_INVALID');
+      assert.equal(result.diagnostics[0].code, 'UNRECOGNIZED_AUDIO_FORMAT');
+      assert.equal(timelineStore.listAssets(project.id).length, 0);
+    }
+  );
+});
+
+// ===========================================================================
 // F. listAvailableMusicProviders never includes the fixture
 // ===========================================================================
 
@@ -242,5 +297,23 @@ test('F2. listAvailableMusicProviders reports "ai33" if and only if EVOLINK_AI33
   } finally {
     if (original === undefined) delete process.env.EVOLINK_AI33_API_KEY;
     else process.env.EVOLINK_AI33_API_KEY = original;
+  }
+});
+
+test('F3. listAvailableMusicProviders reports "elevenlabs" if and only if EVOLINK_ELEVENLABS_API_KEY is actually configured (PHASE 3D) — independent of the AI33 credential', () => {
+  const originalEleven = process.env.EVOLINK_ELEVENLABS_API_KEY;
+  const originalAi33 = process.env.EVOLINK_AI33_API_KEY;
+  try {
+    delete process.env.EVOLINK_ELEVENLABS_API_KEY;
+    delete process.env.EVOLINK_AI33_API_KEY;
+    assert.deepEqual(musicAcquisitionService.listAvailableMusicProviders(), []);
+
+    process.env.EVOLINK_ELEVENLABS_API_KEY = 'test-eleven-key';
+    assert.deepEqual(musicAcquisitionService.listAvailableMusicProviders(), ['elevenlabs']);
+  } finally {
+    if (originalEleven === undefined) delete process.env.EVOLINK_ELEVENLABS_API_KEY;
+    else process.env.EVOLINK_ELEVENLABS_API_KEY = originalEleven;
+    if (originalAi33 === undefined) delete process.env.EVOLINK_AI33_API_KEY;
+    else process.env.EVOLINK_AI33_API_KEY = originalAi33;
   }
 });

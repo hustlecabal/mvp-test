@@ -573,11 +573,26 @@ function resumeProduction(productionJobId) {
 
   // --- ASSEMBLY (Part 15) — the third EXPENSIVE step (real FFmpeg
   // concat/mux). Only ever run once per job — a resume where
-  // job.assemblyResult already COMPLETED never re-assembles. ---
+  // job.assemblyResult already COMPLETED never re-assembles.
+  //
+  // PHASE 3D: passes job.timelineCompilation.audio (the COMPILED array —
+  // narration AND any MUSIC from job.audioInputs) instead of the local,
+  // narration-only `audioEvents` variable. This is safe and behavior-
+  // preserving for every existing narration-only job: compileTimeline()
+  // above already received the exact same `audioEvents` values among its
+  // own audioInputs (see that call's own comment), and for a VALID
+  // AudioEvent (real narration always is) it echoes startTime/duration
+  // through unchanged — so timelineCompilation.audio's narration entries
+  // are value-identical to `audioEvents` itself. The only thing this
+  // change adds is that a MUSIC AudioEvent placed in job.audioInputs (the
+  // job-level home Phase 3A already reserved for it — see that field's own
+  // comment above) now actually reaches assembleTimeline() and, through
+  // it, services/audio-mixer-service.js — closing the loop this stage's
+  // own instruction requires. ---
   if (!job.assemblyResult || job.assemblyResult.status !== 'COMPLETED') {
     job = persist(job, { status: 'ASSEMBLING' });
     const renderResults = [...renderByBeatId.values()];
-    const assemblyResult = assembleTimeline({ projectId, timelineCompilation: job.timelineCompilation, renderResults, audioEvents, outputDir: job.outputDir });
+    const assemblyResult = assembleTimeline({ projectId, timelineCompilation: job.timelineCompilation, renderResults, audioEvents: job.timelineCompilation.audio, outputDir: job.outputDir });
     job = persist(job, {
       assemblyResult,
       diagnostics: [...job.diagnostics, ...assemblyResult.diagnostics.map((d) => diag('ASSEMBLY', d.code, d.message, d.beatId))],
@@ -675,6 +690,67 @@ function runAutomaticQc(job) {
 
   check('SHOTS_COMPILED', Boolean(timelineCompilation && timelineCompilation.shots.length > 0), 'the compiled timeline must contain at least one shot');
   check('NO_UNRESOLVED_REQUIRED_MATERIALS_BEYOND_ESCALATIONS', true, `${job.escalations.length} beat(s) escalated for a required generation step — every other beat resolved and executed`);
+
+  // ---------------------------------------------------------------------
+  // PHASE 3D Part H — deterministic AUDIO QA, sufficient to catch a
+  // silent failure. Degradation policy, enforced here as real checks
+  // rather than only described in prose:
+  //   narration unavailable -> already a hard ASSEMBLY_FAILED above this
+  //     point (video-assembly-service.js's own validateAudioEvent() still
+  //     fails the whole assembly for a bad NARRATION event — unchanged).
+  //   music unavailable -> production may continue, but ONLY with a
+  //     diagnostic on record explaining why (MUSIC_PRESENCE_ACCOUNTED_FOR
+  //     below) — a job must never reach COMPLETE with requested music
+  //     that simply vanished, unexplained.
+  //   mixer failure -> already a hard ASSEMBLY_FAILED above this point
+  //     (a mixAudioEvents() failure returns {ok:false} and
+  //     assembleTimeline() propagates it as FAILED, same as any other
+  //     FFmpeg step in that file always has).
+  // ---------------------------------------------------------------------
+  const compiledAudioEvents = Array.isArray(timelineCompilation && timelineCompilation.audio) ? timelineCompilation.audio : [];
+  const compiledNarrationEvents = compiledAudioEvents.filter((a) => a.type === 'NARRATION');
+  const compiledMusicEvents = compiledAudioEvents.filter((a) => a.type === 'MUSIC');
+
+  check(
+    'COMPILED_AUDIO_TIMING_VALID',
+    compiledAudioEvents.every((a) => typeof a.startTime === 'number' && a.startTime >= 0 && typeof a.duration === 'number' && a.duration > 0),
+    'every compiled AudioEvent (narration and music alike) must have a valid, non-negative startTime and a positive duration'
+  );
+  check(
+    'NARRATION_EVENTS_HAVE_SOURCE_ASSET',
+    compiledNarrationEvents.every((a) => typeof a.sourceAssetId === 'string' && a.sourceAssetId.length > 0),
+    'every compiled NARRATION AudioEvent must reference a real source Asset'
+  );
+
+  const requestedMusicCount = Array.isArray(job.audioInputs) ? job.audioInputs.filter((a) => a && a.type === 'MUSIC').length : 0;
+  const musicDegradedDiagnostic = Array.isArray(assemblyResult && assemblyResult.diagnostics)
+    ? assemblyResult.diagnostics.find((d) => d.code === 'AUDIO_EVENT_DEGRADED')
+    : null;
+  check(
+    'MUSIC_PRESENCE_ACCOUNTED_FOR',
+    requestedMusicCount === 0 || compiledMusicEvents.length > 0 || Boolean(musicDegradedDiagnostic),
+    requestedMusicCount === 0
+      ? 'no music was requested for this job'
+      : compiledMusicEvents.length > 0
+        ? `${compiledMusicEvents.length} requested MUSIC AudioEvent(s) reached the compiled timeline`
+        : musicDegradedDiagnostic
+          ? `music was requested but degraded (${musicDegradedDiagnostic.message}) — production continued per Phase 3D's own policy`
+          : 'music was requested and is absent from the compiled timeline with NO diagnostic explaining why — this must never happen silently'
+  );
+
+  const audioClippingDiagnostic = Array.isArray(assemblyResult && assemblyResult.diagnostics)
+    ? assemblyResult.diagnostics.find((d) => d.code === 'AUDIO_CLIPPING_RISK_DETECTED')
+    : null;
+  check(
+    'FINAL_AUDIO_STREAM_PRESENT_WHEN_EXPECTED',
+    compiledAudioEvents.length === 0 || Boolean(artifact && artifact.hasAudio),
+    compiledAudioEvents.length === 0 ? 'no audio was compiled into this timeline' : 'the final MP4 must contain a real audio stream when audio was compiled into the timeline'
+  );
+  check(
+    'NO_AUDIO_CLIPPING_DETECTED',
+    !audioClippingDiagnostic,
+    audioClippingDiagnostic ? audioClippingDiagnostic.message : 'no clipping-risk peak level was detected in the final audio (ffmpeg astats analysis)'
+  );
 
   const passed = checks.every((c) => c.passed);
   return { passed, checks };

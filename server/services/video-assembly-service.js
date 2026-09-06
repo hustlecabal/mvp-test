@@ -48,13 +48,28 @@
 // with TRANSITION_UNSUPPORTED. A Golden Video fixture with no transitions
 // is unaffected (Part 9's own explicit allowance).
 //
-// AUDIO POLICY (Part 11): a visual segment's own embedded audio (if any)
-// is NEVER carried into the final mix — every shot segment is normalized
-// with `-an` (defense in depth on top of every renderer already muting its
-// own video elements — see hyperframes-renderer.js's own audioPolicy
-// comments). The ONLY audio in the output is the caller-supplied,
-// already-measured narration AudioEvent(s) — no music, no SFX, no ducking,
-// no mastering.
+// AUDIO POLICY (Part 11; extended PHASE 3D): a visual segment's own
+// embedded audio (if any) is NEVER carried into the final mix — every shot
+// segment is normalized with `-an` (defense in depth on top of every
+// renderer already muting its own video elements — see hyperframes-
+// renderer.js's own audioPolicy comments). The audio in the output is
+// every caller-supplied AudioEvent this file's own validateAudioEvent()
+// accepts — NARRATION (as always) and, since Phase 3D, MUSIC — rendered by
+// services/audio-mixer-service.js (gain, fades, narration-driven ducking,
+// final loudness) and muxed in exactly like before. This file itself still
+// builds no filter graph and makes no mixing decision; see that file's own
+// header for what it does and does not do. SFX/AMBIENCE remain
+// unimplemented (no provider exists yet) — an AudioEvent of either type
+// would reach the mixer and fail there with a structured
+// UNSUPPORTED_AUDIO_TYPE diagnostic, never silently dropped.
+//
+// DEGRADATION (Phase 3D Part H): a NARRATION AudioEvent that fails
+// validateAudioEvent() still fails the whole assembly (unchanged — Part 2
+// content-completeness treats missing narration as a real defect). A
+// non-NARRATION AudioEvent (MUSIC) that fails validation is EXCLUDED with
+// a warning diagnostic instead — "music unavailable -> production may
+// continue" is a property of THIS file's own validation loop, not
+// something a caller has to implement separately.
 //
 // SECURITY (Part 20): every FFmpeg/ffprobe invocation uses execFileSync
 // with an explicit argument array — never a shell string, never
@@ -73,6 +88,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const timelineStore = require('./timeline-store');
 const assetStorage = require('./asset-storage');
+const audioMixerService = require('./audio-mixer-service');
 const { createAssemblyResult, createAssemblyDiagnostic, createAssemblyArtifact, createShotProvenanceEntry, createNarrationProvenanceEntry } = require('../schemas/assembly-result-schema');
 
 const DEFAULT_WIDTH = 1920;
@@ -214,31 +230,6 @@ function concatSegments(ffmpegPath, workDir, segmentPaths, width, height, fps, o
     'FFMPEG_FAILED',
     'failed to concatenate visual segments'
   );
-}
-
-// Normalizes ONE narration source to an exact-length (expectedDuration),
-// silence-padded WAV, shifted to its own real, measured startTime — the
-// building block for placing N independently-timed narration events onto
-// one timeline without ever using word-count/WPM/target estimates (Part
-// 10): every input to this function is the AudioEvent's own REAL,
-// ffprobe-measurable audio file and REAL startTime.
-function buildNarrationSegment(ffmpegPath, sourcePath, startTimeSeconds, expectedDuration, outPath) {
-  const delayMs = Math.max(0, Math.round(startTimeSeconds * 1000));
-  return run(
-    ffmpegPath,
-    ['-y', '-hide_banner', '-loglevel', 'error', '-i', sourcePath, '-af', `adelay=${delayMs}|${delayMs},apad`, '-t', String(expectedDuration), '-ar', '48000', '-ac', '2', outPath],
-    'FFMPEG_FAILED',
-    `failed to place narration segment from "${sourcePath}" at startTime ${startTimeSeconds}`
-  );
-}
-
-function mixNarrationSegments(ffmpegPath, segmentPaths, outPath) {
-  if (segmentPaths.length === 1) {
-    return run(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', '-i', segmentPaths[0], '-c:a', 'pcm_s16le', outPath], 'FFMPEG_FAILED', 'failed to normalize the single narration track');
-  }
-  const inputArgs = segmentPaths.flatMap((p) => ['-i', p]);
-  const filter = `amix=inputs=${segmentPaths.length}:duration=first:dropout_transition=0[aout]`;
-  return run(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', ...inputArgs, '-filter_complex', filter, '-map', '[aout]', outPath], 'FFMPEG_FAILED', 'failed to mix narration tracks');
 }
 
 function muxFinal(ffmpegPath, videoPath, audioPath, outPath) {
@@ -392,12 +383,34 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
     resolvedShots.push({ shot, render: result.render });
   }
 
-  // --- Part 3 — validate every supplied AudioEvent ---
+  // --- Part 3 — validate every supplied AudioEvent. PHASE 3D Part H —
+  // degradation is now type-dependent: NARRATION still fails the whole
+  // assembly (unchanged — Part 2's content-completeness treats missing
+  // narration as a real defect). Any other type (MUSIC today) is excluded
+  // with a warning diagnostic instead of failing assembly — "music
+  // unavailable -> production may continue" implemented as a property of
+  // this loop itself.
+  //
+  // BACKWARD COMPATIBILITY: `type` did not exist as a concept before Phase
+  // 3A introduced it, and this file never read it before Phase 3D — every
+  // AudioEvent this function has ever accepted before now WAS narration,
+  // unconditionally. A caller that still passes a type-less/legacy entry
+  // (`type` null/undefined) gets that exact same historical meaning, never
+  // silently reinterpreted as "not narration" just because a newer field
+  // happens to be absent. This normalization happens ONCE, here — the
+  // mixer downstream always receives a concrete, correct type. ---
   const resolvedAudio = [];
   for (const ae of Array.isArray(audioEvents) ? audioEvents : []) {
+    const effectiveType = (ae && ae.type) || 'NARRATION';
     const result = validateAudioEvent(ae, projectId);
-    if (result.error) return fail(projectId, [...diagnostics, result.error]);
-    resolvedAudio.push({ audioEvent: ae, asset: result.asset, absolutePath: result.absolutePath });
+    if (result.error) {
+      if (effectiveType === 'NARRATION') {
+        return fail(projectId, [...diagnostics, result.error]);
+      }
+      diagnostics.push(diag('AUDIO_EVENT_DEGRADED', `${effectiveType} AudioEvent excluded from assembly (production continues): ${result.error.message}`, { beatId: ae && ae.beatId }));
+      continue;
+    }
+    resolvedAudio.push({ audioEvent: ae.type ? ae : { ...ae, type: effectiveType }, asset: result.asset, absolutePath: result.absolutePath });
   }
 
   // --- Part 12 — expected duration: last PRIMARY shot end vs. last narration end, whichever is later ---
@@ -436,19 +449,17 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
     const concatBuilt = concatSegments(ffmpegPath, workDir, segments, width, height, fps, silentVideoPath);
     if (!concatBuilt.ok) return fail(projectId, [...diagnostics, concatBuilt.error], expectedDuration);
 
-    // --- Part 10/11 — narration only; no music/SFX/mixing beyond placement ---
+    // --- Part 10/11, PHASE 3D — audio rendering delegated entirely to
+    // services/audio-mixer-service.js (gain/fades/ducking/final loudness);
+    // this file only feeds it already-validated sources and takes back one
+    // mixed file. A mixer FAILURE (Part H: "must not silently claim
+    // success") fails assembly exactly like any other FFmpeg step here
+    // always has — never swallowed. ---
     let mixedAudioPath = null;
     if (resolvedAudio.length > 0) {
-      const narrationSegmentPaths = [];
-      for (const { audioEvent, absolutePath } of resolvedAudio) {
-        const segPath = path.join(workDir, `narr-${narrationSegmentPaths.length}.wav`);
-        const built = buildNarrationSegment(ffmpegPath, absolutePath, audioEvent.startTime, expectedDuration, segPath);
-        if (!built.ok) return fail(projectId, [...diagnostics, built.error], expectedDuration);
-        narrationSegmentPaths.push(segPath);
-      }
-      mixedAudioPath = path.join(workDir, 'narration-mixed.wav');
-      const mixed = mixNarrationSegments(ffmpegPath, narrationSegmentPaths, mixedAudioPath);
+      const mixed = audioMixerService.mixAudioEvents({ resolvedAudio, expectedDuration, workDir, ffmpegPath });
       if (!mixed.ok) return fail(projectId, [...diagnostics, mixed.error], expectedDuration);
+      mixedAudioPath = mixed.path;
     }
 
     fs.mkdirSync(outputDir, { recursive: true });
@@ -469,6 +480,18 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
       );
     }
 
+    // --- PHASE 3D Part H — audio QA: a real, ffmpeg-measured clipping-risk
+    // detector on the FINAL container's own audio stream. Non-fatal
+    // (real, ordinary audio can legitimately peak near 0 dBFS) — reported
+    // as a diagnostic so it is never silently missed, never a hard gate
+    // that could fail an otherwise-good production over one loud moment. ---
+    if (inspected.hasAudio) {
+      const peakDb = audioMixerService.analyzePeakLevelDb(ffmpegPath, outputPath);
+      if (typeof peakDb === 'number' && Number.isFinite(peakDb) && peakDb >= audioMixerService.CLIPPING_PEAK_THRESHOLD_DB) {
+        diagnostics.push(diag('AUDIO_CLIPPING_RISK_DETECTED', `final audio peak level measured at ${peakDb.toFixed(2)} dB, at/above the ${audioMixerService.CLIPPING_PEAK_THRESHOLD_DB} dB clipping-risk threshold`));
+      }
+    }
+
     // --- Part 13 — provenance ---
     const shotProvenance = resolvedShots.map(({ shot, render }) =>
       createShotProvenanceEntry({
@@ -482,7 +505,16 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
         duration: shot.duration,
       })
     );
-    const narrationProvenance = resolvedAudio.map(({ audioEvent }) =>
+    // PHASE 3D — resolvedAudio may now contain MUSIC entries too;
+    // narrationProvenance/narrationSources stay scoped to NARRATION only
+    // (unchanged meaning, unchanged values whenever no MUSIC is present) —
+    // no schema field is renamed or added this stage to carry a separate
+    // music provenance list; a MUSIC AudioEvent's own sourceAssetId
+    // remains fully traceable via timelineCompilation.audio[] and the
+    // project's own Asset store, exactly like every other Asset reference
+    // this file does not separately re-catalog.
+    const narrationResolvedAudio = resolvedAudio.filter((r) => r.audioEvent.type === 'NARRATION');
+    const narrationProvenance = narrationResolvedAudio.map(({ audioEvent }) =>
       createNarrationProvenanceEntry({
         audioEventId: audioEvent.audioEventId,
         sourceAssetId: audioEvent.sourceAssetId,
@@ -497,9 +529,9 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
       projectId: projectId || null,
       status: 'COMPLETED',
       expectedDuration,
-      artifact: createAssemblyArtifact({ format: 'MP4', path: outputPath, width: inspected.width, height: inspected.height, fps: inspected.fps, duration: inspected.duration }),
+      artifact: createAssemblyArtifact({ format: 'MP4', path: outputPath, width: inspected.width, height: inspected.height, fps: inspected.fps, duration: inspected.duration, hasAudio: inspected.hasAudio, audioCodec: inspected.audioCodec }),
       videoSources: shotProvenance.map((p) => p.sourceAssetId).filter(Boolean),
-      narrationSources: resolvedAudio.map((r) => r.audioEvent.sourceAssetId),
+      narrationSources: narrationResolvedAudio.map((r) => r.audioEvent.sourceAssetId),
       diagnostics,
       provenance: { shots: shotProvenance, narration: narrationProvenance },
     });
