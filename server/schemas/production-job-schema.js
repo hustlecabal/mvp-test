@@ -142,7 +142,9 @@ function createProductionJob(overrides = {}) {
     timelineCompilation: null, // TimelineCompilationResult (schemas/timeline-compilation-schema.js)
     assemblyResult: null, // AssemblyResult (schemas/assembly-result-schema.js) — the final artifact
     captionResult: null, // CaptionTrackResult (schemas/caption-schema.js) — P0-TEMPORAL: a sidecar SRT/caption export derived from this SAME run's real narration AudioEvents; NEVER gates COMPLETE/QC and never re-renders the final MP4 (see production-orchestrator-service.js's own caption step)
-    qc: null, // { passed: boolean, checks: [{ code, passed, message }] } — see production-orchestrator-service.js's runAutomaticQc()
+    qc: null, // { passed: boolean, checks: [{ code, passed, message }] } — see production-orchestrator-service.js's runAutomaticQc() — TECHNICAL validity only (file exists, non-empty, real duration/dimensions/fps)
+    contentCompleteness: null, // ContentCompleteness (services/production-completeness-service.js's computeContentCompleteness()) — CREATIVE/CONTENT validity: did every intended beat/narration actually reach the final assembly. Set once, right before COMPLETE, alongside creativeQa below. Deliberately separate from `status` — a job can be status:'COMPLETE' with contentCompleteness.overall:'PARTIAL_CONTENT'; never collapsed into one enum.
+    creativeQa: null, // CreativeQAReport (services/creative-qa-interface.js) — the deterministic services/creative-qa-service.js's runDeterministicCreativeQA() output; summarizeCreativeQAReport() derives the PASS/WARN/FAIL view services/production-diagnosis-service.js's diagnoseProductionJob() reads
     diagnostics: Array.isArray(diagnostics) ? diagnostics.map((d) => createProductionDiagnostic(d)) : [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

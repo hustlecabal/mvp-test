@@ -97,6 +97,8 @@ const { assembleTimeline } = require('./video-assembly-service');
 const { buildCaptionTrack } = require('./caption-service');
 const fs = require('fs');
 const { createProductionDiagnostic, createProductionEscalation, createBeatProgress } = require('../schemas/production-job-schema');
+const { computeContentCompleteness } = require('./production-completeness-service');
+const { runDeterministicCreativeQA } = require('./creative-qa-service');
 
 const NON_TERMINAL_STATUSES = ['REQUESTED', 'DERIVING_BEATS', 'RESOLVING_MATERIALS', 'EXECUTING_MATERIALS', 'RENDERING', 'GENERATING_NARRATION', 'COMPILING_TIMELINE', 'ASSEMBLING', 'QC'];
 
@@ -575,6 +577,19 @@ function resumeProduction(productionJobId) {
     job = persist(job, { status: 'ESCALATED' });
     return { ok: false, job, escalated: true };
   }
+
+  // --- CONTENT COMPLETENESS + CREATIVE QA (PRODUCTION RELIABILITY LAYER) ---
+  // runAutomaticQc() above only proves the output FILE is technically valid
+  // (exists, non-empty, real duration/dimensions/fps) — it says nothing
+  // about whether every beat/narration the Storyboard/BeatGraph intended
+  // actually reached that file. Computed once, right before the terminal
+  // COMPLETE persist, so a technically-valid MP4 can never silently
+  // masquerade as a creatively-complete one: job.status stays 'COMPLETE'
+  // (unchanged meaning, unchanged enum), but job.contentCompleteness.overall
+  // and job.creativeQa now carry the separate, impossible-to-miss signal.
+  const contentCompleteness = computeContentCompleteness(job);
+  const creativeQaReport = runDeterministicCreativeQA(job, contentCompleteness);
+  job = persist(job, { contentCompleteness, creativeQa: creativeQaReport });
 
   job = persist(job, { status: 'COMPLETE' });
   return { ok: true, job };

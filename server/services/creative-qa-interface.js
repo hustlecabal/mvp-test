@@ -2,19 +2,33 @@
 //
 // Section 18 — CREATIVE QA CONTRACT. Formalises the INTERFACE for the pass
 // that catches what structural validation (creative-production-contract-
-// validator.js) cannot prove: identity drift, wardrobe drift, implausible
-// camera movement, broken screen direction, lighting discontinuity,
-// environment drift, poor shot purpose, irrelevant B-roll, weak
-// audio/visual relationship, awkward generation boundaries, a bad
-// continuation frame.
+// validator.js) cannot prove.
 //
-// This file defines the SHAPE only — no autonomous QA system is built here
-// (the milestone explicitly says not to, and no such infrastructure exists
-// yet in this repository to build on). A future reviewer (human, or a
-// specialist skill invoked deliberately) produces a CreativeQAReport; nothing
-// here calls a model, a skill, or makes the judgment itself.
+// Two genuinely different tiers of dimension live under the same
+// PASS/FAIL/WARN finding shape:
+//
+//   SUBJECTIVE dimensions (identity drift, wardrobe drift, camera
+//   plausibility, screen direction, lighting/environment continuity, shot
+//   purpose, B-roll relevance, audio/visual relationship, generation-
+//   boundary/continuation-frame quality) — require real visual/creative
+//   judgment. Still UNIMPLEMENTED: no autonomous system exists for these,
+//   and none is built here. A future reviewer (human, or a specialist
+//   skill invoked deliberately) would produce findings for these.
+//
+//   DETERMINISTIC dimensions (PRODUCTION RELIABILITY LAYER, added once a
+//   real implementation existed to back them — services/creative-qa-
+//   service.js) — beat coverage, narration coverage, silent/unexpected
+//   timeline gaps, and scene-length plausibility are all directly
+//   computable from existing production metadata (services/production-
+//   completeness-service.js, and the timeline compiler's own already-
+//   computed TIMELINE_GAP diagnostics). These are real, tested, and wired
+//   into production-orchestrator-service.js's completion path.
+//
+// This file itself still only defines the SHAPE — it never runs a check
+// or calls a model itself.
 
 const CREATIVE_QA_DIMENSIONS = [
+  // Subjective — unimplemented, require real visual/creative judgment.
   'IDENTITY_DRIFT',
   'WARDROBE_DRIFT',
   'CAMERA_MOVEMENT_PLAUSIBILITY',
@@ -26,6 +40,14 @@ const CREATIVE_QA_DIMENSIONS = [
   'AUDIO_VISUAL_RELATIONSHIP',
   'GENERATION_BOUNDARY_QUALITY',
   'CONTINUATION_FRAME_QUALITY',
+
+  // Deterministic — implemented in services/creative-qa-service.js,
+  // backed by services/production-completeness-service.js and the
+  // timeline compiler's own existing diagnostics.
+  'BEAT_COVERAGE', // every beat the BeatGraph/Storyboard intended reached the final assembly
+  'NARRATION_COVERAGE', // every beat with an intended narration segment has real, persisted audio
+  'TIMELINE_CONTENT_MISMATCH', // an unexpected gap exists in the compiled timeline (TIMELINE_GAP)
+  'SCENE_LENGTH_PLAUSIBILITY', // a compiled beat's duration is implausibly short to convey content
 ];
 
 // One finding against one dimension, for one object. `result` is

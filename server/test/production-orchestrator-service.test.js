@@ -154,8 +154,82 @@ test('GOLDEN PRODUCTION TEST — one entry point drives Blueprint -> ... -> one 
   assert.equal(job.qc.passed, true);
   assert.ok(job.qc.checks.every((c) => c.passed));
 
+  // 6. PRODUCTION RELIABILITY LAYER — a genuinely complete production must
+  // compute as FULL_CONTENT/PASS, never leave the new signal null on a
+  // real COMPLETE job.
+  assert.ok(job.contentCompleteness);
+  assert.equal(job.contentCompleteness.overall, 'FULL_CONTENT');
+  assert.deepEqual(job.contentCompleteness.missingBeatIds, []);
+  assert.deepEqual(job.contentCompleteness.missingNarrationBeatIds, []);
+  assert.ok(job.creativeQa);
+  const { summarizeCreativeQAReport } = require('../services/creative-qa-service');
+  const qaSummary = summarizeCreativeQAReport(job.creativeQa);
+  assert.equal(qaSummary.passed, true);
+  assert.equal(qaSummary.severity, 'PASS');
+
+  const { diagnoseProductionJob } = require('../services/production-diagnosis-service');
+  const diagnosis = diagnoseProductionJob(job);
+  assert.equal(diagnosis.classification, 'SUCCESS');
+  assert.equal(diagnosis.isContentComplete, true);
+
   // Copy out for human inspection, same discipline as the existing Golden Video proof.
   fs.copyFileSync(artifactPath, path.join(PROOF_DIR, `golden-production-${job.productionJobId}.mp4`));
+});
+
+test('PRODUCTION RELIABILITY LAYER — a REAL, unforced silent beat drop (no narrativeRole supplied for a non-narrated AI_VIDEO beat) is caught as COMPLETE + PARTIAL_CONTENT, never indistinguishable from full success', () => {
+  // This is not a synthetic/injected scenario — it is a genuine, pre-
+  // existing silent-degradation path this test discovered by omitting
+  // `narrativeRoles`/narration for shot2 (AI_VIDEO, PROJECT_ASSET_REUSE):
+  // with no narrationSegment.text, applyNarrationTiming() never assigns
+  // beat.startTime for that beat; project-asset-reuse-executor.js's
+  // ASSET_PLACEMENT renderSpec then requires a real startTime and fails
+  // MATERIAL_EXECUTION with INVALID_START_TIME; timeline-compiler-
+  // service.js then excludes that beat entirely with EXECUTION_FAILED.
+  // Every stage does the individually-correct thing (diagnose, exclude,
+  // continue) and the run still reaches status COMPLETE — exactly the
+  // systemic pattern this stage's audit set out to catch, caught here on
+  // a real orchestrator run with zero test-side tampering.
+  const { project, shot1, shot3 } = buildGoldenProject();
+  const outputDir = outDir();
+
+  const result = productionOrchestrator.startProduction(project.id, {
+    outputDir,
+    narrationSegments: {
+      [shot1.shotId]: { scriptRefId: 'drop-script-1', text: 'Every great video starts with a single clear idea.' },
+    },
+    // Deliberately no narrativeRoles/narration for shot2 (AI_VIDEO) and no
+    // explicit startTime for it anywhere — the exact real-world gap that
+    // triggers the silent drop described above.
+    materialOptions: { [shot3.shotId]: { text: 'THE END' } },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.job && result.job.diagnostics, null, 2));
+  const { job } = result;
+
+  // The pipeline itself still reports a clean terminal COMPLETE — proving
+  // this is a genuinely SILENT drop, not something status already exposed.
+  assert.equal(job.status, 'COMPLETE');
+  assert.equal(job.escalations.length, 0);
+
+  // The new signal is what makes the drop visible.
+  assert.equal(job.contentCompleteness.overall, 'PARTIAL_CONTENT');
+  assert.equal(job.contentCompleteness.missingBeatIds.length, 1);
+  const droppedBeatId = job.contentCompleteness.missingBeatIds[0];
+  assert.ok(job.diagnostics.some((d) => d.beatId === droppedBeatId && d.code === 'EXECUTION_FAILED'));
+
+  const { summarizeCreativeQAReport } = require('../services/creative-qa-service');
+  const qaSummary = summarizeCreativeQAReport(job.creativeQa);
+  assert.equal(qaSummary.passed, false);
+  assert.equal(qaSummary.severity, 'FAIL');
+  assert.ok(qaSummary.affectedBeatIds.includes(droppedBeatId));
+
+  const { diagnoseProductionJob } = require('../services/production-diagnosis-service');
+  const diagnosis = diagnoseProductionJob(job);
+  // The critical assertion this whole stage exists for: status stays
+  // COMPLETE (the pipeline genuinely ran to a non-failed terminal state),
+  // but the diagnosis correctly reports PARTIAL_SUCCESS, never SUCCESS.
+  assert.equal(diagnosis.classification, 'PARTIAL_SUCCESS');
+  assert.equal(diagnosis.isContentComplete, false);
+  assert.ok(diagnosis.affectedBeatIds.includes(droppedBeatId));
 });
 
 test('APPROVAL BOUNDARY — a project with no linked, approved Blueprint is BLOCKED before any production work', () => {
