@@ -49,6 +49,8 @@ const productionJobStore = require('../services/production-job-store');
 const productionOrchestrator = require('../services/production-orchestrator-service');
 const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 const { makeTinyPng } = require('./fixtures/png-fixture');
+const { createAudioEvent } = require('../schemas/audio-schema');
+const { createCreativeQAReport, createCreativeQAFinding } = require('../services/creative-qa-interface');
 
 const PROOF_DIR = path.join(os.tmpdir(), 'evolink-p0-orch-golden-production-proof');
 fs.mkdirSync(PROOF_DIR, { recursive: true });
@@ -72,6 +74,18 @@ function makeStoredVideoAsset(projectId, { durationSeconds = 6 } = {}) {
   timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: relativePath });
   const absolutePath = assetStorage.resolveStoredPath(relativePath);
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=size=640x360:duration=${durationSeconds}:rate=25`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', absolutePath]);
+  return timelineStore.getAsset(projectId, asset.assetId);
+}
+
+// Registers a real, playable WAV as an 'audio' Asset — the same storage
+// convention every real audio provider in this codebase uses (mirrors
+// test/audio-mixer-integration.test.js's own makeStoredAudioAsset()).
+function makeStoredAudioAsset(projectId, { durationSeconds = 4, frequency = 440 } = {}) {
+  const asset = timelineStore.addAsset(projectId, { assetId: crypto.randomUUID(), type: 'audio' });
+  const relativePath = `${asset.assetId}.wav`;
+  const absolutePath = assetStorage.resolveStoredPath(relativePath);
+  execFileSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${frequency}:duration=${durationSeconds}`, '-ar', '48000', '-ac', '2', absolutePath]);
+  timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: relativePath, contentType: 'audio/wav' });
   return timelineStore.getAsset(projectId, asset.assetId);
 }
 
@@ -421,4 +435,136 @@ test('RESUMABILITY — a beat with an already-persisted COMPLETED render is neve
   assert.ok(beat2After.render);
   assert.equal(beat2After.render.status, 'COMPLETED');
   assert.notEqual(beat2After.render.renderId, completedJob.beatProgress[1].render.renderId);
+});
+
+test('PHASE 3F-A FIX 1 — options.audioInputs survives into the persisted ProductionJob and reaches real timeline compilation + mixing', () => {
+  const { project, shot1, shot2, shot3 } = buildGoldenProject();
+  const outputDir = outDir();
+
+  // A real, already-ACQUIRED-shaped MUSIC AudioEvent, built exactly the
+  // way music-acquisition-service.js's createMusicAudioEvent() itself
+  // would (duration: null, no beatId/sceneId -> whole-timeline span,
+  // Phase 3A) — this test never touches acquisition itself, only proves
+  // that an already-built AudioEvent supplied via options.audioInputs
+  // actually flows through the orchestrator, exactly the "no new audio
+  // schema, reuse the existing AudioEvent architecture" contract.
+  const musicAsset = makeStoredAudioAsset(project.id, { durationSeconds: 4, frequency: 220 });
+  const musicEvent = createAudioEvent({ type: 'MUSIC', status: 'READY', sourceAssetId: musicAsset.assetId, duration: null });
+
+  const result = productionOrchestrator.startProduction(project.id, {
+    outputDir,
+    narrationSegments: {
+      [shot1.shotId]: { scriptRefId: 'audio-inputs-script-1', text: 'Every great video starts with a single clear idea.' },
+      [shot2.shotId]: { scriptRefId: 'audio-inputs-script-2', text: 'Then real footage brings that idea to life on screen.' },
+    },
+    narrativeRoles: { [shot1.shotId]: 'HOOK', [shot2.shotId]: 'EXPLANATION' },
+    materialOptions: { [shot3.shotId]: { text: 'THE END' } },
+    audioInputs: [musicEvent],
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result.job && result.job.diagnostics, null, 2));
+  const { job } = result;
+  assert.equal(job.status, 'COMPLETE');
+
+  // 1. Persisted into the ProductionJob exactly like the other
+  // caller-supplied context fields (treatments/narrationSegments/etc).
+  const reloaded = productionJobStore.getProductionJob(job.productionJobId);
+  assert.ok(Array.isArray(reloaded.audioInputs));
+  assert.equal(reloaded.audioInputs.length, 1);
+  assert.equal(reloaded.audioInputs[0].audioEventId, musicEvent.audioEventId);
+  assert.equal(reloaded.audioInputs[0].sourceAssetId, musicAsset.assetId);
+  assert.equal(reloaded.audioInputs[0].type, 'MUSIC');
+
+  // 2. Reaches real timeline compilation — the supplied MUSIC AudioEvent
+  // shows up in the compiled TimelineIR's own audio[], alongside the
+  // real NARRATION events the pipeline derives on its own.
+  assert.equal(job.timelineCompilation.status, 'COMPILED');
+  const compiledAudioEventIds = job.timelineCompilation.audio.map((a) => a.audioEventId);
+  assert.ok(compiledAudioEventIds.includes(musicEvent.audioEventId), JSON.stringify(job.timelineCompilation.audio, null, 2));
+  const narrationCount = job.timelineCompilation.audio.filter((a) => a.type === 'NARRATION').length;
+  assert.equal(narrationCount, 2, 'both narrated beats must still produce their own NARRATION AudioEvents, unaffected by this fix');
+
+  // 3. Reaches the real mixer/assembly — a genuine, playable MP4 with a
+  // real decodable audio stream (music + narration mixed together).
+  assert.equal(job.assemblyResult.status, 'COMPLETED');
+  const artifactPath = job.assemblyResult.artifact.path;
+  assert.ok(fs.existsSync(artifactPath));
+  const probed = ffprobeFull(artifactPath);
+  const audioStream = probed.streams.find((s) => s.codec_type === 'audio');
+  assert.ok(audioStream, 'final MP4 must have a decodable, mixed audio stream');
+
+  // 4. QC/content-completeness/creative-QA are unaffected — this fix
+  // only threads an input through, it never changes those pipelines.
+  assert.equal(job.qc.passed, true);
+  assert.equal(job.contentCompleteness.overall, 'FULL_CONTENT');
+});
+
+test('PHASE 3F-A FIX 1 (regression) — omitting options.audioInputs still defaults to an empty array, exactly like before this fix', () => {
+  const { project, shot1, shot2, shot3 } = buildGoldenProject();
+  const result = productionOrchestrator.startProduction(project.id, {
+    outputDir: outDir(),
+    narrationSegments: { [shot1.shotId]: { scriptRefId: 's1', text: 'Every great video starts with a single clear idea.' } },
+    materialOptions: { [shot3.shotId]: { text: 'THE END' } },
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.job && result.job.diagnostics, null, 2));
+  assert.deepEqual(result.job.audioInputs, []);
+});
+
+test('PHASE 3F-A FIX 2 — getProductionStatus() surfaces diagnoseProductionJob()\'s reconciled diagnosis, so COMPLETE + QC PASS + PARTIAL_CONTENT is never reported as unqualified success', () => {
+  const project = projectStore.createProject({ title: 'P0-ORCH — Fix 2 diagnosis wiring', topic: 'diagnosis wiring proof' });
+
+  // Hand-built job shaped exactly like the real-world failure mode Fix 2
+  // exists to surface: status COMPLETE, technical QC PASS, but content
+  // completeness only PARTIAL_CONTENT (one beat missing) — the same
+  // shape test/production-diagnosis-service.test.js's own unit test
+  // already proves diagnoseProductionJob() classifies as PARTIAL_SUCCESS.
+  // This test proves the SERVICE ENTRY POINT (getProductionStatus),
+  // not diagnoseProductionJob() itself, actually surfaces that.
+  const partialJob = productionJobStore.addProductionJob({
+    projectId: project.id,
+    outputDir: outDir(),
+    status: 'COMPLETE',
+    derivationContext: { treatments: {}, narrationSegments: {}, narrativeRoles: {}, visualBible: null },
+    qc: { passed: true, checks: [{ code: 'FILE_EXISTS', passed: true, message: '' }] },
+    contentCompleteness: { overall: 'PARTIAL_CONTENT', missingBeatIds: ['b2'], missingNarrationBeatIds: [] },
+    creativeQa: createCreativeQAReport({
+      subjectType: 'ProductionJob',
+      subjectId: 'placeholder',
+      findings: [createCreativeQAFinding({ dimension: 'BEAT_COVERAGE', result: 'FAIL', objectType: 'VisualBeat', objectId: 'b2', note: 'beat "b2" missing' })],
+    }),
+  });
+
+  const result = productionOrchestrator.getProductionStatus(partialJob.productionJobId);
+  assert.equal(result.ok, true);
+
+  // The existing raw signals are returned completely unchanged.
+  assert.equal(result.job.status, 'COMPLETE');
+  assert.equal(result.job.qc.passed, true);
+  assert.equal(result.job.contentCompleteness.overall, 'PARTIAL_CONTENT');
+
+  // The new, additive `diagnosis` field is now present and correctly
+  // reconciles those signals into something an operator cannot mistake
+  // for an unqualified success.
+  assert.ok(result.diagnosis, 'getProductionStatus() must expose a `diagnosis` field (Phase 3F-A Fix 2)');
+  assert.notEqual(result.diagnosis.classification, 'SUCCESS');
+  assert.equal(result.diagnosis.classification, 'PARTIAL_SUCCESS');
+  assert.equal(result.diagnosis.isContentComplete, false);
+  assert.deepEqual(result.diagnosis.affectedBeatIds, ['b2']);
+
+  // Control case: a genuinely complete job (real GOLDEN production run)
+  // still reaches SUCCESS through the same real entry point.
+  const { project: goldenProject, shot1, shot2, shot3 } = buildGoldenProject();
+  const golden = productionOrchestrator.startProduction(goldenProject.id, {
+    outputDir: outDir(),
+    narrationSegments: {
+      [shot1.shotId]: { scriptRefId: 'diag-s1', text: 'Every great video starts with a single clear idea.' },
+      [shot2.shotId]: { scriptRefId: 'diag-s2', text: 'Then real footage brings that idea to life on screen.' },
+    },
+    materialOptions: { [shot3.shotId]: { text: 'THE END' } },
+  });
+  assert.equal(golden.ok, true, JSON.stringify(golden.job && golden.job.diagnostics, null, 2));
+  const goldenStatus = productionOrchestrator.getProductionStatus(golden.job.productionJobId);
+  assert.equal(goldenStatus.ok, true);
+  assert.equal(goldenStatus.diagnosis.classification, 'SUCCESS');
+  assert.equal(goldenStatus.diagnosis.isContentComplete, true);
 });

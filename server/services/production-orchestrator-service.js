@@ -105,6 +105,7 @@ const fs = require('fs');
 const { createProductionDiagnostic, createProductionEscalation, createBeatProgress } = require('../schemas/production-job-schema');
 const { computeContentCompleteness } = require('./production-completeness-service');
 const { runDeterministicCreativeQA } = require('./creative-qa-service');
+const { diagnoseProductionJob } = require('./production-diagnosis-service');
 
 const NON_TERMINAL_STATUSES = ['REQUESTED', 'DERIVING_BEATS', 'RESOLVING_MATERIALS', 'EXECUTING_MATERIALS', 'RENDERING', 'GENERATING_NARRATION', 'COMPILING_TIMELINE', 'ASSEMBLING', 'QC'];
 
@@ -246,6 +247,20 @@ function getOrCreateProductionJob(projectId, options = {}) {
     // supply its own `options` (e.g. KINETIC_TYPOGRAPHY/MOTION_GRAPHIC
     // on-screen content when it differs from narration text).
     materialOptions: options.materialOptions || {},
+    // PHASE 3F-A FIX 1 — the SAME threading discipline as treatments/
+    // narrationSegments/narrativeRoles/visualObjectives/edges above,
+    // applied to the ALREADY-EXISTING job.audioInputs field (schemas/
+    // production-job-schema.js's own "job-level home for resolved,
+    // non-beat-scoped audio (MUSIC/AMBIENCE/SFX)... this stage only
+    // establishes the home, never populates it" — Phase 3F-A is the
+    // first stage that actually populates it). No new schema: an entry
+    // here is expected to already be a real schemas/audio-schema.js
+    // AudioEvent (e.g. from music-acquisition-service.js's own
+    // createMusicAudioEvent()/sfx-acquisition-service.js's own
+    // createSfxAudioEvent()) — this file never constructs, validates, or
+    // reinterprets one; compileTimeline() (called below, unchanged)
+    // already validates AudioEvent shape/type exactly as it always has.
+    audioInputs: Array.isArray(options.audioInputs) ? options.audioInputs : [],
   });
 
   return { ok: true, job, alreadyStarted: false };
@@ -304,10 +319,21 @@ function startProductionAsync(projectId, options = {}) {
 // ---------------------------------------------------------------------------
 // Public entry point #2 — get current status (no side effects).
 // ---------------------------------------------------------------------------
+// PHASE 3F-A FIX 2 — job itself is returned completely unchanged (every
+// existing signal — status/qc/contentCompleteness/creativeQa/diagnostics/
+// escalations/beatProgress — stays exactly where it already was); this
+// only ADDS the already-existing, already-tested diagnoseProductionJob()
+// reconciliation alongside it, so a caller is never forced to manually
+// cross-reference four separate fields to know whether a "COMPLETE" job
+// actually delivered everything it intended (e.g. COMPLETE + qc.passed
+// + contentCompleteness.overall:'PARTIAL_CONTENT' must never read as an
+// unqualified success). diagnoseProductionJob() is pure/read-only and
+// safe on a job in any state (including one still in progress) — see
+// that file's own header.
 function getProductionStatus(productionJobId) {
   const job = productionJobStore.getProductionJob(productionJobId);
   if (!job) return { ok: false, reason: `no ProductionJob found with id "${productionJobId}"` };
-  return { ok: true, job };
+  return { ok: true, job, diagnosis: diagnoseProductionJob(job) };
 }
 
 // ---------------------------------------------------------------------------

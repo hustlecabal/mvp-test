@@ -50,16 +50,23 @@ function register(server) {
         'narrationSegments/treatments/narrativeRoles/materialOptions are keyed by shotId (== beatId) and passed ' +
         'straight through, unmodified, to the same explicit-context shape beat-graph-derivation-service.js\'s own ' +
         'deriveBeatGraph() already accepts — this tool never infers narration text, visual treatment, or on-screen ' +
-        'content from anything else.',
+        'content from anything else.\n\n' +
+        'audioInputs is a flat array of already-built schemas/audio-schema.js AudioEvent objects (e.g. from ' +
+        'music-acquisition-service.js\'s createMusicAudioEvent() or sfx-acquisition-service.js\'s ' +
+        'createSfxAudioEvent()) for non-beat-scoped audio (MUSIC/SFX) — passed straight through, unmodified, to ' +
+        'timeline-compiler-service.js\'s compileTimeline() exactly like the real, already-measured NARRATION events ' +
+        'this pipeline already produces for every beat. This tool never acquires audio itself and never constructs ' +
+        'an AudioEvent — the caller must already have a real, ACQUIRED result before calling this.',
       inputSchema: {
         projectId: z.string(),
         treatments: z.record(z.string()).optional(),
         narrationSegments: z.record(narrationSegmentShape).optional(),
         narrativeRoles: z.record(z.string()).optional(),
         materialOptions: z.record(z.record(z.any())).optional(),
+        audioInputs: z.array(z.record(z.any())).optional(),
       },
     },
-    async ({ projectId, treatments, narrationSegments, narrativeRoles, materialOptions }) => {
+    async ({ projectId, treatments, narrationSegments, narrativeRoles, materialOptions, audioInputs }) => {
       requireProject(projectId);
       const result = productionOrchestrator.startProductionAsync(projectId, {
         outputDir: productionOrchestrator.defaultOutputDirFor(projectId),
@@ -67,6 +74,7 @@ function register(server) {
         narrationSegments,
         narrativeRoles,
         materialOptions,
+        audioInputs,
       });
       return jsonResult(result);
     }
@@ -78,13 +86,18 @@ function register(server) {
       title: 'Get one ProductionJob by id',
       description:
         'Read-only. Returns the full stored ProductionJob record — status, failureStage, per-beat progress, ' +
-        'escalations, and (once COMPLETE) the final assembled artifact path. Calls getProductionStatus() verbatim.',
+        'escalations, and (once COMPLETE) the final assembled artifact path — plus `diagnosis`, the reconciled ' +
+        'output of production-diagnosis-service.js\'s diagnoseProductionJob() (PHASE 3F-A): one classification/' +
+        'summary/recommendedAction that already cross-references job.status, job.qc, job.contentCompleteness, and ' +
+        'job.creativeQa, so a COMPLETE job that is only PARTIAL_CONTENT is never mistaken for an unqualified ' +
+        'success. Every existing field on the job record is still returned unchanged; `diagnosis` is additive. ' +
+        'Calls getProductionStatus() verbatim.',
       inputSchema: { productionJobId: z.string() },
     },
     async ({ productionJobId }) => {
       const result = productionOrchestrator.getProductionStatus(productionJobId);
       if (!result.ok) throw new Error(result.reason);
-      return jsonResult(result.job);
+      return jsonResult({ ...result.job, diagnosis: result.diagnosis });
     }
   );
 

@@ -43,6 +43,7 @@ const timelineStore = require('../services/timeline-store');
 const assetStorage = require('../services/asset-storage');
 const { satisfyProductionPrerequisites } = require('./helpers/control-plane-fixture');
 const { makeTinyPng } = require('./fixtures/png-fixture');
+const { createAudioEvent } = require('../schemas/audio-schema');
 
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
@@ -85,6 +86,15 @@ function makeStoredVideoAsset(projectId) {
   timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: relativePath });
   const absolutePath = assetStorage.resolveStoredPath(relativePath);
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:duration=5:rate=25', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', absolutePath]);
+}
+
+function makeStoredAudioAsset(projectId, { durationSeconds = 4, frequency = 220 } = {}) {
+  const asset = timelineStore.addAsset(projectId, { assetId: crypto.randomUUID(), type: 'audio' });
+  const relativePath = `${asset.assetId}.wav`;
+  const absolutePath = assetStorage.resolveStoredPath(relativePath);
+  execFileSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${frequency}:duration=${durationSeconds}`, '-ar', '48000', '-ac', '2', absolutePath]);
+  timelineStore.updateAssetStorage(projectId, asset.assetId, { status: 'STORED', provider: 'local', path: relativePath, contentType: 'audio/wav' });
+  return timelineStore.getAsset(projectId, asset.assetId);
 }
 
 function buildGoldenProject() {
@@ -182,4 +192,56 @@ test('start_production is idempotent: a second call while the first run is still
   assert.equal(third.ok, true, JSON.stringify(third.job));
   assert.notEqual(third.job.productionJobId, first.job.productionJobId);
   await pollUntilTerminal(third.job.productionJobId);
+});
+
+test('PHASE 3F-A FIX 1 (MCP surface) — start_production accepts audioInputs, and they reach the real production job + final MP4', async () => {
+  const { project, shot2 } = buildGoldenProject();
+  const musicAsset = makeStoredAudioAsset(project.id, { durationSeconds: 4 });
+  const musicEvent = createAudioEvent({ type: 'MUSIC', status: 'READY', sourceAssetId: musicAsset.assetId, duration: null });
+
+  const started = textOf(
+    await call('start_production', {
+      projectId: project.id,
+      materialOptions: { [shot2.shotId]: { text: 'THE END' } },
+      audioInputs: [musicEvent],
+    })
+  );
+  assert.equal(started.ok, true, JSON.stringify(started.job));
+
+  // Persisted onto the real ProductionJob exactly as supplied, reachable
+  // through the same MCP surface an operator would poll.
+  assert.equal(started.job.audioInputs.length, 1);
+  assert.equal(started.job.audioInputs[0].audioEventId, musicEvent.audioEventId);
+
+  const finished = await pollUntilTerminal(started.job.productionJobId);
+  assert.equal(finished.status, 'COMPLETE', JSON.stringify(finished.diagnostics));
+
+  // Reached real timeline compilation.
+  const compiledAudioEventIds = finished.timelineCompilation.audio.map((a) => a.audioEventId);
+  assert.ok(compiledAudioEventIds.includes(musicEvent.audioEventId), JSON.stringify(finished.timelineCompilation.audio));
+
+  // Reached the real mixer/assembly — a real MP4 with a decodable audio stream.
+  const probed = JSON.parse(
+    execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', finished.assemblyResult.artifact.path]).toString('utf8')
+  );
+  assert.ok(probed.streams.some((s) => s.codec_type === 'audio'), 'final MP4 must have a decodable audio stream from the supplied MUSIC AudioEvent');
+});
+
+test('PHASE 3F-A FIX 2 (MCP surface) — get_production_status exposes `diagnosis` alongside the raw job, and every existing job field is still returned unchanged', async () => {
+  const { project, shot2 } = buildGoldenProject();
+  const started = textOf(await call('start_production', { projectId: project.id, materialOptions: { [shot2.shotId]: { text: 'THE END' } } }));
+  assert.equal(started.ok, true, JSON.stringify(started.job));
+
+  const finished = await pollUntilTerminal(started.job.productionJobId);
+  assert.equal(finished.status, 'COMPLETE');
+
+  // Existing raw signals untouched.
+  assert.ok(finished.qc);
+  assert.ok(finished.contentCompleteness);
+  assert.ok(finished.assemblyResult);
+
+  // New, additive diagnosis field, reconciling those same signals.
+  assert.ok(finished.diagnosis, 'get_production_status must expose a `diagnosis` field (Phase 3F-A Fix 2)');
+  assert.equal(finished.diagnosis.classification, 'SUCCESS');
+  assert.equal(finished.diagnosis.isContentComplete, true);
 });
