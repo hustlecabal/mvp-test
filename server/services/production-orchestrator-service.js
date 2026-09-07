@@ -722,10 +722,21 @@ function runAutomaticQc(job) {
     'every compiled NARRATION AudioEvent must reference a real source Asset'
   );
 
+  // PHASE 3E — degradedDiagnosticFor() disambiguates AUDIO_EVENT_DEGRADED
+  // diagnostics by type (video-assembly-service.js's own diagnostic
+  // message always starts with the real AudioEvent.type — see that
+  // file's two AUDIO_EVENT_DEGRADED call sites). Fixes a latent gap in
+  // the ORIGINAL Phase 3D MUSIC_PRESENCE_ACCOUNTED_FOR check below, which
+  // used a bare `.find()` with no type filter — harmless while MUSIC was
+  // the only degradable non-NARRATION type, but ambiguous now that SFX
+  // can degrade independently in the same production.
+  function degradedDiagnosticFor(type) {
+    const diagnostics = Array.isArray(assemblyResult && assemblyResult.diagnostics) ? assemblyResult.diagnostics : [];
+    return diagnostics.find((d) => d.code === 'AUDIO_EVENT_DEGRADED' && d.message.startsWith(`${type} `)) || null;
+  }
+
   const requestedMusicCount = Array.isArray(job.audioInputs) ? job.audioInputs.filter((a) => a && a.type === 'MUSIC').length : 0;
-  const musicDegradedDiagnostic = Array.isArray(assemblyResult && assemblyResult.diagnostics)
-    ? assemblyResult.diagnostics.find((d) => d.code === 'AUDIO_EVENT_DEGRADED')
-    : null;
+  const musicDegradedDiagnostic = degradedDiagnosticFor('MUSIC');
   check(
     'MUSIC_PRESENCE_ACCOUNTED_FOR',
     requestedMusicCount === 0 || compiledMusicEvents.length > 0 || Boolean(musicDegradedDiagnostic),
@@ -736,6 +747,29 @@ function runAutomaticQc(job) {
         : musicDegradedDiagnostic
           ? `music was requested but degraded (${musicDegradedDiagnostic.message}) — production continued per Phase 3D's own policy`
           : 'music was requested and is absent from the compiled timeline with NO diagnostic explaining why — this must never happen silently'
+  );
+
+  // PHASE 3E — SFX_PRESENCE_ACCOUNTED_FOR, the exact same policy as
+  // MUSIC_PRESENCE_ACCOUNTED_FOR above, applied to SFX: requested-and-
+  // present -> pass; requested-and-degraded-with-a-diagnostic -> pass
+  // (accounted for); requested-and-silently-absent -> fail. Multiple SFX
+  // events can be requested; this checks aggregate presence-or-
+  // accounted-for, not each one individually — matching MUSIC's own
+  // granularity (a future stage could tighten this per-event if a real
+  // production need for it appears).
+  const compiledSfxEvents = compiledAudioEvents.filter((a) => a.type === 'SFX');
+  const requestedSfxCount = Array.isArray(job.audioInputs) ? job.audioInputs.filter((a) => a && a.type === 'SFX').length : 0;
+  const sfxDegradedDiagnostic = degradedDiagnosticFor('SFX');
+  check(
+    'SFX_PRESENCE_ACCOUNTED_FOR',
+    requestedSfxCount === 0 || compiledSfxEvents.length > 0 || Boolean(sfxDegradedDiagnostic),
+    requestedSfxCount === 0
+      ? 'no SFX was requested for this job'
+      : compiledSfxEvents.length > 0
+        ? `${compiledSfxEvents.length} requested SFX AudioEvent(s) reached the compiled timeline`
+        : sfxDegradedDiagnostic
+          ? `SFX was requested but degraded (${sfxDegradedDiagnostic.message}) — production continued per Phase 3E's own policy`
+          : 'SFX was requested and is absent from the compiled timeline with NO diagnostic explaining why — this must never happen silently'
   );
 
   const audioClippingDiagnostic = Array.isArray(assemblyResult && assemblyResult.diagnostics)

@@ -452,14 +452,22 @@ function assembleTimeline({ projectId, timelineCompilation, renderResults, audio
     // --- Part 10/11, PHASE 3D — audio rendering delegated entirely to
     // services/audio-mixer-service.js (gain/fades/ducking/final loudness);
     // this file only feeds it already-validated sources and takes back one
-    // mixed file. A mixer FAILURE (Part H: "must not silently claim
-    // success") fails assembly exactly like any other FFmpeg step here
-    // always has — never swallowed. ---
+    // mixed file. A NARRATION mixer failure still fails assembly exactly
+    // like any other FFmpeg step here always has — never swallowed. A
+    // non-NARRATION mixer failure (PHASE 3E: unsupported type, or a real
+    // per-segment build failure) comes back in `mixed.degraded` instead —
+    // the mixer already excluded it internally; this file just records
+    // the SAME AUDIO_EVENT_DEGRADED diagnostic it already uses for a
+    // validation-stage exclusion, so both degradation paths are visible
+    // through one, single, consistent signal. ---
     let mixedAudioPath = null;
     if (resolvedAudio.length > 0) {
       const mixed = audioMixerService.mixAudioEvents({ resolvedAudio, expectedDuration, workDir, ffmpegPath });
       if (!mixed.ok) return fail(projectId, [...diagnostics, mixed.error], expectedDuration);
       mixedAudioPath = mixed.path;
+      for (const d of Array.isArray(mixed.degraded) ? mixed.degraded : []) {
+        diagnostics.push(diag('AUDIO_EVENT_DEGRADED', `${d.audioEvent.type} AudioEvent excluded from assembly by the mixer (production continues): ${d.message}`, { beatId: d.audioEvent.beatId }));
+      }
     }
 
     fs.mkdirSync(outputDir, { recursive: true });

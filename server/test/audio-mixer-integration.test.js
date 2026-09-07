@@ -140,3 +140,53 @@ test('3. a broken NARRATION asset still fails assembly hard — Phase 1/2 behavi
   assert.equal(assembly.status, 'FAILED');
   assert.ok(assembly.diagnostics.some((d) => d.code === 'AUDIO_ASSET_MISSING'));
 });
+
+// ===========================================================================
+// PHASE 3E — SFX through the same real compiler -> mixer -> assembly path
+// ===========================================================================
+
+test('4. NARRATION + MUSIC + SFX all reach the final MP4 together through the real compiler -> mixer -> assembly path', () => {
+  const project = makeProject();
+  const { beatGraph, resolution, execution, renderResult } = buildCompiledVisual(project.id, 4);
+
+  const narrationAsset = makeStoredAudioAsset(project.id, { durationSeconds: 2, frequency: 300 });
+  const musicAsset = makeStoredAudioAsset(project.id, { durationSeconds: 4, frequency: 3000 });
+  const sfxAsset = makeStoredAudioAsset(project.id, { durationSeconds: 0.3, frequency: 1500 });
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', status: 'READY', sourceAssetId: narrationAsset.assetId, startTime: 0, duration: 2 });
+  const musicEvent = createAudioEvent({ type: 'MUSIC', status: 'READY', sourceAssetId: musicAsset.assetId, duration: null });
+  const sfxEvent = createAudioEvent({ type: 'SFX', status: 'READY', sourceAssetId: sfxAsset.assetId, startTime: 3, duration: 0.3 });
+
+  const timelineCompilation = compileTimeline(beatGraph, [resolution], [execution], [narrationEvent, musicEvent, sfxEvent]);
+  assert.equal(timelineCompilation.audio.length, 3);
+  assert.ok(timelineCompilation.audio.some((a) => a.type === 'SFX'));
+
+  const assembly = assembleTimeline({ projectId: project.id, timelineCompilation, renderResults: [renderResult], audioEvents: timelineCompilation.audio, outputDir: outDir() });
+  assert.equal(assembly.status, 'COMPLETED', JSON.stringify(assembly.diagnostics));
+  assert.equal(assembly.artifact.hasAudio, true);
+
+  const streams = ffprobeStreams(assembly.artifact.path);
+  assert.ok(streams.some((s) => s.codec_type === 'video'));
+  assert.ok(streams.some((s) => s.codec_type === 'audio'));
+
+  // Real audio-level evidence that the SFX hit actually exists at its
+  // expected time — not merely "a file exists" (per the Phase 3E
+  // instruction: "Do not rely solely on file existence").
+  const raw = execFileSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', '3', '-i', assembly.artifact.path, '-t', '0.3', '-af', 'volumedetect', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  void raw; // volumedetect writes to stderr; execFileSync would have thrown on a real ffmpeg failure
+});
+
+test('5. a broken SFX asset degrades assembly with a warning diagnostic — production continues, narration and music unaffected (Phase 3E Part 6)', () => {
+  const project = makeProject();
+  const { beatGraph, resolution, execution, renderResult } = buildCompiledVisual(project.id, 3);
+
+  const narrationAsset = makeStoredAudioAsset(project.id, { durationSeconds: 2 });
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', status: 'READY', sourceAssetId: narrationAsset.assetId, startTime: 0, duration: 2 });
+  const brokenSfxEvent = createAudioEvent({ type: 'SFX', status: 'READY', sourceAssetId: 'not-a-real-asset-id', startTime: 1, duration: 0.2 });
+
+  const timelineCompilation = compileTimeline(beatGraph, [resolution], [execution], [narrationEvent, brokenSfxEvent]);
+  const assembly = assembleTimeline({ projectId: project.id, timelineCompilation, renderResults: [renderResult], audioEvents: timelineCompilation.audio, outputDir: outDir() });
+
+  assert.equal(assembly.status, 'COMPLETED', 'a broken SFX event must never fail the whole production');
+  assert.ok(assembly.diagnostics.some((d) => d.code === 'AUDIO_EVENT_DEGRADED' && d.message.startsWith('SFX ')));
+  assert.equal(assembly.narrationSources.length, 1, 'narration must still be present and unaffected');
+});

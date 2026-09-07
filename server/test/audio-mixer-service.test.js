@@ -246,14 +246,50 @@ test('D6. music plays at full level when no narration is present at all (Part D:
   assert.ok(Math.abs(early - late) < 1, `expected a flat, un-ducked level throughout; got early=${early} late=${late}`);
 });
 
-test('D7. UNSUPPORTED_AUDIO_TYPE is a structured failure, never a crash or silent drop (SFX/AMBIENCE not implemented yet — Part C)', () => {
+test('D7. an unsupported non-NARRATION type (AMBIENCE — not implemented yet, Phase 3E scope) DEGRADES rather than failing the whole mix, and is reported in `degraded`', () => {
   const dir = tmpDir();
   const p = path.join(dir, 'x.wav');
   buildSilence(p, 1);
-  const sfxEvent = createAudioEvent({ type: 'SFX', startTime: 0, duration: 1 });
-  const result = mixAudioEvents({ resolvedAudio: [{ audioEvent: sfxEvent, absolutePath: p }], expectedDuration: 1, workDir: dir, ffmpegPath: 'ffmpeg' });
-  assert.equal(result.ok, false);
-  assert.equal(result.error.code, 'UNSUPPORTED_AUDIO_TYPE');
+  const ambienceEvent = createAudioEvent({ type: 'AMBIENCE', startTime: 0, duration: 1 });
+  const result = mixAudioEvents({ resolvedAudio: [{ audioEvent: ambienceEvent, absolutePath: p }], expectedDuration: 1, workDir: dir, ffmpegPath: 'ffmpeg' });
+  assert.equal(result.ok, true, 'a non-NARRATION unsupported type must never fail the whole mix (Phase 3E degradation fix)');
+  assert.equal(result.path, null, 'nothing else was present to mix');
+  assert.equal(result.degraded.length, 1);
+  assert.equal(result.degraded[0].code, 'UNSUPPORTED_AUDIO_TYPE');
+});
+
+test('D7b. a real ffmpeg build failure on a NARRATION event still fails the whole mix — narration remains unconditionally fatal even under the Phase 3E degradation change', () => {
+  const dir = tmpDir();
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', startTime: 0, duration: 1 });
+  // A nonexistent source file forces buildEventSegment's own ffmpeg
+  // invocation to fail — exercising the SAME "built.ok === false" branch
+  // an SFX/MUSIC build failure would hit, but on a NARRATION event.
+  const result = mixAudioEvents({ resolvedAudio: [{ audioEvent: narrationEvent, absolutePath: path.join(dir, 'does-not-exist.wav') }], expectedDuration: 1, workDir: dir, ffmpegPath: 'ffmpeg' });
+  assert.equal(result.ok, false, 'a NARRATION segment build failure must still fail the whole mix, never degrade');
+  assert.equal(result.error.code, 'FFMPEG_FAILED');
+});
+
+test('D7c. a real ffmpeg build failure on an SFX event degrades instead of failing the whole mix, and narration/music around it still complete', () => {
+  const dir = tmpDir();
+  const narrPath = path.join(dir, 'narr.wav');
+  buildSilence(narrPath, 2);
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', startTime: 0, duration: 2 });
+  const brokenSfxEvent = createAudioEvent({ type: 'SFX', startTime: 1, duration: 0.3 });
+
+  const result = mixAudioEvents({
+    resolvedAudio: [
+      { audioEvent: narrationEvent, absolutePath: narrPath },
+      { audioEvent: brokenSfxEvent, absolutePath: path.join(dir, 'does-not-exist-sfx.wav') },
+    ],
+    expectedDuration: 2,
+    workDir: dir,
+    ffmpegPath: 'ffmpeg',
+  });
+  assert.equal(result.ok, true, 'an SFX build failure must not take down an otherwise-valid narration mix');
+  assert.ok(fs.existsSync(result.path));
+  assert.equal(result.degraded.length, 1);
+  assert.equal(result.degraded[0].code, 'MIXER_BUILD_FAILED');
+  assert.equal(result.degraded[0].audioEvent.type, 'SFX');
 });
 
 test('D8. overlapping same-type events sum rather than crash or silently drop one', () => {
@@ -349,4 +385,173 @@ test('E4. a MUSIC event longer than its assigned span is TRIMMED, never looped (
   const silenceAt3 = measureMeanVolumeDb(out, { startSeconds: 3, durationSeconds: 1 });
   assert.ok(typeof soundAt1 === 'number' && soundAt1 > -50);
   assert.ok(silenceAt3 === null || silenceAt3 < -60, `content past the assigned 2s span must be silence, not the looped/continued source; measured ${silenceAt3}`);
+});
+
+// ===========================================================================
+// F. PHASE 3E — SFX, explicit case-by-case proof (the exact 8 scenarios
+// Phase 3E's own instructions list), even where a generic MUSIC-typed
+// test above already exercises the same underlying mixer code path — SFX
+// gets its own direct proof rather than relying on type-generic inference.
+// ===========================================================================
+
+test('F1. SFX alone produces a real, correct-duration mixed file with real audible content at its placed time', () => {
+  const dir = tmpDir();
+  const sfxPath = path.join(dir, 'sfx.wav');
+  buildTone(sfxPath, { frequency: 2000, durationSeconds: 0.3 });
+  const sfxEvent = createAudioEvent({ type: 'SFX', startTime: 2, duration: 0.3 });
+
+  const result = mixAudioEvents({ resolvedAudio: [{ audioEvent: sfxEvent, absolutePath: sfxPath }], expectedDuration: 4, workDir: dir, ffmpegPath: 'ffmpeg' });
+  assert.equal(result.ok, true);
+  assert.ok(fs.existsSync(result.path));
+  const hit = measureMeanVolumeDb(result.path, { startSeconds: 2, durationSeconds: 0.3 });
+  const before = measureMeanVolumeDb(result.path, { startSeconds: 0, durationSeconds: 1 });
+  assert.ok(typeof hit === 'number' && hit > -50, `the SFX hit must be real, audible content; measured ${hit}`);
+  assert.ok(before === null || before < -60, `silence must precede the SFX hit; measured ${before}`);
+});
+
+test('F2. narration + one SFX hit both survive into the final mix', () => {
+  const dir = tmpDir();
+  const narrPath = path.join(dir, 'narr.wav');
+  const sfxPath = path.join(dir, 'sfx.wav');
+  buildTone(narrPath, { frequency: 300, durationSeconds: 3 });
+  buildTone(sfxPath, { frequency: 2500, durationSeconds: 0.2 });
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', startTime: 0, duration: 3 });
+  const sfxEvent = createAudioEvent({ type: 'SFX', startTime: 1.5, duration: 0.2 });
+
+  const result = mixAudioEvents({
+    resolvedAudio: [
+      { audioEvent: narrationEvent, absolutePath: narrPath },
+      { audioEvent: sfxEvent, absolutePath: sfxPath },
+    ],
+    expectedDuration: 3,
+    workDir: dir,
+    ffmpegPath: 'ffmpeg',
+  });
+  assert.equal(result.ok, true);
+  const duringHit = measureMeanVolumeDb(result.path, { startSeconds: 1.5, durationSeconds: 0.2 });
+  const narrationOnly = measureMeanVolumeDb(result.path, { startSeconds: 0, durationSeconds: 1 });
+  assert.ok(duringHit > narrationOnly, `the SFX hit must audibly add energy on top of narration; hit=${duringHit} narrationOnly=${narrationOnly}`);
+});
+
+test('F3. narration + music + one SFX hit all coexist — SFX never disrupts existing narration/music behavior', () => {
+  const dir = tmpDir();
+  const narrPath = path.join(dir, 'narr.wav');
+  const musicPath = path.join(dir, 'music.wav');
+  const sfxPath = path.join(dir, 'sfx.wav');
+  buildSilence(narrPath, 2); // silent "narration" isolates the music-ducking measurement, same technique as D5
+  buildTone(musicPath, { frequency: 1000, durationSeconds: 6, gainDb: -6 });
+  buildTone(sfxPath, { frequency: 3000, durationSeconds: 0.2 });
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', startTime: 2, duration: 2 }); // duck window [2,4)
+  const musicEvent = createAudioEvent({ type: 'MUSIC', startTime: 0, duration: 6 });
+  const sfxEvent = createAudioEvent({ type: 'SFX', startTime: 5, duration: 0.2 });
+
+  const result = mixAudioEvents({
+    resolvedAudio: [
+      { audioEvent: narrationEvent, absolutePath: narrPath },
+      { audioEvent: musicEvent, absolutePath: musicPath },
+      { audioEvent: sfxEvent, absolutePath: sfxPath },
+    ],
+    expectedDuration: 6,
+    workDir: dir,
+    ffmpegPath: 'ffmpeg',
+    duckingConfig: { attackSeconds: 0.3, releaseSeconds: 0.3, duckGainDb: -12 },
+  });
+  assert.equal(result.ok, true);
+
+  // Music ducking (Phase 3D behavior) still works with SFX also present.
+  const baseline = measureMeanVolumeDb(result.path, { startSeconds: 0, durationSeconds: 1 });
+  const ducked = measureMeanVolumeDb(result.path, { startSeconds: 2.5, durationSeconds: 1 });
+  assert.ok(baseline - ducked > 8, `music ducking must still work with SFX present; baseline=${baseline} ducked=${ducked}`);
+
+  // The SFX hit itself is present and audible.
+  const sfxRegion = measureMeanVolumeDb(result.path, { startSeconds: 5, durationSeconds: 0.2 });
+  const musicOnlyRegion = measureMeanVolumeDb(result.path, { startSeconds: 4.5, durationSeconds: 0.3 });
+  assert.ok(sfxRegion > musicOnlyRegion, `the SFX hit must add audible energy on top of music alone; sfx=${sfxRegion} musicOnly=${musicOnlyRegion}`);
+});
+
+test('F4. multiple SFX events at different times all survive, none overwriting another', () => {
+  const dir = tmpDir();
+  const sfx1Path = path.join(dir, 'sfx1.wav');
+  const sfx2Path = path.join(dir, 'sfx2.wav');
+  const sfx3Path = path.join(dir, 'sfx3.wav');
+  buildTone(sfx1Path, { frequency: 1500, durationSeconds: 0.2 });
+  buildTone(sfx2Path, { frequency: 2500, durationSeconds: 0.2 });
+  buildTone(sfx3Path, { frequency: 3500, durationSeconds: 0.2 });
+  const events = [
+    { audioEvent: createAudioEvent({ type: 'SFX', startTime: 0.5, duration: 0.2 }), absolutePath: sfx1Path },
+    { audioEvent: createAudioEvent({ type: 'SFX', startTime: 2, duration: 0.2 }), absolutePath: sfx2Path },
+    { audioEvent: createAudioEvent({ type: 'SFX', startTime: 3.5, duration: 0.2 }), absolutePath: sfx3Path },
+  ];
+
+  const result = mixAudioEvents({ resolvedAudio: events, expectedDuration: 4, workDir: dir, ffmpegPath: 'ffmpeg' });
+  assert.equal(result.ok, true);
+  for (const startSeconds of [0.5, 2, 3.5]) {
+    const level = measureMeanVolumeDb(result.path, { startSeconds, durationSeconds: 0.2 });
+    assert.ok(typeof level === 'number' && level > -50, `SFX hit at ${startSeconds}s must be present; measured ${level}`);
+  }
+  const gap = measureMeanVolumeDb(result.path, { startSeconds: 1, durationSeconds: 0.5 });
+  assert.ok(gap === null || gap < -60, `silence between hits must remain silent; measured ${gap}`);
+});
+
+test('F5. SFX volume is honored — a quieter SFX event measures a real, proportional level drop', () => {
+  const dir = tmpDir();
+  const src = path.join(dir, 'src.wav');
+  buildTone(src, { frequency: 2000, durationSeconds: 0.5 });
+  const fullEvent = createAudioEvent({ type: 'SFX', startTime: 0, duration: 0.5, volume: 1 });
+  const quietEvent = createAudioEvent({ type: 'SFX', startTime: 0, duration: 0.5, volume: 0.5 });
+  const fullOut = path.join(dir, 'full.wav');
+  const quietOut = path.join(dir, 'quiet.wav');
+  assert.equal(buildEventSegment('ffmpeg', src, fullEvent, 0.5, null, fullOut).ok, true);
+  assert.equal(buildEventSegment('ffmpeg', src, quietEvent, 0.5, null, quietOut).ok, true);
+  const fullDb = measureMeanVolumeDb(fullOut);
+  const quietDb = measureMeanVolumeDb(quietOut);
+  assert.ok(Math.abs(fullDb - quietDb - 6.02) < 1, `expected ~6dB difference for volume=0.5; full=${fullDb} quiet=${quietDb}`);
+});
+
+test('F6. SFX fadeIn/fadeOut are honored on a short one-shot hit', () => {
+  const dir = tmpDir();
+  const src = path.join(dir, 'src.wav');
+  buildTone(src, { frequency: 2000, durationSeconds: 1 });
+  const event = createAudioEvent({ type: 'SFX', startTime: 0, duration: 1, fadeIn: 0.2, fadeOut: 0.2 });
+  const out = path.join(dir, 'faded.wav');
+  assert.equal(buildEventSegment('ffmpeg', src, event, 1, null, out).ok, true);
+  const start = measureMeanVolumeDb(out, { startSeconds: 0, durationSeconds: 0.05 });
+  const middle = measureMeanVolumeDb(out, { startSeconds: 0.45, durationSeconds: 0.1 });
+  assert.ok(middle - start > 3, `fade-in must make the very start measurably quieter than the middle; start=${start} middle=${middle}`);
+});
+
+test('F7. SFX timing is placed EXACTLY at its own startTime, never shifted by beat/scene inference when explicit (mirrors timeline-compiler-audio.test.js\'s own Model A proof, exercised here at the mixer layer)', () => {
+  const dir = tmpDir();
+  const sfxPath = path.join(dir, 'sfx.wav');
+  buildTone(sfxPath, { frequency: 2000, durationSeconds: 0.2 });
+  const sfxEvent = createAudioEvent({ type: 'SFX', startTime: 3.7, duration: 0.2 });
+  const result = mixAudioEvents({ resolvedAudio: [{ audioEvent: sfxEvent, absolutePath: sfxPath }], expectedDuration: 5, workDir: dir, ffmpegPath: 'ffmpeg' });
+  assert.equal(result.ok, true);
+  const atExactTime = measureMeanVolumeDb(result.path, { startSeconds: 3.7, durationSeconds: 0.2 });
+  const justBefore = measureMeanVolumeDb(result.path, { startSeconds: 3, durationSeconds: 0.5 });
+  assert.ok(atExactTime > -50, `SFX must be audible exactly at its own startTime; measured ${atExactTime}`);
+  assert.ok(justBefore === null || justBefore < -60, `silence must hold right up until the exact placed time; measured ${justBefore}`);
+});
+
+test('F8. SFX degradation — an SFX build failure degrades (does not fail the whole mix), and is reported with its own AudioEvent in `degraded`', () => {
+  const dir = tmpDir();
+  const narrPath = path.join(dir, 'narr.wav');
+  buildTone(narrPath, { durationSeconds: 2 });
+  const narrationEvent = createAudioEvent({ type: 'NARRATION', startTime: 0, duration: 2 });
+  const brokenSfxEvent = createAudioEvent({ type: 'SFX', startTime: 1, duration: 0.2 });
+
+  const result = mixAudioEvents({
+    resolvedAudio: [
+      { audioEvent: narrationEvent, absolutePath: narrPath },
+      { audioEvent: brokenSfxEvent, absolutePath: path.join(dir, 'nonexistent.wav') },
+    ],
+    expectedDuration: 2,
+    workDir: dir,
+    ffmpegPath: 'ffmpeg',
+  });
+  assert.equal(result.ok, true, 'a broken SFX must never fail an otherwise-valid narration mix');
+  assert.ok(fs.existsSync(result.path));
+  assert.equal(result.degraded.length, 1);
+  assert.equal(result.degraded[0].audioEvent.audioEventId, brokenSfxEvent.audioEventId);
+  assert.equal(result.degraded[0].code, 'MIXER_BUILD_FAILED');
 });

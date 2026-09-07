@@ -94,7 +94,7 @@ const MAX_GAIN_ADJUST_DB = 12; // never swing the final gain further than this e
 const LIMITER_CEILING = 0.97; // ~-0.27 dBFS true-peak headroom (Part F: "prevent clipping")
 const CLIPPING_PEAK_THRESHOLD_DB = -0.1; // Part H — a measured peak at/above this is flagged as a clipping-risk diagnostic
 
-const SEGMENT_BUILDERS = new Set(['NARRATION', 'MUSIC']); // Part C — the extensibility registry; add 'SFX'/'AMBIENCE' here, and nowhere else, once a real provider exists for either.
+const SEGMENT_BUILDERS = new Set(['NARRATION', 'MUSIC', 'SFX']); // Part C — the extensibility registry; PHASE 3E added 'SFX' here, and nowhere else, once a real provider existed for it. 'AMBIENCE' remains unimplemented — see Phase 3E's own scope boundary.
 
 function diag(code, message, extra = {}) {
   return createAssemblyDiagnostic({ code, message, ...extra });
@@ -319,17 +319,33 @@ function mixAudioEvents({ resolvedAudio, expectedDuration, workDir, ffmpegPath, 
     .map(({ audioEvent }) => ({ audioEventId: audioEvent.audioEventId, start: audioEvent.startTime, end: audioEvent.startTime + audioEvent.duration }));
   const mergedNarrationWindows = mergeNarrationWindows(narrationWindows);
 
+  // PHASE 3E — DEGRADATION (fixing the specific gap the Phase 3E audit
+  // identified): a NARRATION failure (unsupported type, or a real ffmpeg
+  // build failure) still fails the whole mix immediately, exactly as it
+  // always has — narration remains fatal, unconditionally. A non-
+  // NARRATION failure (SFX/MUSIC/a future AMBIENCE) is instead EXCLUDED
+  // from the mix and recorded in `degraded`, and mixing continues with
+  // whatever else is present — "a non-NARRATION audio type failing inside
+  // the mixer path must not cause an otherwise valid production to hard-
+  // fail." This is per-event isolation within the existing segment-
+  // building loop, never a second mixing engine and never a change to
+  // sumSegments/applyFinalLoudness themselves.
   const segmentPaths = [];
+  const degraded = [];
   let hasNonNarration = false;
   let index = 0;
   for (const { audioEvent, absolutePath } of entries) {
     if (!SEGMENT_BUILDERS.has(audioEvent.type)) {
-      return { ok: false, error: diag('UNSUPPORTED_AUDIO_TYPE', `AudioEvent "${audioEvent.audioEventId}" has type "${audioEvent.type}", which the mixer does not yet render (only NARRATION/MUSIC are implemented)`) };
+      const message = `AudioEvent "${audioEvent.audioEventId}" has type "${audioEvent.type}", which the mixer does not yet render (only NARRATION/MUSIC/SFX are implemented)`;
+      if (audioEvent.type === 'NARRATION') {
+        return { ok: false, error: diag('UNSUPPORTED_AUDIO_TYPE', message) };
+      }
+      degraded.push({ audioEvent, code: 'UNSUPPORTED_AUDIO_TYPE', message });
+      continue;
     }
 
     let duckExpression = null;
     if (audioEvent.type === 'MUSIC') {
-      hasNonNarration = true;
       // duckingTarget (schemas/audio-schema.js's own, pre-existing field)
       // narrows ducking to one specific narration event when a caller
       // sets it; the default (null, every real narration event today)
@@ -340,15 +356,31 @@ function mixAudioEvents({ resolvedAudio, expectedDuration, workDir, ffmpegPath, 
       if (relevantWindows.length > 0) {
         duckExpression = buildDuckVolumeExpression(relevantWindows, duckingConfig);
       }
-    } else if (audioEvent.type !== 'NARRATION') {
-      hasNonNarration = true;
     }
+    // SFX (Phase 3E): one-shot only, no looping, no special ducking —
+    // duckExpression stays null for every non-MUSIC type.
 
     const segPath = path.join(workDir, `audio-${index}-${audioEvent.type.toLowerCase()}.wav`);
     const built = buildEventSegment(ffmpegPath, absolutePath, audioEvent, expectedDuration, duckExpression, segPath);
-    if (!built.ok) return built;
+    if (!built.ok) {
+      if (audioEvent.type === 'NARRATION') return built;
+      degraded.push({ audioEvent, code: 'MIXER_BUILD_FAILED', message: built.error.message });
+      continue;
+    }
+    // Only a segment that ACTUALLY made it into the mix counts toward
+    // "is this mix pure narration" — an attempted-but-degraded non-
+    // NARRATION event must never flip on final loudness for a mix that,
+    // in the end, contains only narration (Phase 1/2's own frozen case).
+    if (audioEvent.type !== 'NARRATION') hasNonNarration = true;
     segmentPaths.push(segPath);
     index += 1;
+  }
+
+  if (segmentPaths.length === 0) {
+    // Every surviving entry degraded (or none were supported) — no
+    // narration was present either, or it would already have failed
+    // above. Nothing left to mix; not an error in itself.
+    return { ok: true, path: null, degraded };
   }
 
   const rawMixPath = path.join(workDir, 'audio-mix-raw.wav');
@@ -358,13 +390,13 @@ function mixAudioEvents({ resolvedAudio, expectedDuration, workDir, ffmpegPath, 
   if (!hasNonNarration) {
     // Pure-NARRATION mix — Phase 1/2's own existing, frozen scenario.
     // Never touched by final loudness; see file header.
-    return { ok: true, path: rawMixPath };
+    return { ok: true, path: rawMixPath, degraded };
   }
 
   const finalPath = path.join(workDir, 'audio-mix-final.wav');
   const loud = applyFinalLoudness(ffmpegPath, rawMixPath, finalPath);
   if (!loud.ok) return loud;
-  return { ok: true, path: finalPath };
+  return { ok: true, path: finalPath, degraded };
 }
 
 module.exports = {
