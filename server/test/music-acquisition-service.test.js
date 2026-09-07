@@ -138,7 +138,9 @@ test('D. Music request -> provider dispatch -> registered fixture provider -> pr
   // No provider-internal shape (candidate objects, raw fetch Response, etc.) leaks into the result.
   assert.deepEqual(
     Object.keys(first).sort(),
-    ['id', 'status', 'projectId', 'beatId', 'sceneId', 'assetId', 'provider', 'providerAssetId', 'sourceUrl', 'downloadUrl', 'durationSeconds', 'format', 'attribution', 'licenseSummary', 'searchQuery', 'checksum', 'acquiredAt', 'diagnostics'].sort()
+    // PHASE 3B — providerMetadata added: additive, optional generation
+    // provenance (see schemas/music-acquisition-schema.js's own comment).
+    ['id', 'status', 'projectId', 'beatId', 'sceneId', 'assetId', 'provider', 'providerAssetId', 'sourceUrl', 'downloadUrl', 'durationSeconds', 'format', 'attribution', 'licenseSummary', 'searchQuery', 'checksum', 'acquiredAt', 'providerMetadata', 'diagnostics'].sort()
   );
 });
 

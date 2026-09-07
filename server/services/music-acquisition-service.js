@@ -27,16 +27,20 @@
 //
 // PHASE 3C — one real provider now exists: services/music/ai33-music-
 // provider.js. It genuinely reuses this codebase's existing, verified
-// AI33 credential/base-URL infrastructure, but its real, live behavior
-// today is a structured UNAVAILABLE — the real AI33 Pro API has no
-// confirmed Music generation endpoint at any tested path (see that
-// file's own header for the exact discovery evidence). This is an
-// honest reflection of the real API's current capability, never a
-// fabricated contract. Adding a second real provider later means adding
-// one new module under services/music/ and one new entry in
-// MUSIC_PROVIDER_MODULES below — never touching anything else in this
-// file, the same "single dispatch table" objective media-acquisition-
-// service.js's own header already established.
+// AI33 credential/base-URL infrastructure. At Phase 3C time its real,
+// live behavior was a structured UNAVAILABLE (no confirmed Music
+// generation endpoint at any tested path). PHASE 3B (this file's own
+// later addition, see that provider's own header) — a real endpoint was
+// subsequently documented (POST /v1s/task/music-generation, polled via
+// GET /v1/task/{task_id}) and implemented; the response envelope is an
+// evidence-grounded INFERENCE from AI33's own sibling TTS contract, not
+// independently verified live (this session's sandbox network policy
+// blocks api.ai33.pro from reaching the real API at all — see that
+// file's own "REAL VERIFICATION STATUS" section). Adding a second real
+// provider means adding one new module under services/music/ and one new
+// entry in MUSIC_PROVIDER_MODULES below — never touching anything else in
+// this file, the same "single dispatch table" objective media-
+// acquisition-service.js's own header already established.
 //
 // PHASE 3D — 'elevenlabs' (services/music/elevenlabs-music-provider.js) is
 // the first Music provider that actually WORKS end to end, selected via a
@@ -216,12 +220,21 @@ async function acquireMusic(request, { fetchImpl = fetch } = {}) {
   // generation-service.js's real NARRATION audio already uses; stored
   // through the EXISTING services/asset-storage.js; never a second
   // asset-management system) ---
+  // PHASE 3B HARDENING — reuses the SAME Asset.model/generationId
+  // provenance fields voice-generation-service.js's own AI33 TTS
+  // integration already established (schemas/production-schema.js's
+  // createAsset() — see that file's own generationId/model/provider/url
+  // fields), never a new provenance system. Additive/optional: a provider
+  // that sets no providerMetadata (elevenlabs, fixture) leaves these null,
+  // exactly as before this change.
   timelineStore.addAsset(request.projectId, {
     assetId,
     type: 'audio',
     sceneId: request.sceneId || null,
     shotId: request.beatId || null,
     provider: request.provider,
+    model: candidate.providerMetadata ? candidate.providerMetadata.model : null,
+    generationId: candidate.providerMetadata ? candidate.providerMetadata.taskId : null,
     url: candidate.sourceUrl,
   });
   timelineStore.updateAssetStorage(request.projectId, assetId, {
@@ -249,6 +262,7 @@ async function acquireMusic(request, { fetchImpl = fetch } = {}) {
     licenseSummary: candidate.licenseSummary,
     searchQuery: request.searchQuery,
     checksum,
+    providerMetadata: candidate.providerMetadata || null,
   });
 }
 

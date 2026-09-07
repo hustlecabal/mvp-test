@@ -63,7 +63,9 @@ test('E. createMusicSearchDiagnostic / createMusicCandidate produce exactly thei
     // PHASE 3D — audioBuffer added: a candidate's two mutually-exclusive
     // acquisition modes (a URL to fetch, or bytes already in hand) — see
     // schemas/music-acquisition-schema.js's own header for why.
-    ['providerAssetId', 'sourceUrl', 'downloadUrl', 'audioBuffer', 'durationSeconds', 'format', 'attribution', 'licenseSummary'].sort()
+    // PHASE 3B — providerMetadata added: additive, optional generation
+    // provenance (model/version, task id, request mode).
+    ['providerAssetId', 'sourceUrl', 'downloadUrl', 'audioBuffer', 'durationSeconds', 'format', 'attribution', 'licenseSummary', 'providerMetadata'].sort()
   );
 });
 

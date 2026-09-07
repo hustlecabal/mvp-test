@@ -76,6 +76,21 @@ function createMusicAcquisitionDiagnostic(overrides = {}) {
 // height (visual-only); minDurationSeconds/maxDurationSeconds carry over
 // from the video request shape since duration is exactly as meaningful
 // for a music bed as for a video clip.
+//
+// PHASE 3B (AI33) — instrumental/title/lyrics/tags/vocalGender are
+// ADDITIVE, OPTIONAL fields for a real GENERATIVE provider's own two
+// documented modes (see services/music/ai33-music-provider.js's own
+// header): simple/instrumental mode uses only `searchQuery` (mapped to
+// the provider's own description-prompt field) + `instrumental`; custom
+// mode additionally uses `title`/`lyrics`/`tags`/`vocalGender`. A
+// provider that has no use for a field (elevenlabs-music-provider.js,
+// fixture) simply ignores it — no interface method changed, no second
+// request shape invented. `instrumental` defaults to null (provider's
+// own default applies) rather than true, so this schema itself never
+// hard-codes EvoLink's own "background music is instrumental" policy —
+// that policy lives in the caller (services/music-acquisition-service.js
+// callers / production usage), exactly like every other policy decision
+// in this file already stays out of the schema layer.
 function createMusicAcquisitionRequest(overrides = {}) {
   const base = {
     provider: null, // one of MUSIC_PROVIDERS — required, never inferred/chosen here
@@ -87,6 +102,11 @@ function createMusicAcquisitionRequest(overrides = {}) {
     beatId: null, // null is legitimate and common — a music bed is often scene/video-spanning, not beat-scoped (see schemas/audio-schema.js's own Phase 3A span-representation comment)
     sceneId: null,
     provenanceRequirement: null,
+    instrumental: null, // boolean | null — null means "provider default"
+    title: null, // custom-mode only
+    lyrics: null, // custom-mode only — presence signals custom mode to a provider that supports both
+    tags: null, // custom-mode only — free-text style/genre tags
+    vocalGender: null, // custom-mode only — 'f' | 'm' | null
   };
   return withDefaults(base, overrides);
 }
@@ -124,6 +144,14 @@ function createMusicCandidate(overrides = {}) {
     format: null, // e.g. 'wav', 'mp3' — from the provider's own metadata, never guessed
     attribution: null, // free text credit line, when the provider supplies one
     licenseSummary: null, // free text, when the provider supplies one — never invented
+    // PHASE 3B (AI33) — additive, optional, provider-internal generation
+    // provenance (model/version, task id, request mode, etc). Mirrors
+    // services/voice/ai33-voice-provider.js's own `providerMetadata`
+    // convention exactly: never part of any interface contract, ignored
+    // by every provider that has no use for it (elevenlabs, fixture),
+    // carried through by services/music-acquisition-service.js onto the
+    // final MusicAcquisitionResult only when a provider sets it.
+    providerMetadata: null,
   };
   return withDefaults(base, overrides);
 }
@@ -150,6 +178,7 @@ function createMusicAcquisitionResult(overrides = {}) {
     searchQuery: null,
     checksum: null, // 'sha256:<hex>' — null unless status === 'ACQUIRED'
     acquiredAt: new Date().toISOString(),
+    providerMetadata: null, // additive, optional — see createMusicCandidate()'s own comment
     diagnostics: Array.isArray(diagnostics) ? diagnostics.map((d) => createMusicAcquisitionDiagnostic(d)) : [],
   };
   return withDefaults(base, rest);
