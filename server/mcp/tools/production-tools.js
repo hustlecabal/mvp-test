@@ -90,8 +90,13 @@ function register(server) {
         'output of production-diagnosis-service.js\'s diagnoseProductionJob() (PHASE 3F-A): one classification/' +
         'summary/recommendedAction that already cross-references job.status, job.qc, job.contentCompleteness, and ' +
         'job.creativeQa, so a COMPLETE job that is only PARTIAL_CONTENT is never mistaken for an unqualified ' +
-        'success. Every existing field on the job record is still returned unchanged; `diagnosis` is additive. ' +
-        'Calls getProductionStatus() verbatim.',
+        'success. `diagnosis.isProductionReady` (PHASE 3F-B) is the ONE field to check for "is this a complete, ' +
+        'presentable production" — job.qc.passed only ever asserts the assembled FILE\'s own technical validity ' +
+        '(codec/duration/dimensions/audio) and correctly stays true even when most beats escalated with no ' +
+        'material; isProductionReady is false whenever any beat/narration is unresolved, regardless of qc.passed ' +
+        'or assemblyResult.status. `diagnosis.unresolvedBeatCount`/`unresolvedMaterialCount` give the exact counts ' +
+        'without needing to inspect contentCompleteness/escalations by hand. Every existing field on the job ' +
+        'record is still returned unchanged; `diagnosis` is additive. Calls getProductionStatus() verbatim.',
       inputSchema: { productionJobId: z.string() },
     },
     async ({ productionJobId }) => {

@@ -16,6 +16,7 @@
 // see isContentComplete's own null-handling below, never fabricated).
 
 const { summarizeCreativeQAReport } = require('./creative-qa-service');
+const { computeContentCompleteness } = require('./production-completeness-service');
 
 // Duplicated, small, stable lists rather than importing production-
 // orchestrator-service.js/production-job-schema.js's own constants — the
@@ -46,7 +47,25 @@ function classifyRetryable(code) {
 }
 
 function diagnoseProductionJob(job) {
-  const contentCompleteness = job.contentCompleteness || null;
+  // PRODUCTION QUALITY/READINESS — production-orchestrator-service.js only
+  // ever calls computeContentCompleteness() once, right before status:
+  // COMPLETE (that file's own header). A job that instead terminates
+  // FAILED/ESCALATED never gets one computed, leaving isContentComplete
+  // permanently null/unknown for exactly the jobs where "how much content
+  // actually made it in" matters most — a real Golden Video run reached
+  // ESCALATED with only 3 of 11 beats assembled, and this function had
+  // nothing to say about it beyond the raw escalations array.
+  // computeContentCompleteness() is already pure/read-only and already
+  // documented to accept "anything with the same shape" (beatGraph,
+  // diagnostics, beatProgress, assemblyResult) — every one of which a
+  // TERMINAL job already has once BeatGraph derivation has run. This
+  // computes it on the fly using ONLY that existing data — never a second
+  // completeness system, and never overwriting a genuinely pre-computed
+  // job.contentCompleteness (the COMPLETE path's own value always wins).
+  // Guarded to terminal jobs only (never IN_PROGRESS) so a still-resolving
+  // job is never given a premature, misleading completeness read.
+  const isTerminalStatus = job.status === 'COMPLETE' || job.status === 'FAILED' || job.status === 'ESCALATED';
+  const contentCompleteness = job.contentCompleteness || (isTerminalStatus && job.beatGraph ? computeContentCompleteness(job) : null);
   const creativeQa = job.creativeQa ? summarizeCreativeQAReport(job.creativeQa) : null;
 
   const isComplete = job.status === 'COMPLETE';
@@ -105,7 +124,16 @@ function diagnoseProductionJob(job) {
       break;
     }
     case 'ESCALATED': {
-      summary = `Production paused — ${job.escalations.length} beat(s) require a human decision before continuing.`;
+      // PRODUCTION QUALITY/READINESS — surfaces the same completeness
+      // numbers PARTIAL_SUCCESS's own summary already reports, so an
+      // ESCALATED job (assembly may well have technically COMPLETED on
+      // whatever beats DID resolve — see assembleTimeline()'s own
+      // partial-timeline behavior) never reads as merely "paused" when
+      // what actually happened is most of the intended video is missing.
+      const completenessNote = contentCompleteness
+        ? ` ${contentCompleteness.assembledBeatCount}/${contentCompleteness.expectedBeatCount} beat(s) reached the final assembly (${contentCompleteness.overall}).`
+        : '';
+      summary = `Production paused — ${job.escalations.length} beat(s) require a human decision before continuing.${completenessNote}`;
       recommendedAction = job.escalations.length > 0 ? job.escalations.map((e) => e.reason).join(' ') : 'Resolve the pending escalation(s), then start a new production run.';
       break;
     }
@@ -132,12 +160,37 @@ function diagnoseProductionJob(job) {
     }
   }
 
+  // PRODUCTION QUALITY/READINESS — the one, explicit, authoritative
+  // caller-facing gate this stage exists to add. Deliberately distinct
+  // from isTechnicallyComplete (== job.qc.passed, an aggregate of 15
+  // checks that only ever assert the ASSEMBLED FILE's own technical
+  // validity — codec/duration/dimensions/audio presence — and correctly
+  // PASS even when most beats escalated, since "no unaccounted-for
+  // failure" is all that check set was ever designed to mean; see
+  // NO_UNRESOLVED_REQUIRED_MATERIALS_BEYOND_ESCALATIONS's own check
+  // message). isProductionReady instead reads the SAME classification
+  // this function already computes from status + content completeness +
+  // Creative QA — SUCCESS/WARNING are the only two classifications where
+  // every intended beat genuinely reached the final video. A caller must
+  // never infer "this production is ready" from job.qc.passed alone; this
+  // field is the one to check instead. No new QC check was added and no
+  // existing QC check was changed — this is entirely a diagnosis-layer
+  // fix (see this function's own header for why job.qc's narrower,
+  // file-level meaning is correct and is left exactly as it was).
+  const isProductionReady = classification === 'SUCCESS' || classification === 'WARNING';
+
   return {
     productionJobId: job.productionJobId,
     projectId: job.projectId,
     isComplete,
     isTechnicallyComplete,
     isContentComplete,
+    isProductionReady,
+    // Additive, explicit counts a caller previously had to derive by hand
+    // from contentCompleteness/escalations — null only when neither is
+    // computable (e.g. a job with no beatGraph at all).
+    unresolvedBeatCount: contentCompleteness ? contentCompleteness.missingBeatIds.length : null,
+    unresolvedMaterialCount: (job.escalations || []).length,
     failingStage,
     affectedBeatIds,
     summary,
