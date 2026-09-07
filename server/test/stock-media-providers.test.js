@@ -115,6 +115,21 @@ test('B. pexels-video-provider picks the largest mp4 file meeting minWidth/minHe
   });
 });
 
+test('B3. pexels-video-provider calls the EXACT documented Pexels video search endpoint (https://api.pexels.com/v1/videos/search) — must fail if the /v1/ prefix is ever removed again', async () => {
+  await withEnv('PEXELS_API_KEY', 'test-key', async () => {
+    let calledUrl = null;
+    await pexelsVideo.search(createMediaAcquisitionRequest({ mediaType: 'video', searchQuery: 'ocean' }), {
+      fetchImpl: async (url) => {
+        calledUrl = url;
+        return { ok: true, json: async () => ({ videos: [] }) };
+      },
+    });
+    assert.ok(calledUrl, 'fetchImpl must have been called');
+    const { origin, pathname } = new URL(calledUrl);
+    assert.equal(`${origin}${pathname}`, 'https://api.pexels.com/v1/videos/search');
+  });
+});
+
 test('B2. pixabay-image-provider passes min_width/min_height/orientation server-side and maps hits', async () => {
   await withEnv('PIXABAY_API_KEY', 'test-key', async () => {
     let capturedUrl = null;

@@ -2,7 +2,7 @@
 //
 // A real StockMediaProvider backed by the Pexels Video Search API
 // (https://www.pexels.com/api/documentation/ — GET
-// https://api.pexels.com/videos/search). Requires PEXELS_API_KEY — same
+// https://api.pexels.com/v1/videos/search). Requires PEXELS_API_KEY — same
 // credential as pexels-image-provider.js (one Pexels account key covers
 // both endpoints), read independently here so either provider can be
 // enabled/disabled without touching the other.
@@ -23,7 +23,7 @@ const { createMediaSearchResult, createSearchDiagnostic } = require('./stock-med
 const { createMediaCandidate } = require('../../schemas/media-acquisition-schema');
 
 const PROVIDER_NAME = 'pexels';
-const SEARCH_URL = 'https://api.pexels.com/videos/search';
+const SEARCH_URL = 'https://api.pexels.com/v1/videos/search';
 const ORIENTATIONS = ['landscape', 'portrait', 'square'];
 
 function credential() {
